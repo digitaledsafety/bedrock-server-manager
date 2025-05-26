@@ -53,7 +53,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/start', { method: 'POST' });
             const data = await response.json();
             showMessage(data.message);
-            loadWorlds();
             updateServerStatus();
         } catch (error) {
             showMessage(`Error starting server: ${error.message}`, true);
@@ -76,7 +75,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/restart', { method: 'POST' });
             const data = await response.json();
             showMessage(data.message);
-            loadWorlds();
             updateServerStatus();
         } catch (error) {
             showMessage(`Error restarting server: ${error.message}`, true);
