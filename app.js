@@ -45,7 +45,7 @@ app.get('/api/status', async (req, res) => {
 app.post('/api/start', async (req, res) => {
     try {
         await startServer();
-        res.json({ message: 'Server start initiated.' });
+        res.json({ success: true, message: 'Server start initiated.' });
     } catch (error) {
         log('ERROR', `Failed to start server: ${error.message}`);
         res.status(500).json({ error: 'Failed to start server' });
@@ -56,7 +56,7 @@ app.post('/api/start', async (req, res) => {
 app.post('/api/stop', async (req, res) => {
     try {
         await stopServer();
-        res.json({ message: 'Server stop initiated.' });
+        res.json({ success: true, message: 'Server stop initiated.' });
     } catch (error) {
         log('ERROR', `Failed to stop server: ${error.message}`);
         res.status(500).json({ error: 'Failed to stop server' });
@@ -67,7 +67,7 @@ app.post('/api/stop', async (req, res) => {
 app.post('/api/restart', async (req, res) => {
     try {
         await restartServer();
-        res.json({ message: 'Server restart initiated.' });
+        res.json({ success: true, message: 'Server restart initiated.' });
     }
     catch (error) {
         log('ERROR', `Failed to restart server: ${error.message}`);
@@ -102,7 +102,7 @@ app.post('/api/properties', async (req, res) => {
     try {
         const newProperties = req.body;
         await writeServerProperties(newProperties);
-        res.json({ message: 'Server properties updated. Restart server for changes to take effect.' });
+        res.json({ success: true, message: 'Server properties updated. Restart server for changes to take effect.' });
     } catch (error) {
         log('ERROR', `Failed to write server properties: ${error.message}`);
         res.status(500).json({ error: 'Failed to write server properties' });
