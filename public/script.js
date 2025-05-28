@@ -6,12 +6,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const restartButton = document.getElementById('restartButton');
     const updateButton = document.getElementById('updateButton');
     const propertiesForm = document.getElementById('propertiesForm');
-    // Note: propertiesMessageDiv, worldsListDiv, and worldsMessageDiv are present in EJS but not directly used in this JS for message display, using messageBox instead.
-    // const propertiesMessageDiv = document.getElementById('properties-message');
-    // const worldsListDiv = document.getElementById('worlds-list');
-    // const worldsMessageDiv = document.getElementById('worlds-message');
     const levelNameInput = document.getElementById('level-name'); // Get the level-name input
     const consoleOutput = document.getElementById('consoleOutput'); // Get the console textarea
+
+    // Auto-Update specific elements
+    const autoUpdateConfigForm = document.getElementById('autoUpdateConfigForm');
+    const autoUpdateEnabledCheckbox = document.getElementById('autoUpdateEnabled');
+    const autoUpdateIntervalMinutesInput = document.getElementById('autoUpdateIntervalMinutes');
+
 
     // --- Utility Functions ---
     function showMessage(message, type = 'success') {
@@ -23,7 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 5000);
     }
 
-    // New function to control button disabled states
+    // Function to control button disabled states
     function setButtonStates(status) {
         if (status === 'running') {
             startButton.disabled = true;
@@ -212,6 +214,56 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- Auto-Update Configuration Functions ---
+    async function loadAutoUpdateConfig() {
+        try {
+            const response = await fetch('/api/config');
+            const data = await response.json();
+            if (data.success) {
+                autoUpdateEnabledCheckbox.checked = data.config.autoUpdateEnabled;
+                autoUpdateIntervalMinutesInput.value = data.config.autoUpdateIntervalMinutes;
+            } else {
+                showMessage('Failed to load auto-update configuration: ' + data.message, 'error');
+            }
+        } catch (error) {
+            console.error('Error loading auto-update config:', error);
+            showMessage('Failed to load auto-update configuration.', 'error');
+        }
+    }
+
+    async function saveAutoUpdateConfig(event) {
+        event.preventDefault();
+        const newConfig = {
+            autoUpdateEnabled: autoUpdateEnabledCheckbox.checked,
+            autoUpdateIntervalMinutes: parseInt(autoUpdateIntervalMinutesInput.value, 10)
+        };
+
+        if (isNaN(newConfig.autoUpdateIntervalMinutes) || newConfig.autoUpdateIntervalMinutes < 1) {
+            showMessage('Update interval must be a positive number.', 'error');
+            return;
+        }
+
+        try {
+            showMessage('Saving auto-update settings...');
+            const response = await fetch('/api/config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(newConfig)
+            });
+            const data = await response.json();
+            if (data.success) {
+                showMessage('Auto-update settings saved successfully!', 'success');
+            } else {
+                showMessage('Failed to save auto-update settings: ' + data.message, 'error');
+            }
+        } catch (error) {
+            console.error('Error saving auto-update config:', error);
+            showMessage('Failed to save auto-update settings.', 'error');
+        }
+    }
+
 
     // --- Event Listeners ---
     startButton.addEventListener('click', () => sendCommand('start'));
@@ -219,7 +271,16 @@ document.addEventListener('DOMContentLoaded', () => {
     restartButton.addEventListener('click', () => sendCommand('restart'));
     updateButton.addEventListener('click', () => sendCommand('update'));
     propertiesForm.addEventListener('submit', saveServerProperties);
+    autoUpdateConfigForm.addEventListener('submit', saveAutoUpdateConfig); // New event listener for auto-update form
 
     // Initial load
     fetchServerStatus(); // This will now also set initial button states
+    //loadServerProperties();
+    //loadWorlds();
+    loadAutoUpdateConfig(); // New: Load auto-update config on page load
+
+    // Refresh status and worlds periodically
+    //setInterval(fetchServerStatus, 10000); // Every 10 seconds
+    //setInterval(loadWorlds, 30000); // Every 30 seconds
+
 });

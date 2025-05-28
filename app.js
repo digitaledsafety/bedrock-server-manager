@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const {
+    init,
     log,
     startServer,
     stopServer,
@@ -12,7 +13,10 @@ const {
     activateWorld,
     SERVER_DIRECTORY, // Import SERVER_DIRECTORY to access server files
     SERVER_EXE_NAME, // Import SERVER_EXE_NAME from the backend script
-    isProcessRunning // Import isProcessRunning from the backend script
+    isProcessRunning, // Import isProcessRunning from the backend script
+    startAutoUpdateScheduler, // Import startAutoUpdateScheduler from the backend script
+    readGlobalConfig, // NEW: Import readGlobalConfig for frontend access
+    writeGlobalConfig // NEW: Import writeGlobalConfig for frontend access
 } = require('./minecraft_bedrock_installer_nodejs'); // Import functions from your backend script
 
 const app = express();
@@ -90,7 +94,7 @@ app.post('/api/update', async (req, res) => {
 app.get('/api/properties', async (req, res) => {
     try {
         const properties = await readServerProperties();
-        res.json(properties);
+        res.json({ success: true, properties }); // Ensure success: true is returned
     } catch (error) {
         log('ERROR', `Failed to read server properties: ${error.message}`);
         res.status(500).json({ error: 'Failed to read server properties' });
@@ -113,7 +117,7 @@ app.post('/api/properties', async (req, res) => {
 app.get('/api/worlds', async (req, res) => {
     try {
         const worlds = await listWorlds();
-        res.json({ worlds });
+        res.json({ success: true, worlds }); // Ensure success: true is returned
     } catch (error) {
         log('ERROR', `Failed to list worlds: ${error.message}`);
         res.status(500).json({ error: 'Failed to list worlds' });
@@ -139,6 +143,31 @@ app.post('/api/activate-world', async (req, res) => {
     }
 });
 
+// NEW: Endpoint to get global configuration (including auto-update settings)
+app.get('/api/config', async (req, res) => {
+    try {
+        const config = await readGlobalConfig();
+        res.json({ success: true, config });
+    } catch (error) {
+        log('ERROR', `Error getting global config: ${error.message}`);
+        res.status(500).json({ error: 'Failed to get global config' });
+    }
+});
+
+// NEW: Endpoint to set global configuration (including auto-update settings)
+app.post('/api/config', async (req, res) => {
+    try {
+        const newConfig = req.body;
+        await writeGlobalConfig(newConfig);
+        await startAutoUpdateScheduler(); // Restart scheduler with new config
+        res.json({ success: true, message: 'Global config updated successfully.' });
+    } catch (error) {
+        log('ERROR', `Error setting global config: ${error.message}`);
+        res.status(500).json({ error: 'Failed to set global config' });
+    }
+});
+
+
 // --- Frontend Routes (using EJS for rendering) ---
 
 app.get('/', async (req, res) => {
@@ -146,7 +175,13 @@ app.get('/', async (req, res) => {
         const properties = await readServerProperties();
         const worlds = await listWorlds();
         const status = await isProcessRunning(SERVER_EXE_NAME); // Get current server status
-        res.render('index', { properties, worlds, serverStatus: status ? 'running' : 'stopped' });
+        const globalConfig = await readGlobalConfig(); // NEW: Read global config for frontend
+        res.render('index', { 
+            properties, 
+            worlds, 
+            serverStatus: status ? 'running' : 'stopped',
+            globalConfig // NEW: Pass global config to EJS template
+        });
     } catch (error) {
         log('ERROR', `Error rendering index page: ${error.message}`);
         res.status(500).send('Error loading page.');
@@ -157,4 +192,8 @@ app.get('/', async (req, res) => {
 app.listen(PORT, () => {
     log('INFO', `Express frontend server listening on port ${PORT}`);
     console.log(`Open your browser to http://localhost:${PORT}`);
+    // Start the auto-update scheduler when the Express app starts
+    // This will now use the config.json file to determine if auto-update is enabled
+    init(); // Ensure init is called before scheduler starts
+    startAutoUpdateScheduler();
 });

@@ -21,6 +21,9 @@ const WEBHOOK_URL = process.env.MC_UPDATE_WEBHOOK; // Optional webhook URL
 const SERVER_EXE_NAME = os.platform() === 'win32' ? 'bedrock_server.exe' : 'bedrock_server'; // Correct executable name for current OS
 const CONFIG_FILES = ['server.properties', 'permissions.json', 'whitelist.json']; // List of config files to copy from old to new installation (added permissions.json, whitelist.json)
 const WORLD_DIRECTORIES = ['worlds']; // List of world directories to copy from old to new installation
+const GLOBAL_CONFIG_FILE = 'config.json'; // File for global configuration (e.g., auto-update setting)
+
+let autoUpdateIntervalId = null; // To store the interval ID for auto-updates
 
 // Logging setup
 const logStream = fs.createWriteStream('mc_installer.log', { flags: 'a' });
@@ -741,6 +744,82 @@ async function sendWebhookNotification(message) {
     });
 }
 
+/**
+ * Reads the global configuration file.
+ * @returns {Promise<Object>} A promise that resolves with the configuration object.
+ */
+async function readGlobalConfig() {
+    // Determine the config file path relative to the script's directory
+    const configPath = path.join(__dirname, GLOBAL_CONFIG_FILE);
+    if (!fs.existsSync(configPath)) {
+        log('INFO', `Global config file not found at ${configPath}. Creating with default values.`);
+        const defaultConfig = { autoUpdateEnabled: true, autoUpdateIntervalMinutes: 60 }; // Default to true for auto-update
+        await writeGlobalConfig(defaultConfig);
+        return defaultConfig;
+    }
+    try {
+        const data = await fs.promises.readFile(configPath, 'utf8');
+        const config = JSON.parse(data);
+        log('INFO', `Read global config from ${configPath}`);
+        return config;
+    } catch (error) {
+        log('ERROR', `Error reading global config file ${configPath}: ${error.message}. Returning default config.`);
+        const defaultConfig = { autoUpdateEnabled: true, autoUpdateIntervalMinutes: 60 }; // Default to true for auto-update
+        // Attempt to write default config if parsing failed, to prevent continuous errors
+        await writeGlobalConfig(defaultConfig);
+        return defaultConfig;
+    }
+}
+
+/**
+ * Writes the global configuration object to file.
+ * @param {Object} config - The configuration object to write.
+ * @returns {Promise<void>} A promise that resolves when the file is written.
+ */
+async function writeGlobalConfig(config) {
+    // Determine the config file path relative to the script's directory
+    const configPath = path.join(__dirname, GLOBAL_CONFIG_FILE);
+    try {
+        await fs.promises.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
+        log('INFO', `Wrote global config to ${configPath}`);
+    } catch (error) {
+        log('ERROR', `Error writing global config file ${configPath}: ${error.message}`);
+        throw error;
+    }
+}
+
+/**
+ * Starts the automatic update scheduler.
+ * This function will periodically check for and install updates if enabled in the config.
+ */
+async function startAutoUpdateScheduler() {
+    const config = await readGlobalConfig();
+    if (autoUpdateIntervalId) {
+        clearInterval(autoUpdateIntervalId);
+        autoUpdateIntervalId = null;
+        log('INFO', 'Cleared existing auto-update scheduler.');
+    }
+
+    if (config.autoUpdateEnabled && config.autoUpdateIntervalMinutes > 0) {
+        const intervalMs = config.autoUpdateIntervalMinutes * 60 * 1000;
+        log('INFO', `Starting auto-update scheduler to run every ${config.autoUpdateIntervalMinutes} minutes.`);
+        // Run immediately on start, then periodically
+        const initialCheckResult = await checkAndInstall();
+        if (!initialCheckResult.success) {
+            log('ERROR', `Initial auto-update check failed: ${initialCheckResult.message}`);
+        }
+
+        autoUpdateIntervalId = setInterval(async () => {
+            log('INFO', 'Auto-update check initiated by scheduler.');
+            const result = await checkAndInstall();
+            if (!result.success) {
+                log('ERROR', `Auto-update failed: ${result.message}`);
+            }
+        }, intervalMs);
+    } else {
+        log('INFO', 'Auto-update is disabled or interval is invalid. Scheduler not started.');
+    }
+}
 
 // Export functions for use by the Express.js frontend
 module.exports = {
@@ -754,7 +833,7 @@ module.exports = {
     getStoredVersion,
     backupServer,
     copyDir,
-    copyExistingData, // EXPORTED: The new function
+    copyExistingData,
     stopServer,
     startServer,
     checkAndInstall,
@@ -765,6 +844,9 @@ module.exports = {
     activateWorld,
     restartServer,
     isProcessRunning,
+    readGlobalConfig,
+    writeGlobalConfig,
+    startAutoUpdateScheduler, // Export for starting the scheduler
     SERVER_DIRECTORY,
     SERVER_EXE_NAME
 };

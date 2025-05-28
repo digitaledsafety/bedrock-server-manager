@@ -5,281 +5,161 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Minecraft Bedrock Server Manager</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
-        /* Custom styles for form layout */
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #f0f4f8;
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
-            min-height: 100vh;
-            color: #333;
+            background-color: #f0f2f5;
         }
         .container {
-            background-color: #ffffff;
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-            width: 100%;
             max-width: 900px;
-            box-sizing: border-box;
         }
-        h1, h2 {
-            color: #2c3e50;
-            text-align: center;
-            margin-bottom: 20px;
-        }
-        .section {
-            margin-bottom: 30px;
-            padding: 20px;
-            background-color: #ecf0f1;
-            border-radius: 8px;
-        }
-        .section-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-        }
-        .section-header h3 {
-            margin: 0;
-            color: #34495e;
-        }
-        .button-group {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-        button {
-            background-color: #3498db;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 1rem;
-            transition: background-color 0.3s ease, transform 0.2s ease;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-        }
-        button:hover {
-            background-color: #2980b9;
-            transform: translateY(-2px);
-        }
-        button:active {
-            transform: translateY(0);
-            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-        }
-        button:disabled {
-            background-color: #cccccc;
-            cursor: not-allowed;
-            box-shadow: none;
-            transform: none;
+        .card {
+            background-color: #ffffff;
+            border-radius: 0.75rem; /* rounded-xl */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
         .status-indicator {
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px; /* rounded-full */
             font-weight: bold;
-            padding: 5px 10px;
-            border-radius: 5px;
+            color: white;
             display: inline-block;
-            margin-left: 10px;
         }
         .status-running {
-            background-color: #27ae60;
-            color: white;
+            background-color: #10b981; /* green-500 */
         }
         .status-stopped {
-            background-color: #e74c3c;
-            color: white;
+            background-color: #ef4444; /* red-500 */
         }
-        .form-group {
-            margin-bottom: 15px;
+        .message-box {
+            background-color: #d1fae5; /* green-100 */
+            color: #065f46; /* green-800 */
+            border-color: #34d399; /* green-400 */
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            /* Removed fixed positioning, will now flow with parent */
+            display: none; /* Hidden by default */
+        }
+        .error-box {
+            background-color: #fee2e2; /* red-100 */
+            color: #991b1b; /* red-800 */
+            border-color: #f87171; /* red-400 */
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            /* Removed fixed positioning, will now flow with parent */
+            display: none; /* Hidden by default */
         }
         .form-group label {
             display: block;
-            margin-bottom: 5px;
-            font-weight: bold;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: #374151; /* gray-700 */
         }
         .form-group input[type="text"],
-        .form-group input[type="number"],
-        .form-group select {
-            width: calc(100% - 20px);
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            font-size: 1rem;
-            box-sizing: border-box;
-        }
-        .form-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-bottom: 20px;
-        }
-        .message-box {
-            background-color: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-            padding: 10px;
-            border-radius: 5px;
-            margin-top: 20px;
-            text-align: center;
-            font-weight: bold;
-        }
-        .error-box {
-            background-color: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-            padding: 10px;
-            border-radius: 5px;
-            margin-top: 20px;
-            text-align: center;
-            font-weight: bold;
-        }
-        .world-select-container {
-            margin-top: 15px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .world-select-container select {
-            flex-grow: 1;
-        }
-        .world-list {
-            list-style: none;
-            padding: 0;
-            max-height: 200px;
-            overflow-y: auto;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            background-color: #fff;
+        .form-group input[type="number"] {
+            width: 100%;
+            padding: 0.625rem;
+            border: 1px solid #d1d5db; /* gray-300 */
+            border-radius: 0.375rem; /* rounded-md */
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
         }
         .world-item {
-            padding: 8px 12px;
-            border-bottom: 1px solid #eee;
-            cursor: pointer;
-            transition: background-color 0.2s ease;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #e5e7eb; /* gray-200 */
         }
         .world-item:last-child {
             border-bottom: none;
         }
-        .world-item:hover {
-            background-color: #e9ecef;
-        }
         .world-item.active {
-            background-color: #a7d9f8;
+            background-color: #eff6ff; /* blue-50 */
             font-weight: bold;
         }
-        @media (max-width: 768px) {
-            .form-grid {
-                grid-template-columns: 1fr;
-            }
+        /* Style for sticky header */
+        .sticky-header {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background-color: #ffffff; /* Ensure background is white when sticky */
+            padding-top: 1.5rem; /* Add some padding to match original top padding */
+            padding-bottom: 1.5rem; /* Add some padding to match original bottom padding */
+            margin-bottom: 0 !important; /* Remove bottom margin when sticky */
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05); /* Optional: subtle shadow for sticky effect */
+        }
+        /* Adjust padding for body to prevent content being hidden by sticky elements */
+        body {
+            padding-top: 5rem; /* Adjust based on the height of your sticky elements */
         }
     </style>
 </head>
-<body>
-    <div class="container">
-        <h1 class="text-3xl font-bold text-center text-gray-800 mb-6">Minecraft Bedrock Server Manager</h1>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center py-10">
+    <div class="container mx-auto p-6 bg-white rounded-xl shadow-lg">
+        <h1 class="text-3xl font-bold text-center text-gray-800 mb-8">
+            <img src="/favicon.ico" alt="Minecraft Grass Block" class="inline-block align-middle mr-2 rounded-md">
+            Minecraft Bedrock Server Manager
+        </h1>
 
-        <div class="flex justify-center mb-6">
-            <img src="https://minecraft.wiki/images/Grass_Block_JE4.png" alt="Minecraft Grass Block" class="w-32 h-32 object-contain">
-        </div>
-
-        <div id="messageBox" style="display: none;"></div>
-
-        <div class="section">
-            <div class="section-header">
-                <h3>Server Control</h3>
-                <div>
-                    Server Status: <span id="serverStatus" class="status-<%= serverStatus %>"><%= serverStatus.toUpperCase() %></span>
-                </div>
-            </div>
-            <div class="button-group">
-                <button id="startButton">Start Server</button>
-                <button id="stopButton">Stop Server</button>
-                <button id="restartButton">Restart Server</button>
-                <button id="updateButton">Check & Install Update</button>
+        <div class="card p-6 mb-8 sticky-header">
+            <div id="messageBox" class="message-box" role="alert"></div>
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Server Status</h2>
+            <p class="text-lg text-gray-600 mb-4">Current Status: <span id="serverStatus" class="status-indicator status-<%= serverStatus %>"><%= serverStatus.toUpperCase() %></span></p>
+            <div class="flex flex-wrap gap-4">
+                <button id="startButton" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">Start Server</button>
+                <button id="stopButton" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">Stop Server</button>
+                <button id="restartButton" class="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">Restart Server</button>
+                <button id="updateButton" class="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">Check & Install Update</button>
             </div>
         </div>
 
-        <div class="section">
-            <h3>Server Properties</h3>
-            <form id="propertiesForm" class="form-grid">
-                <% for (const key in properties) { %>
-                    <div class="form-group">
-                        <label for="<%= key %>"><%= key.replace(/-/g, ' ').replace(/\b\w/g, char => char.toUpperCase()) %>:</label>
-                        <%
-                            const value = properties[key];
-                            // Determine input type or select based on property key
-                            if (key === 'level-name') {
-                        %>
-                                <input type="text" id="<%= key %>" name="<%= key %>" value="<%= value %>" class="block w-full">
-                        <%
-                            } else if (['view-distance', 'tick-distance', 'max-players', 'server-port', 'server-portv6', 'compression-threshold', 'player-idle-timeout'].includes(key)) {
-                        %>
-                                <input type="number" id="<%= key %>" name="<%= key %>" value="<%= value %>" class="block w-full">
-                        <%
-                            } else if (['allow-cheats', 'force-gamemode', 'texturepack-required', 'content-log-level', 'enable-lan-discovery', 'enable-console-filter', 'enable-raytracing'].includes(key)) {
-                                // For boolean options
-                        %>
-                                <select id="<%= key %>" name="<%= key %>" class="block w-full">
-                                    <option value="true" <%= value === 'true' ? 'selected' : '' %>>true</option>
-                                    <option value="false" <%= value === 'false' ? 'selected' : '' %>>false</option>
-                                </select>
-                        <%
-                            } else if (key === 'level-type') {
-                        %>
-                                <select id="<%= key %>" name="<%= key %>" class="block w-full">
-                                    <option value="FLAT" <%= value === 'FLAT' ? 'selected' : '' %>>FLAT</option>
-                                    <option value="LEGACY" <%= value === 'LEGACY' ? 'selected' : '' %>>LEGACY</option>
-                                    <option value="DEFAULT" <%= value === 'DEFAULT' ? 'selected' : '' %>>DEFAULT</option>
-                                </select>
-                        <%
-                            } else if (key === 'gamemode') {
-                        %>
-                                <select id="<%= key %>" name="<%= key %>" class="block w-full">
-                                    <option value="survival" <%= value === 'survival' ? 'selected' : '' %>>survival</option>
-                                    <option value="creative" <%= value === 'creative' ? 'selected' : '' %>>creative</option>
-                                    <option value="adventure" <%= value === 'adventure' ? 'selected' : '' %>>adventure</option>
-                                </select>
-                        <%
-                            } else {
-                        %>
-                                <input type="text" id="<%= key %>" name="<%= key %>" value="<%= value %>" class="block w-full">
-                        <%
-                            }
-                        %>
-                    </div>
-                <% } %>
-                <div class="form-group col-span-full"> <button type="submit" id="savePropertiesButton" class="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded w-full transition duration-300">Save Properties</button>
+        <div class="card p-6 mb-8">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Auto-Update Configuration</h2>
+            <form id="autoUpdateConfigForm" class="space-y-4">
+                <div class="flex items-center">
+                    <input type="checkbox" id="autoUpdateEnabled" name="autoUpdateEnabled" class="h-5 w-5 text-blue-600 rounded" <%= globalConfig.autoUpdateEnabled ? 'checked' : '' %>>
+                    <label for="autoUpdateEnabled" class="ml-2 text-gray-700">Enable Automatic Updates</label>
                 </div>
+                <div class="form-group">
+                    <label for="autoUpdateIntervalMinutes">Update Check Interval (minutes):</label>
+                    <input type="number" id="autoUpdateIntervalMinutes" name="autoUpdateIntervalMinutes" value="<%= globalConfig.autoUpdateIntervalMinutes %>" min="1" class="w-full">
+                </div>
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">Save Auto-Update Settings</button>
             </form>
-            <div id="properties-message" class="message-box" style="display: none;"></div>
         </div>
 
-        <div class="section">
-            <h3>World Management</h3>
-            <div class="world-list bg-gray-50 p-4 rounded-md border border-gray-200">
+        <div class="card p-6 mb-8">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">World Management</h2>
+            <div class="world-list border border-gray-200 rounded-lg overflow-hidden mb-4">
                 <% if (worlds && worlds.length > 0) { %>
                     <% worlds.forEach(world => { %>
                         <div class="world-item <%= properties['level-name'] === world ? 'active' : '' %>" data-world-name="<%= world %>">
-                            <span><%= world %></span>
-                            <button class="activate-world-button bg-blue-500 hover:bg-blue-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="<%= world %>">
+                            <span class="text-gray-800"><%= world %></span>
+                            <button class="activate-world-button bg-blue-500 hover:bg-blue-700 text-white text-sm py-1 px-3 rounded transition duration-300">
                                 Activate
                             </button>
                         </div>
                     <% }); %>
                 <% } else { %>
-                    <p class="text-gray-600">No worlds found. Start the server to generate a default world.</p>
+                    <p class="text-gray-600 p-4">No worlds found. Start the server to generate a default world.</p>
                 <% } %>
             </div>
-            <p class="text-gray-600 text-sm mt-2">To create a new world, change the "level-name" in Server Properties to a new name and save. A new world will be generated on server start.</p>
-            <div id="worlds-message" class="message-box" style="display: none;"></div>
+            <p class="text-sm text-gray-500">To activate a world, click 'Activate' next to its name. This will update the 'level-name' property. Remember to click "Save Properties" to apply the change.</p>
+        </div>
+
+        <div class="card p-6 mb-8">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Server Properties</h2>
+            <form id="propertiesForm" class="space-y-4">
+                <% for (const key in properties) { %>
+                    <div class="form-group">
+                        <label for="<%= key %>" class="capitalize"><%= key.replace(/-/g, ' ') %>:</label>
+                        <input type="text" id="<%= key %>" name="<%= key %>" value="<%= properties[key] %>" class="w-full">
+                    </div>
+                <% } %>
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">Save Properties</button>
+            </form>
         </div>
     </div>
 
