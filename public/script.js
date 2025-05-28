@@ -280,7 +280,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadAutoUpdateConfig(); // New: Load auto-update config on page load
 
     // Refresh status and worlds periodically
-    //setInterval(fetchServerStatus, 10000); // Every 10 seconds
-    //setInterval(loadWorlds, 30000); // Every 30 seconds
+    setInterval(fetchServerStatus, 10000); // Every 10 seconds
+    setInterval(loadWorlds, 30000); // Every 30 seconds
 
 });
