@@ -2,6 +2,8 @@
 
 Hey there! This app is super handy for looking after your Minecraft Bedrock Dedicated Server. You can fire it up, shut it down, restart it, grab updates, tweak settings, sort out your worlds, and even set up automatic updates! How cool is that?!
 
+**Just so you know: This is a fan-made tool! It's not officially linked to or endorsed by Mojang, Minecraft, or Microsoft.**
+
 ---
 
 ## What's Inside?
