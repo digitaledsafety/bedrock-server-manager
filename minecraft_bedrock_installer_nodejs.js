@@ -36,11 +36,13 @@ const LOG_LEVELS = { DEBUG: 0, INFO: 1, WARNING: 2, ERROR: 3, FATAL: 4 };
 let currentLogLevel = LOG_LEVELS.INFO;
 
 function setLogLevel(levelName) {
-    const newLevel = LOG_LEVELS[(levelName || "INFO").toUpperCase()];
+    const levelNameToUse = (levelName || "INFO").toUpperCase();
+    const newLevel = LOG_LEVELS[levelNameToUse];
     if (newLevel !== undefined) {
         currentLogLevel = newLevel;
-        if (messageLevel >= currentLogLevel) { // Check if this log message itself should be printed
-            const initialLogMessage = `${new Date().toISOString()} [INFO] Log level set to ${(levelName || "INFO").toUpperCase()}\n`;
+        // Log this message only if the new level allows INFO messages
+        if (LOG_LEVELS.INFO >= currentLogLevel) {
+            const initialLogMessage = `${new Date().toISOString()} [INFO] Log level set to ${levelNameToUse}\n`;
             console.log(initialLogMessage);
             logStream.write(initialLogMessage);
         }
@@ -107,7 +109,7 @@ async function getLatestVersion() {
                     const linkMatch = htmlContent.match(linkRegex);
                     if (linkMatch && linkMatch[1]) {
                         const downloadUrl = linkMatch[1];
-                        log('INFO', `Download URL found: ${downloadUrl}`);
+                        log('DEBUG', `Download URL found: ${downloadUrl}`); // DEBUG as it's verbose
                         const versionMatch = downloadUrl.match(VERSION_REGEX);
                         if (versionMatch && versionMatch[1]) {
                             resolve(versionMatch[1].trim());
@@ -150,7 +152,7 @@ function downloadFile(downloadUrl, downloadPath) {
     });
 }
 
-function extractFiles(zipPath, extractPath) { // Removed instanceIdForLogging
+function extractFiles(zipPath, extractPath) {
     return new Promise((resolve, reject) => {
         const platform = os.platform();
         let childProcess;
@@ -170,7 +172,7 @@ function extractFiles(zipPath, extractPath) { // Removed instanceIdForLogging
         childProcess.stdout.on('data', (data) => { stdoutData += data.toString(); });
         childProcess.stderr.on('data', (data) => { stderrData += data.toString(); });
         childProcess.on('close', (code) => {
-            log('INFO', `Extraction stdout: ${stdoutData}`);
+            log('DEBUG', `Extraction stdout: ${stdoutData}`); // DEBUG as it can be verbose
             if (stderrData) { log('ERROR', `Extraction stderr: ${stderrData}`); }
             if (code === 0) {
                 log('INFO', `Extraction completed successfully for ${zipPath} to ${extractPath}.`);
@@ -186,7 +188,7 @@ function extractFiles(zipPath, extractPath) { // Removed instanceIdForLogging
     });
 }
 
-async function changeOwnership(dirPath, user, group) { // Removed instanceIdForLogging
+async function changeOwnership(dirPath, user, group) {
     if (os.platform() === 'win32') {
         log('INFO', `Skipping changeOwnership on Windows.`);
         return;
@@ -204,7 +206,7 @@ async function changeOwnership(dirPath, user, group) { // Removed instanceIdForL
         childProcess.stderr.on('data', (data) => stderrData += data.toString());
         return new Promise((resolve, reject) => {
             childProcess.on('close', (code) => {
-                if (stdoutData) log('INFO', `chown stdout: ${stdoutData}`);
+                if (stdoutData) log('DEBUG', `chown stdout: ${stdoutData}`); // DEBUG as it can be verbose
                 if (stderrData) log('ERROR', `chown stderr: ${stderrData}`);
                 if (code === 0) {
                     log('INFO', `Changed ownership of ${dirPath} to ${user}:${group} successfully.`);
@@ -226,7 +228,7 @@ async function changeOwnership(dirPath, user, group) { // Removed instanceIdForL
 
 function storeLatestVersion(version) {
     try {
-        fs.writeFileSync(LAST_VERSION_FILE, version);
+        fs.writeFileSync(LAST_VERSION_FILE, version); // This file is in the app root, not server specific
         log('INFO', `Stored latest version: ${version}`);
     } catch (error) {
         log('ERROR', `Error storing version to file: ${error.message}`);
@@ -250,7 +252,7 @@ function getStoredVersion() {
 }
 
 async function backupServer() {
-    if (!SERVER_DIRECTORY || !fs.existsSync(SERVER_DIRECTORY)) { // Check SERVER_DIRECTORY is defined
+    if (!SERVER_DIRECTORY || !fs.existsSync(SERVER_DIRECTORY)) {
         log('INFO', `Server directory not found or not set. Skipping backup.`);
         return null;
     }
@@ -398,8 +400,8 @@ async function checkAndInstall() {
             try { await sendWebhookNotification(`New Minecraft Bedrock Server version ${latestVersion} is available! Server going down for update...`); }
             catch (error) { log('ERROR', `Failed to send webhook notification: ${error}`);}
         }
-        await stopServer(); // Simplified
-        const backupDir = await backupServer(); // Uses global paths
+        await stopServer();
+        const backupDir = await backupServer();
         if (backupDir) { log('INFO', `Server backed up to: ${backupDir}`); }
         if (fs.existsSync(tempInstallPath)) {
             log('INFO', `Version ${latestVersion} already exists in temporary directory: ${tempInstallPath}. Skipping download and extraction.`);
@@ -410,12 +412,12 @@ async function checkAndInstall() {
             await downloadFile(downloadUrl, downloadPath);
             log('INFO', 'Download complete.');
             log('INFO', `Extracting files to ${tempInstallPath}`);
-            await extractFiles(downloadPath, tempInstallPath); // Simplified call
+            await extractFiles(downloadPath, tempInstallPath);
             fs.unlinkSync(downloadPath);
             log('INFO', 'Extraction complete.');
         }
         if (fs.existsSync(SERVER_DIRECTORY)) {
-            await removeDir(SERVER_DIRECTORY); // Simplified call
+            await removeDir(SERVER_DIRECTORY);
             log('INFO', `Removed existing server directory ${SERVER_DIRECTORY}`);
         }
         fs.renameSync(tempInstallPath, SERVER_DIRECTORY);
@@ -426,13 +428,13 @@ async function checkAndInstall() {
         }
         storeLatestVersion(latestVersion);
         log('INFO', `Successfully installed/updated to version ${latestVersion}`);
-        await changeOwnership(SERVER_DIRECTORY, MC_USER, MC_GROUP); // Simplified call
+        await changeOwnership(SERVER_DIRECTORY, MC_USER, MC_GROUP);
         log('INFO', `Changed ownership to ${MC_USER}:${MC_GROUP} (if applicable).`);
         if (WEBHOOK_URL) {
             try { await sendWebhookNotification(`Minecraft Bedrock Server updated to version ${latestVersion}! Server restarting...`); }
             catch (error) { log('ERROR', `Failed to send webhook notification: ${error}`);}
         }
-        await startServer(); // Simplified
+        await startServer();
         log('INFO', 'Update process complete. Server should be starting.');
         return { success: true, message: `Server updated to version ${latestVersion}.` };
     } catch (error) {
@@ -475,7 +477,7 @@ async function removeDir(dirPath) { // Removed instanceIdForLogging
         childProcess.stdout.on('data', (data) => stdoutData += data.toString());
         childProcess.stderr.on('data', (data) => stderrData += data.toString());
         childProcess.on('close', (code) => {
-            if (stdoutData) log('INFO', `removeDir stdout: ${stdoutData}`);
+            if (stdoutData) log('DEBUG', `removeDir stdout: ${stdoutData}`); // DEBUG for potentially verbose output
             if (stderrData) log('ERROR', `removeDir stderr: ${stderrData}`);
             if (code === 0) {
                 log('INFO', `Successfully removed directory using spawn: ${dirPath}`);
