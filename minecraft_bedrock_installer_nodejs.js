@@ -11,96 +11,103 @@ const os = require('os');
 // Configuration
 const MC_BEDROCK_URL = 'https://www.minecraft.net/en-us/download/server/bedrock';
 const VERSION_REGEX = /bedrock-server-([\d\.]+)\.zip/;
-let SERVER_DIRECTORY; // Installation directory (where the active server files reside)
-let TEMP_DIRECTORY;  // Temporary directory for new versions downloads and extractions
-let BACKUP_DIRECTORY;    // Backup directory for old server installations
-const MC_USER = 'minecraft'; // User to own the server files (Linux only)
-const MC_GROUP = 'minecraft'; // Group to own the server files (Linux only)
-const LAST_VERSION_FILE = 'last_version.txt'; // File to store the last known version
-const WEBHOOK_URL = process.env.MC_UPDATE_WEBHOOK; // Optional webhook URL
-const SERVER_EXE_NAME = os.platform() === 'win32' ? 'bedrock_server.exe' : 'bedrock_server'; // Correct executable name for current OS
-const CONFIG_FILES = ['server.properties', 'permissions.json', 'whitelist.json']; // List of config files to copy from old to new installation (added permissions.json, whitelist.json)
-const WORLD_DIRECTORIES = ['worlds']; // List of world directories to copy from old to new installation
-const GLOBAL_CONFIG_FILE = 'config.json'; // File for global configuration (e.g., auto-update setting)
 
-let autoUpdateIntervalId = null; // To store the interval ID for auto-updates
+// Globals populated by readGlobalConfig and init
+let config = {};
+let SERVER_DIRECTORY;
+let TEMP_DIRECTORY;
+let BACKUP_DIRECTORY;
+let serverPID = null;
+
+const MC_USER = 'minecraft';
+const MC_GROUP = 'minecraft';
+const LAST_VERSION_FILE = 'last_version.txt';
+const WEBHOOK_URL = process.env.MC_UPDATE_WEBHOOK;
+const SERVER_EXE_NAME = os.platform() === 'win32' ? 'bedrock_server.exe' : 'bedrock_server';
+const CONFIG_FILES = ['server.properties', 'permissions.json', 'whitelist.json'];
+const WORLD_DIRECTORIES = ['worlds'];
+const GLOBAL_CONFIG_FILE = 'config.json';
+
+let autoUpdateIntervalId = null;
 
 // Logging setup
 const logStream = fs.createWriteStream('mc_installer.log', { flags: 'a' });
+const LOG_LEVELS = { DEBUG: 0, INFO: 1, WARNING: 2, ERROR: 3, FATAL: 4 };
+let currentLogLevel = LOG_LEVELS.INFO;
+
+function setLogLevel(levelName) {
+    const newLevel = LOG_LEVELS[(levelName || "INFO").toUpperCase()];
+    if (newLevel !== undefined) {
+        currentLogLevel = newLevel;
+        if (messageLevel >= currentLogLevel) { // Check if this log message itself should be printed
+            const initialLogMessage = `${new Date().toISOString()} [INFO] Log level set to ${(levelName || "INFO").toUpperCase()}\n`;
+            console.log(initialLogMessage);
+            logStream.write(initialLogMessage);
+        }
+    } else {
+        const warningMessage = `${new Date().toISOString()} [WARNING] Invalid log level: ${levelName}. Defaulting to INFO.\n`;
+        console.warn(warningMessage);
+        logStream.write(warningMessage);
+        currentLogLevel = LOG_LEVELS.INFO;
+    }
+}
+
 function log(level, message) {
-    const timestamp = new Date().toISOString();
-    const logMessage = `${timestamp} [${level}] ${message}\n`;
-    console.log(logMessage);
-    logStream.write(logMessage);
+    const messageLevel = LOG_LEVELS[level.toUpperCase()];
+    if (messageLevel === undefined) {
+        console.warn(`Invalid log level used in log() call: ${level}`);
+        return;
+    }
+    if (messageLevel >= currentLogLevel) {
+        const timestamp = new Date().toISOString();
+        const logMessage = `${timestamp} [${level.toUpperCase()}] ${message}\n`;
+        console.log(logMessage);
+        logStream.write(logMessage);
+    }
 }
 
-/**
- * Initializes the path variables based on the operating system and creates necessary directories.
- */
-function init() {
-    const platform = os.platform();
-    log('INFO', `Detected platform: ${platform}`);
-
-    if (platform === 'win32') {
-        // For Windows, paths are typically C:\MinecraftBedrockServer\server, etc.
-        const baseDir = path.join('C:', 'MinecraftBedrockServer');
-        SERVER_DIRECTORY = path.join(baseDir, 'server');
-        TEMP_DIRECTORY = path.join(baseDir, 'tmp');
-        BACKUP_DIRECTORY = path.join(baseDir, 'backup');
-    } else {
-        // For Linux, paths are typically /opt/bedrock/server, etc.
-        const baseDir = '/opt/bedrock';
-        SERVER_DIRECTORY = path.join(baseDir, 'server');
-        TEMP_DIRECTORY = path.join(baseDir, 'tmp');
-        BACKUP_DIRECTORY = path.join(baseDir, 'backup');
-    }
-
-    // Create directories if they don't exist
-    [SERVER_DIRECTORY, TEMP_DIRECTORY, BACKUP_DIRECTORY].forEach(dir => {
-        if (!fs.existsSync(dir)) {
-            try {
-                fs.mkdirSync(dir, { recursive: true });
-                log('INFO', `Created directory: ${dir}`);
-            } catch (e) {
-                log('ERROR', `Failed to create directory ${dir}: ${e.message}. Installation will likely fail.`);
-            }
-        }
-    });
+function init(effectiveConfigFromRead) {
+    config = effectiveConfigFromRead;
+    setLogLevel(config.logLevel || "INFO");
+    log('INFO', `Initializing with configuration: ${JSON.stringify(config, null, 2)}`);
+    SERVER_DIRECTORY = config.serverDirectory;
+    TEMP_DIRECTORY = config.tempDirectory;
+    BACKUP_DIRECTORY = config.backupDirectory;
+    log('INFO', `Using Server Directory: ${SERVER_DIRECTORY}`);
+    log('INFO', `Using Temp Directory: ${TEMP_DIRECTORY}`);
+    log('INFO', `Using Backup Directory: ${BACKUP_DIRECTORY}`);
+    const dirsToCreate = [SERVER_DIRECTORY, TEMP_DIRECTORY, BACKUP_DIRECTORY];
+    for (const dir of dirsToCreate) {
+        if (!fs.existsSync(dir)) {
+            try {
+                fs.mkdirSync(dir, { recursive: true });
+                log('INFO', `Created directory: ${dir}`);
+            } catch (e) {
+                log('ERROR', `Failed to create directory ${dir}: ${e.message}.`);
+            }
+        }
+    }
 }
 
-// Initialize paths and directories when the module is loaded
-init();
-
-/**
- * Gets the latest Minecraft Bedrock server version from the download page.
- * @returns {Promise<string|null>} A promise that resolves with the latest version string, or null if not found.
- */
 async function getLatestVersion() {
     return new Promise((resolve, reject) => {
         const url = new URL(MC_BEDROCK_URL);
         const protocol = url.protocol === 'https:' ? https : http;
-
         protocol.get(url, (res) => {
             if (res.statusCode < 200 || res.statusCode >= 300) {
                 reject(new Error(`HTTP error! Status code: ${res.statusCode}`));
                 return;
             }
-
             let data = '';
-            res.on('data', (chunk) => {
-                data += chunk;
-            });
-
+            res.on('data', (chunk) => { data += chunk; });
             res.on('end', () => {
                 try {
                     const htmlContent = data;
                     const linkRegex = /<a\s+[^>]*?href="([^"]*?bedrock-server[^"]*?)"[^>]*?>/i;
                     const linkMatch = htmlContent.match(linkRegex);
-
                     if (linkMatch && linkMatch[1]) {
                         const downloadUrl = linkMatch[1];
                         log('INFO', `Download URL found: ${downloadUrl}`);
-
                         const versionMatch = downloadUrl.match(VERSION_REGEX);
                         if (versionMatch && versionMatch[1]) {
                             resolve(versionMatch[1].trim());
@@ -117,7 +124,6 @@ async function getLatestVersion() {
                     reject(error);
                 }
             });
-
             res.on('error', (err) => {
                 log('ERROR', `Error fetching data: ${err.message}`);
                 reject(err);
@@ -126,97 +132,98 @@ async function getLatestVersion() {
     });
 }
 
-/**
- * Downloads a file from a given URL to a specified path.
- * @param {string} downloadUrl - The URL of the file to download.
- * @param {string} downloadPath - The full path where the file should be saved.
- * @returns {Promise<void>} A promise that resolves when the download is complete.
- */
 function downloadFile(downloadUrl, downloadPath) {
     return new Promise((resolve, reject) => {
         const url = new URL(downloadUrl);
         const protocol = url.protocol === 'https:' ? https : http;
         const file = fs.createWriteStream(downloadPath);
-
         protocol.get(url, (response) => {
             if (response.statusCode < 200 || response.statusCode >= 300) {
                 reject(new Error(`Failed to download file: ${response.statusCode} ${response.statusMessage}`));
                 return;
             }
             response.pipe(file);
-            file.on('finish', () => {
-                file.close(() => {
-                    resolve();
-                });
-            });
-            file.on('error', (err) => {
-                fs.unlink(downloadPath, () => { // Delete the file if error occurs
-                    reject(new Error(`Error writing to file: ${err.message}`));
-                });
-            });
-            response.on('error', (err) => {
-                fs.unlink(downloadPath, () => {
-                    reject(new Error(`Error during download: ${err.message}`));
-                });
-            });
+            file.on('finish', () => { file.close(resolve); });
+            file.on('error', (err) => { fs.unlink(downloadPath, () => reject(new Error(`Error writing to file: ${err.message}`))); });
+            response.on('error', (err) => { fs.unlink(downloadPath, () => reject(new Error(`Error during download: ${err.message}`))); });
         });
     });
 }
 
-/**
- * Extracts a zip file to a specified directory.
- * @param {string} zipPath - The path to the zip file.
- * @param {string} extractPath - The directory where the contents should be extracted.
- * @returns {Promise<void>} A promise that resolves when extraction is complete.
- */
-function extractFiles(zipPath, extractPath) {
+function extractFiles(zipPath, extractPath) { // Removed instanceIdForLogging
     return new Promise((resolve, reject) => {
         const platform = os.platform();
-        let command = '';
+        let childProcess;
         if (platform === 'win32') {
             const psPath = path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-            // Use Expand-Archive cmdlet for extraction on Windows
-            command = `${psPath} -Command "& {&'Expand-Archive' -Path '${zipPath}' -DestinationPath '${extractPath}' -Force}"`;
-            log('INFO', `Using PowerShell for extraction: ${command}`);
+            const commandArgs = [
+                '-NoProfile', '-NonInteractive', '-Command',
+                `Expand-Archive -Path '${zipPath.replace(/'/g, "''")}' -DestinationPath '${extractPath.replace(/'/g, "''")}' -Force`
+            ];
+            log('INFO', `Using PowerShell for extraction: ${psPath} ${commandArgs.join(' ')}`);
+            childProcess = spawn(psPath, commandArgs, { stdio: 'pipe' });
         } else {
-            // Use unzip command for extraction on Linux
-            command = `unzip -o "${zipPath}" -d "${extractPath}"`; // -o for overwrite
+            log('INFO', `Using unzip for extraction. Command: unzip -o "${zipPath}" -d "${extractPath}"`);
+            childProcess = spawn('unzip', ['-o', zipPath, '-d', extractPath], { stdio: 'pipe' });
         }
-        exec(command, (error, stdout, stderr) => {
-            log('INFO', `Extracting... ${stdout}`);
-            if (error) {
-                reject(new Error(`Extraction failed: ${error.message} ${stderr}`));
-                return;
+        let stdoutData = ''; let stderrData = '';
+        childProcess.stdout.on('data', (data) => { stdoutData += data.toString(); });
+        childProcess.stderr.on('data', (data) => { stderrData += data.toString(); });
+        childProcess.on('close', (code) => {
+            log('INFO', `Extraction stdout: ${stdoutData}`);
+            if (stderrData) { log('ERROR', `Extraction stderr: ${stderrData}`); }
+            if (code === 0) {
+                log('INFO', `Extraction completed successfully for ${zipPath} to ${extractPath}.`);
+                resolve();
+            } else {
+                reject(new Error(`Extraction failed with code ${code} for ${zipPath}. Stderr: ${stderrData}`));
             }
-            resolve();
         });
+        childProcess.on('error', (error) => {
+            log('ERROR', `Failed to start extraction process for ${zipPath}: ${error.message}`);
+            reject(new Error(`Failed to start extraction process: ${error.message}`));
+        });
     });
 }
 
-/**
- * Recursively changes ownership of files and directories (Linux only).
- * @param {string} dirPath - The path to the directory.
- * @param {string} user - The user to set as owner.
- * @param {string} group - The group to set as owner.
- * @returns {Promise<void>} A promise that resolves when ownership is changed.
- */
-async function changeOwnership(dirPath, user, group) {
+async function changeOwnership(dirPath, user, group) { // Removed instanceIdForLogging
     if (os.platform() === 'win32') {
         log('INFO', `Skipping changeOwnership on Windows.`);
-        return; // Do nothing on Windows
+        return;
     }
+    const validBasePaths = [SERVER_DIRECTORY, BACKUP_DIRECTORY];
+    if (!validBasePaths.some(base => dirPath.startsWith(base))) {
+        log('ERROR', `changeOwnership attempted on restricted path: ${dirPath}. Expected to be within ${validBasePaths.join(' or ')}.`);
+        throw new Error(`Invalid path for changeOwnership: ${dirPath}. Operation aborted for security.`);
+    }
     try {
-        await execPromise(`chown -R ${user}:${group} "${dirPath}"`);
-        log('INFO', `Changed ownership of ${dirPath} to ${user}:${group}`);
+        log('INFO', `Attempting to change ownership of ${dirPath} to ${user}:${group}`);
+        const childProcess = spawn('chown', ['-R', `${user}:${group}`, dirPath], { stdio: 'pipe' });
+        let stdoutData = ''; let stderrData = '';
+        childProcess.stdout.on('data', (data) => stdoutData += data.toString());
+        childProcess.stderr.on('data', (data) => stderrData += data.toString());
+        return new Promise((resolve, reject) => {
+            childProcess.on('close', (code) => {
+                if (stdoutData) log('INFO', `chown stdout: ${stdoutData}`);
+                if (stderrData) log('ERROR', `chown stderr: ${stderrData}`);
+                if (code === 0) {
+                    log('INFO', `Changed ownership of ${dirPath} to ${user}:${group} successfully.`);
+                    resolve();
+                } else {
+                    reject(new Error(`chown failed with code ${code} for ${dirPath}. Stderr: ${stderrData}`));
+                }
+            });
+            childProcess.on('error', (error) => {
+                log('ERROR', `Failed to start chown process for ${dirPath}: ${error.message}`);
+                reject(new Error(`Failed to start chown process: ${error.message}`));
+            });
+        });
     } catch (error) {
-        throw new Error(`Failed to chown ${dirPath}: ${error.message}`);
+        log('ERROR', `Error during changeOwnership setup for ${dirPath}: ${error.message}`);
+        throw error;
     }
 }
 
-/**
- * Stores the latest Minecraft Bedrock server version in a file.
- * @param {string} version - The version string to store.
- */
 function storeLatestVersion(version) {
     try {
         fs.writeFileSync(LAST_VERSION_FILE, version);
@@ -226,10 +233,6 @@ function storeLatestVersion(version) {
     }
 }
 
-/**
- * Retrieves the last stored Minecraft Bedrock server version from a file.
- * @returns {string|null} The stored version string, or null if not found.
- */
 function getStoredVersion() {
     try {
         if (fs.existsSync(LAST_VERSION_FILE)) {
@@ -246,52 +249,36 @@ function getStoredVersion() {
     }
 }
 
-/**
- * Backs up the current server data to a timestamped directory.
- * @returns {Promise<string>} A promise that resolves with the path to the backup directory.
- */
 async function backupServer() {
-    // Check if SERVER_DIRECTORY exists before attempting backup
-    if (!fs.existsSync(SERVER_DIRECTORY)) {
-        log('INFO', `No existing server directory found at ${SERVER_DIRECTORY}. Skipping backup.`);
-        return null; // Return null if nothing to backup
+    if (!SERVER_DIRECTORY || !fs.existsSync(SERVER_DIRECTORY)) { // Check SERVER_DIRECTORY is defined
+        log('INFO', `Server directory not found or not set. Skipping backup.`);
+        return null;
     }
-
     const backupDir = path.join(BACKUP_DIRECTORY, new Date().toISOString().replace(/:/g, '-').replace(/\./g, '_'));
     fs.mkdirSync(backupDir, { recursive: true });
     log('INFO', `Creating backup in ${backupDir}`);
-
     try {
         await copyDir(SERVER_DIRECTORY, backupDir);
         if (os.platform() !== 'win32') {
-            await changeOwnership(backupDir, MC_USER, MC_GROUP);  // Ensure correct ownership of backup
+            await changeOwnership(backupDir, MC_USER, MC_GROUP);
         }
         log('INFO', `Backup complete in ${backupDir}`);
-        return backupDir; // Return the backup directory path
+        return backupDir;
     } catch (error) {
         log('ERROR', `Error during backup: ${error}`);
-        // Clean up backup dir on error, but only if it was created during this attempt
         if (fs.existsSync(backupDir)) {
-            await removeDir(backupDir); // Use removeDir for cleanup
+            await removeDir(backupDir);
         }
-        throw error; // Re-throw the error to be handled in checkAndInstall
+        throw error;
     }
 }
 
-/**
- * Copies a directory recursively.
- * @param {string} src - The source directory.
- * @param {string} dest - The destination directory.
- * @returns {Promise<void>} A promise that resolves when copying is complete.
- */
 async function copyDir(src, dest) {
     fs.mkdirSync(dest, { recursive: true });
     const entries = fs.readdirSync(src, { withFileTypes: true });
-
     for (const entry of entries) {
         const srcPath = path.join(src, entry.name);
         const destPath = path.join(dest, entry.name);
-
         if (entry.isDirectory()) {
             await copyDir(srcPath, destPath);
         } else {
@@ -300,29 +287,18 @@ async function copyDir(src, dest) {
     }
 }
 
-/**
- * Copies essential existing server data (worlds, config files) from a backup to the new installation.
- * @param {string} backupDir - The path to the backup directory.
- * @param {string} newInstallDir - The path to the new server installation directory.
- * @returns {Promise<void>} A promise that resolves when copying is complete.
- */
 async function copyExistingData(backupDir, newInstallDir) {
     log('INFO', `Copying existing data from ${backupDir} to ${newInstallDir}`);
-
-    // Copy world directories
     for (const worldDir of WORLD_DIRECTORIES) {
         const srcPath = path.join(backupDir, worldDir);
         const destPath = path.join(newInstallDir, worldDir);
         if (fs.existsSync(srcPath)) {
             log('INFO', `Copying world directory: ${worldDir}`);
-            await copyDir(srcPath, destPath); // Use copyDir to recursively copy
+            await copyDir(srcPath, destPath);
         } else {
             log('WARNING', `Backup world directory not found: ${srcPath}`);
         }
     }
-
-    // Copy config files (e.g., server.properties, permissions.json, whitelist.json)
-    // CONFIG_FILES already includes server.properties, permissions.json, whitelist.json
     for (const file of CONFIG_FILES) {
         const srcPath = path.join(backupDir, file);
         const destPath = path.join(newInstallDir, file);
@@ -336,270 +312,217 @@ async function copyExistingData(backupDir, newInstallDir) {
     log('INFO', 'Finished copying existing data.');
 }
 
-/**
- * Stops the Minecraft server process.
- * @returns {Promise<void>} A promise that resolves when the server is stopped.
- */
 async function stopServer() {
+    if (!serverPID) {
+        log('INFO', `Server process PID not found. Server may already be stopped.`);
+        return;
+    }
     try {
-        log('INFO', `Attempting to stop Minecraft server process.`);
-        const platform = os.platform();
-        let command = '';
-        if (platform === 'win32') {
-            // Use taskkill to forcefully stop the process by the executable name
-            command = `taskkill /F /IM ${SERVER_EXE_NAME}`;
-        } else {
-            // Use pkill to stop the process by the executable name
-            command = `pkill -f ${SERVER_EXE_NAME}`;
-        }
-        const { stdout, stderr } = await execPromise(command);
-        if (stderr) {
-            log('ERROR', `Error stopping server: ${stderr}`);
-        }
-        log('INFO', 'Minecraft server stop command executed.');
+        log('INFO', `Attempting to stop Minecraft server process with PID: ${serverPID}.`);
+        process.kill(serverPID, 'SIGTERM');
+        log('INFO', `SIGTERM signal sent to PID: ${serverPID}.`);
     } catch (error) {
-        log('ERROR', `Error stopping server (process might not be running): ${error.message}`);
-        // Don't throw error, we want to continue with update even if stop fails (e.g., server not running)
-    }
+        log('ERROR', `Error stopping server with PID ${serverPID} (process might not exist): ${error.message}`);
+    } finally {
+        serverPID = null;
+    }
 }
 
-/**
- * Starts the Minecraft server process.
- * @returns {Promise<void>} A promise that resolves when the server is started.
- */
 async function startServer() {
+    if (serverPID) {
+        log('INFO', `Server process already has a PID: ${serverPID}. Check if it's running.`);
+        if (await isProcessRunning()) {
+            log('INFO', `Server is already running with PID ${serverPID}.`);
+            return;
+        } else {
+            log('INFO', `Stale PID ${serverPID} found. Clearing.`);
+            serverPID = null;
+        }
+    }
     try {
         const serverExePath = path.join(SERVER_DIRECTORY, SERVER_EXE_NAME);
         if (!fs.existsSync(serverExePath)) {
-            log('WARNING', `Server executable not found at ${serverExePath}. Cannot start server.`);
-            // Do not throw, allow the script to continue if this is the first run and files are not yet extracted.
+            log('WARNING', `Server executable not found at ${serverExePath}. Cannot start server. Run update/install first.`);
             return;
         }
-
         log('INFO', `Starting Minecraft server from ${serverExePath}`);
-        // Spawn the server process in the background, inheriting stdio
         const serverProcess = spawn(serverExePath, [], {
             cwd: SERVER_DIRECTORY,
-            stdio: 'inherit', // Important: Attach to process IO for server console output
-            detached: true // Detach the child process from the parent, allowing the script to exit
+            stdio: 'inherit',
+            detached: true
         });
-
-        // Unreference the child process to allow the parent to exit independently
+        if (serverProcess.pid) {
+            serverPID = serverProcess.pid;
+            log('INFO', `Server process started with PID: ${serverPID}.`);
+        } else {
+            log('ERROR', `Server process started but PID was not obtained.`);
+        }
         serverProcess.unref();
-
         serverProcess.on('error', (err) => {
             log('ERROR', `Server process error: ${err.message}`);
+            if (serverPID === serverProcess.pid) serverPID = null;
         });
-
         serverProcess.on('exit', (code, signal) => {
-            log('INFO', `Server process exited with code ${code} and signal ${signal}`);
+            log('INFO', `Server process PID ${serverProcess.pid} exited with code ${code} and signal ${signal}`);
+            if (serverPID === serverProcess.pid) serverPID = null;
         });
-        log('INFO', 'Minecraft server start command executed.');
     } catch (error) {
         log('ERROR', `Error starting server: ${error.message}`);
-        throw error; // Re-throw to be handled by the caller (Express app)
+        if (serverPID) serverPID = null;
+        throw error;
     }
 }
 
-/**
- * Main function to check for new Minecraft Bedrock server releases and install them.
- * This function will be called by the Express app or a scheduled task.
- */
 async function checkAndInstall() {
     log('INFO', 'Checking for new Minecraft Bedrock server releases...');
-
     const latestVersion = await getLatestVersion();
     if (!latestVersion) {
         log('WARNING', 'Failed to retrieve the latest version. Aborting update check.');
         return { success: false, message: 'Failed to retrieve latest version.' };
     }
-
     const lastVersion = getStoredVersion();
     if (lastVersion && latestVersion === lastVersion) {
         log('INFO', 'No new version found. Server is up to date.');
         return { success: true, message: 'Server is already up to date.' };
     }
-
     log('INFO', `New version found: ${latestVersion}. Current version: ${lastVersion || 'None'}`);
     const platform = os.platform();
-    let downloadUrl = `https://www.minecraft.net/bedrockdedicatedserver/bin-linux/bedrock-server-${latestVersion}.zip`; // Default to Linux
+    let downloadUrl = `https://www.minecraft.net/bedrockdedicatedserver/bin-linux/bedrock-server-${latestVersion}.zip`;
     if (platform === 'win32') {
-        downloadUrl = `https://www.minecraft.net/bedrockdedicatedserver/bin-win/bedrock-server-${latestVersion}.zip`; // Use Windows URL
+        downloadUrl = `https://www.minecraft.net/bedrockdedicatedserver/bin-win/bedrock-server-${latestVersion}.zip`;
     }
-    const tempInstallPath = path.join(TEMP_DIRECTORY, latestVersion); // Use version in temp path
-    const downloadPath = path.join(tempInstallPath, `bedrock-server-${latestVersion}.zip`); //download to temp
-
+    const tempInstallPath = path.join(TEMP_DIRECTORY, latestVersion);
+    const downloadPath = path.join(tempInstallPath, `bedrock-server-${latestVersion}.zip`);
     try {
-        // Send webhook notification before stopping server
         if (WEBHOOK_URL) {
-            try {
-                await sendWebhookNotification(`New Minecraft Bedrock Server version ${latestVersion} is available! Server going down for update...`);
-            } catch (error) {
-                log('ERROR', `Failed to send webhook notification: ${error}`);
-            }
+            try { await sendWebhookNotification(`New Minecraft Bedrock Server version ${latestVersion} is available! Server going down for update...`); }
+            catch (error) { log('ERROR', `Failed to send webhook notification: ${error}`);}
         }
-
-        // Stop the server
-        await stopServer();
-
-        // Backup the current installation (if it exists)
-        const backupDir = await backupServer();
-        if (backupDir) {
-            log('INFO', `Server backed up to: ${backupDir}`);
-        }
-
-        // Check if the version already exists in the temporary directory
+        await stopServer(); // Simplified
+        const backupDir = await backupServer(); // Uses global paths
+        if (backupDir) { log('INFO', `Server backed up to: ${backupDir}`); }
         if (fs.existsSync(tempInstallPath)) {
             log('INFO', `Version ${latestVersion} already exists in temporary directory: ${tempInstallPath}. Skipping download and extraction.`);
         } else {
-            // Create the temp directory
             fs.mkdirSync(tempInstallPath, { recursive: true });
             log('INFO', `Created temporary installation directory: ${tempInstallPath}`);
-
-            // Download and extract the new version into the temp directory
             log('INFO', `Downloading server files from ${downloadUrl} to ${downloadPath}`);
             await downloadFile(downloadUrl, downloadPath);
             log('INFO', 'Download complete.');
-
             log('INFO', `Extracting files to ${tempInstallPath}`);
-            await extractFiles(downloadPath, tempInstallPath);
-            fs.unlinkSync(downloadPath); // Clean up the zip file
+            await extractFiles(downloadPath, tempInstallPath); // Simplified call
+            fs.unlinkSync(downloadPath);
             log('INFO', 'Extraction complete.');
         }
-
-        // Remove old installation and move new one in its place
         if (fs.existsSync(SERVER_DIRECTORY)) {
-            await removeDir(SERVER_DIRECTORY);
+            await removeDir(SERVER_DIRECTORY); // Simplified call
             log('INFO', `Removed existing server directory ${SERVER_DIRECTORY}`);
         }
-        // Move the newly extracted files to the active server directory
         fs.renameSync(tempInstallPath, SERVER_DIRECTORY);
         log('INFO', `Moved new server files to ${SERVER_DIRECTORY}`);
-
-        // Copy existing data (worlds, configs) from backup to the new installation
-        if (backupDir) { // Only copy if a backup was actually made
+        if (backupDir) {
             await copyExistingData(backupDir, SERVER_DIRECTORY);
             log('INFO', `Copied existing data from backup to new server directory.`);
         }
-
-
         storeLatestVersion(latestVersion);
         log('INFO', `Successfully installed/updated to version ${latestVersion}`);
-
-        // Change ownership for Linux systems
-        await changeOwnership(SERVER_DIRECTORY, MC_USER, MC_GROUP);
+        await changeOwnership(SERVER_DIRECTORY, MC_USER, MC_GROUP); // Simplified call
         log('INFO', `Changed ownership to ${MC_USER}:${MC_GROUP} (if applicable).`);
-
-
-        // Send webhook notification after update
         if (WEBHOOK_URL) {
-            try {
-                await sendWebhookNotification(`Minecraft Bedrock Server updated to version ${latestVersion}! Server restarting...`);
-            } catch (error) {
-                log('ERROR', `Failed to send webhook notification: ${error}`);
-            }
+            try { await sendWebhookNotification(`Minecraft Bedrock Server updated to version ${latestVersion}! Server restarting...`); }
+            catch (error) { log('ERROR', `Failed to send webhook notification: ${error}`);}
         }
-
-        // Start the server
-        await startServer();
+        await startServer(); // Simplified
         log('INFO', 'Update process complete. Server should be starting.');
         return { success: true, message: `Server updated to version ${latestVersion}.` };
-
     } catch (error) {
         log('ERROR', `Error during installation: ${error.message}`);
-        // Attempt to start server even if update failed, to restore service
-        try {
-            await startServer();
-            log('INFO', 'Attempted to restart server after failed update.');
-        } catch (startErr) {
-            log('ERROR', `Failed to restart server after update error: ${startErr.message}`);
-        }
+        try { await startServer(); log('INFO', 'Attempted to restart server after failed update.'); }
+        catch (startErr) { log('ERROR', `Failed to restart server after update error: ${startErr.message}`); }
         return { success: false, message: `Error during installation: ${error.message}` };
     }
 }
 
-/**
- * Removes a directory recursively. Cross-platform compatible.
- * @param {string} dirPath The path to the directory to remove.
- * @returns {Promise<void>} A promise that resolves when the directory is removed.
- */
-function removeDir(dirPath) {
+async function removeDir(dirPath) { // Removed instanceIdForLogging
+    if (!fs.existsSync(dirPath)) {
+        log('INFO', `Directory not found, skipping removal: ${dirPath}`);
+        return;
+    }
+    const validBasePathsForRemove = [SERVER_DIRECTORY, TEMP_DIRECTORY, BACKUP_DIRECTORY];
+    const isPathValidForRemove = validBasePathsForRemove.some(base => dirPath.startsWith(base) && path.resolve(dirPath) !== path.resolve(base));
+    if (!isPathValidForRemove) {
+        log('ERROR', `removeDir attempted on restricted or base path: ${dirPath}. Must be a sub-directory within configured paths.`);
+        throw new Error(`Invalid path for removeDir: ${dirPath}. Operation aborted for security.`);
+    }
+    log('INFO', `Attempting to remove directory recursively: ${dirPath}`);
+    if (fs.promises.rm) {
+        try {
+            await fs.promises.rm(dirPath, { recursive: true, force: true });
+            log('INFO', `Successfully removed directory using fs.promises.rm: ${dirPath}`);
+            return;
+        } catch (error) {
+            log('ERROR', `fs.promises.rm failed for ${dirPath}: ${error.message}. Falling back to spawn.`);
+        }
+    }
     return new Promise((resolve, reject) => {
-        if (!fs.existsSync(dirPath)) {
-            resolve(); // Resolve if the directory does not exist
-            return;
-        }
-
         const platform = os.platform();
-        if (platform === 'win32') {
-            // Use Windows command to remove directory recursively and quietly
-            exec(`rmdir /s /q "${dirPath}"`, (error, stdout, stderr) => {
-                if (error) {
-                    reject(new Error(`Failed to remove directory ${dirPath}: ${error.message} ${stderr}`));
-                } else {
-                    resolve();
-                }
-            });
-        } else {
-            // Use Linux command to remove directory recursively and forcefully
-            exec(`rm -rf "${dirPath}"`, (error, stdout, stderr) => {
-                if (error) {
-                    reject(new Error(`Failed to remove directory ${dirPath}: ${error.message} ${stderr}`));
-                } else {
-                    resolve();
-                }
-            });
-        }
+        let command, args;
+        if (platform === 'win32') { command = 'rmdir'; args = ['/s', '/q', dirPath]; }
+        else { command = 'rm'; args = ['-rf', dirPath]; }
+        log('INFO', `Using command for removeDir: ${command} ${args.join(' ')}`);
+        const childProcess = spawn(command, args, { stdio: 'pipe' });
+        let stdoutData = ''; let stderrData = '';
+        childProcess.stdout.on('data', (data) => stdoutData += data.toString());
+        childProcess.stderr.on('data', (data) => stderrData += data.toString());
+        childProcess.on('close', (code) => {
+            if (stdoutData) log('INFO', `removeDir stdout: ${stdoutData}`);
+            if (stderrData) log('ERROR', `removeDir stderr: ${stderrData}`);
+            if (code === 0) {
+                log('INFO', `Successfully removed directory using spawn: ${dirPath}`);
+                resolve();
+            } else {
+                reject(new Error(`Failed to remove directory ${dirPath} using spawn. Exit code: ${code}. Stderr: ${stderrData}`));
+            }
+        });
+        childProcess.on('error', (error) => {
+            log('ERROR', `Failed to start removeDir process for ${dirPath} using spawn: ${error.message}`);
+            reject(new Error(`Failed to start removeDir process: ${error.message}`));
+        });
     });
 }
 
-/**
- * Reads the server.properties file and returns its contents as an object.
- * @returns {Promise<Object>} A promise that resolves with the server properties as a key-value object.
- */
-async function readServerProperties() {
+async function readServerProperties() { // Removed instanceConfig
     const configPath = path.join(SERVER_DIRECTORY, 'server.properties');
     if (!fs.existsSync(configPath)) {
         log('WARNING', `server.properties not found at ${configPath}. Returning empty config.`);
         return {};
     }
     const data = await fs.promises.readFile(configPath, 'utf8');
-    const config = {};
+    const properties = {};
     data.split('\n').forEach(line => {
         const trimmedLine = line.trim();
         if (trimmedLine && !trimmedLine.startsWith('#')) {
             const [key, value] = trimmedLine.split('=').map(s => s.trim());
-            if (key) {
-                config[key] = value || '';
-            }
+            if (key) { properties[key] = value || ''; }
         }
     });
     log('INFO', `Read server.properties from ${configPath}`);
-    return config;
+    return properties;
 }
 
-/**
- * Writes an object to the server.properties file.
- * @param {Object} config - The configuration object to write.
- * @returns {Promise<void>} A promise that resolves when the file is written.
- */
-async function writeServerProperties(config) {
+async function writeServerProperties(propertiesToWrite) { // Removed instanceConfig
     const configPath = path.join(SERVER_DIRECTORY, 'server.properties');
     let content = '';
-    for (const key in config) {
-        if (Object.hasOwnProperty.call(config, key)) {
-            content += `${key}=${config[key]}\n`;
+    for (const key in propertiesToWrite) {
+        if (Object.hasOwnProperty.call(propertiesToWrite, key)) {
+            content += `${key}=${propertiesToWrite[key]}\n`;
         }
     }
     await fs.promises.writeFile(configPath, content, 'utf8');
     log('INFO', `Wrote server.properties to ${configPath}`);
 }
 
-/**
- * Lists all existing world directories within the SERVER_DIRECTORY.
- * @returns {Promise<string[]>} A promise that resolves with an array of world names.
- */
-async function listWorlds() {
+async function listWorlds() { // Removed instanceConfig
     const worldsPath = path.join(SERVER_DIRECTORY, 'worlds');
     if (!fs.existsSync(worldsPath)) {
         log('WARNING', `Worlds directory not found at ${worldsPath}. Returning empty world list.`);
@@ -613,31 +536,23 @@ async function listWorlds() {
     return worldNames;
 }
 
-/**
- * Activates a specific world by updating server.properties.
- * @param {string} worldName - The name of the world to activate.
- * @returns {Promise<boolean>} True if successful, false otherwise.
- */
-async function activateWorld(worldName) {
+async function activateWorld(worldName) { // Removed instanceConfig
     const worldsPath = path.join(SERVER_DIRECTORY, 'worlds');
     const targetWorldPath = path.join(worldsPath, worldName);
-
     if (!fs.existsSync(targetWorldPath)) {
         log('ERROR', `World directory '${worldName}' not found at ${targetWorldPath}. Cannot activate.`);
         return false;
     }
-
     try {
-        const config = await readServerProperties();
-        if (config['level-name'] === worldName) {
+        const properties = await readServerProperties();
+        if (properties['level-name'] === worldName) {
             log('INFO', `World '${worldName}' is already active.`);
             return true;
         }
-
-        config['level-name'] = worldName;
-        await writeServerProperties(config);
+        properties['level-name'] = worldName;
+        await writeServerProperties(properties);
         log('INFO', `Activated world: ${worldName}. Restarting server for changes to take effect.`);
-        await restartServer(); // Restart server to load new world
+        await restartServer();
         return true;
     } catch (error) {
         log('ERROR', `Failed to activate world '${worldName}': ${error.message}`);
@@ -645,74 +560,45 @@ async function activateWorld(worldName) {
     }
 }
 
-/**
- * Restarts the Minecraft server process.
- * This function is added for convenience for the frontend.
- * @returns {Promise<void>} A promise that resolves when the server is restarted.
- */
 async function restartServer() {
     log('INFO', `Restarting Minecraft server.`);
     await stopServer();
-    // Give a small delay to ensure the process has fully terminated
     await new Promise(resolve => setTimeout(resolve, 3000));
     await startServer();
     log('INFO', 'Minecraft server restart command executed.');
 }
 
-/**
- * Helper function to check if a process is running (cross-platform).
- * @param {string} processName - The name of the process executable (e.g., 'bedrock_server.exe' or 'bedrock_server').
- * @returns {Promise<boolean>} True if the process is running, false otherwise.
- */
-async function isProcessRunning(processName) {
-    const platform = os.platform();
-    let command;
-    if (platform === 'win32') {
-        command = `tasklist /FI "IMAGENAME eq ${processName}"`;
-    } else {
-        command = `pgrep -x ${processName}`;
-    }
-
+async function isProcessRunning() {
+    if (!serverPID) {
+        log('DEBUG', `No PID found for server. Assuming not running.`);
+        return false;
+    }
     try {
-        const { stdout } = await execPromise(command);
-        console.log(stdout);
-        
-        if(stdout.includes("No tasks are running")) {
-            return false;
-        }
-
-        return stdout.trim().length > 0;
+        process.kill(serverPID, 0);
+        log('DEBUG', `Process with PID ${serverPID} is running.`);
+        return true;
     } catch (error) {
-        // Command might fail if process is not found (e.g., pgrep returns non-zero exit code)
+        if (error.code === 'ESRCH') {
+            log('INFO', `Process with PID ${serverPID} not found (ESRCH).`);
+        } else {
+            log('ERROR', `Error checking process PID ${serverPID}: ${error.message} (Code: ${error.code})`);
+        }
+        serverPID = null;
         return false;
     }
 }
 
-
-/**
- * Sends a webhook notification to a specified URL.
- * @param {string} message The message to send.
- * @returns {Promise<void>}
- */
 async function sendWebhookNotification(message) {
     if (!WEBHOOK_URL) {
         log('INFO', 'Webhook URL is not configured. Skipping notification.');
         return;
     }
-
-    const postData = JSON.stringify({
-        content: message,
-    });
-
+    const postData = JSON.stringify({ content: message });
     const url = new URL(WEBHOOK_URL);
     const options = {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Content-Length': postData.length,
-        },
+        headers: { 'Content-Type': 'application/json', 'Content-Length': postData.length },
     };
-
     return new Promise((resolve, reject) => {
         const req = https.request(url, options, (res) => {
             if (res.statusCode >= 200 && res.statusCode < 300) {
@@ -720,9 +606,7 @@ async function sendWebhookNotification(message) {
                 resolve();
             } else {
                 let responseData = '';
-                res.on('data', (chunk) => {
-                    responseData += chunk;
-                });
+                res.on('data', (chunk) => { responseData += chunk; });
                 res.on('end', () => {
                     log('ERROR', `Webhook notification failed: ${res.statusCode} - ${responseData}`);
                     reject(new Error(`Webhook notification failed: ${res.statusCode} - ${responseData}`));
@@ -733,120 +617,128 @@ async function sendWebhookNotification(message) {
                 reject(err);
             });
         });
-
         req.on('error', (err) => {
             log('ERROR', `Error sending webhook notification: ${err.message}`);
             reject(err);
         });
-
         req.write(postData);
         req.end();
     });
 }
 
-/**
- * Reads the global configuration file.
- * @returns {Promise<Object>} A promise that resolves with the configuration object.
- */
 async function readGlobalConfig() {
-    // Determine the config file path relative to the script's directory
     const configPath = path.join(__dirname, GLOBAL_CONFIG_FILE);
-    if (!fs.existsSync(configPath)) {
-        log('INFO', `Global config file not found at ${configPath}. Creating with default values.`);
-        const defaultConfig = { autoUpdateEnabled: true, autoUpdateIntervalMinutes: 60 }; // Default to true for auto-update
-        await writeGlobalConfig(defaultConfig);
-        return defaultConfig;
+    let effectiveConfig = {
+        serverName: "Default Minecraft Server", serverPortIPv4: 19132, serverPortIPv6: 19133,
+        serverDirectory: "./server_data/default_server", tempDirectory: "./server_data/temp/default_server",
+        backupDirectory: "./server_data/backup/default_server", worldName: "Bedrock level",
+        autoStart: false, autoUpdateEnabled: true, autoUpdateIntervalMinutes: 60, logLevel: "INFO"
+    };
+    setLogLevel(effectiveConfig.logLevel);
+    if (fs.existsSync(configPath)) {
+        try {
+            const data = fs.readFileSync(configPath, 'utf8');
+            const configFromFile = JSON.parse(data);
+            effectiveConfig = { ...effectiveConfig, ...configFromFile };
+            if (configFromFile.logLevel) setLogLevel(configFromFile.logLevel);
+            log('INFO', `Configuration loaded from ${configPath}`);
+        } catch (error) {
+            log('ERROR', `Error reading/parsing ${configPath}: ${error.message}. Using/creating default config.`);
+            try { fs.writeFileSync(configPath, JSON.stringify(effectiveConfig, null, 2), 'utf8'); log('INFO', `Wrote default configuration to ${configPath}.`); }
+            catch (writeError) { log('ERROR', `Failed to write default configuration to ${configPath}: ${writeError.message}`); }
+        }
+    } else {
+        log('WARNING', `${configPath} not found. Creating with default values.`);
+        try { fs.writeFileSync(configPath, JSON.stringify(effectiveConfig, null, 2), 'utf8'); log('INFO', `Created default configuration file at ${configPath}`); }
+        catch (writeError) { log('ERROR', `Failed to create default configuration file at ${configPath}: ${writeError.message}`); }
     }
-    try {
-        const data = await fs.promises.readFile(configPath, 'utf8');
-        const config = JSON.parse(data);
-        log('INFO', `Read global config from ${configPath}`);
-        return config;
-    } catch (error) {
-        log('ERROR', `Error reading global config file ${configPath}: ${error.message}. Returning default config.`);
-        const defaultConfig = { autoUpdateEnabled: true, autoUpdateIntervalMinutes: 60 }; // Default to true for auto-update
-        // Attempt to write default config if parsing failed, to prevent continuous errors
-        await writeGlobalConfig(defaultConfig);
-        return defaultConfig;
+    const args = process.argv.slice(2);
+    log('DEBUG', `CLI arguments: ${args.join(' ')}`);
+    for (let i = 0; i < args.length; i++) {
+        const arg = args[i]; const value = args[i+1];
+        let valueConsumed = (value !== undefined && !value.startsWith('--'));
+        switch (arg) {
+            case '--serverName': if(valueConsumed) effectiveConfig.serverName = value; break;
+            case '--serverPortIPv4': if(valueConsumed) effectiveConfig.serverPortIPv4 = parseInt(value, 10); break;
+            case '--serverPortIPv6': if(valueConsumed) effectiveConfig.serverPortIPv6 = parseInt(value, 10); break;
+            case '--serverDirectory': if(valueConsumed) effectiveConfig.serverDirectory = value; break;
+            case '--tempDirectory': if(valueConsumed) effectiveConfig.tempDirectory = value; break;
+            case '--backupDirectory': if(valueConsumed) effectiveConfig.backupDirectory = value; break;
+            case '--worldName': if(valueConsumed) effectiveConfig.worldName = value; break;
+            case '--autoStart': effectiveConfig.autoStart = (valueConsumed ? (value === 'true') : true); break;
+            case '--autoUpdateEnabled': effectiveConfig.autoUpdateEnabled = (valueConsumed ? (value === 'true') : true); break;
+            case '--logLevel': if(valueConsumed) effectiveConfig.logLevel = value.toUpperCase(); break;
+            default: valueConsumed = false;
+        }
+        if (valueConsumed) { log('DEBUG', `CLI Override: ${arg} = ${args[i+1]}`); i++; }
+        else if (arg === '--autoStart' || arg === '--autoUpdateEnabled') {
+             const key = arg.substring(2).replace(/-([a-z])/g, g => g[1].toUpperCase());
+             effectiveConfig[key] = true; log('DEBUG', `CLI Override (boolean flag): ${arg} = true`);
+        } else if (arg === '--no-autoStart') { effectiveConfig.autoStart = false; log('DEBUG', `CLI Override (boolean flag): ${arg} = false`);
+        } else if (arg === '--no-autoUpdateEnabled') { effectiveConfig.autoUpdateEnabled = false; log('DEBUG', `CLI Override (boolean flag): ${arg} = false`); }
     }
+    setLogLevel(effectiveConfig.logLevel || "INFO");
+    const resolvePath = (p) => path.isAbsolute(p) ? p : path.resolve(__dirname, p);
+    effectiveConfig.serverDirectory = resolvePath(effectiveConfig.serverDirectory);
+    effectiveConfig.tempDirectory = resolvePath(effectiveConfig.tempDirectory);
+    effectiveConfig.backupDirectory = resolvePath(effectiveConfig.backupDirectory);
+    log('INFO', 'Configuration loading complete.');
+    log('DEBUG', `Final effective configuration: ${JSON.stringify(effectiveConfig, null, 2)}`);
+    return effectiveConfig;
 }
 
-/**
- * Writes the global configuration object to file.
- * @param {Object} config - The configuration object to write.
- * @returns {Promise<void>} A promise that resolves when the file is written.
- */
-async function writeGlobalConfig(config) {
-    // Determine the config file path relative to the script's directory
+async function writeGlobalConfig(configToWrite) {
     const configPath = path.join(__dirname, GLOBAL_CONFIG_FILE);
     try {
-        await fs.promises.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
-        log('INFO', `Wrote global config to ${configPath}`);
+        const storeConfig = JSON.parse(JSON.stringify(configToWrite));
+        const makeRelativeIfNeeded = (absPath) => {
+            if (absPath.startsWith(__dirname) && absPath !== __dirname) {
+                let relPath = path.relative(__dirname, absPath);
+                if (!relPath.startsWith('..') && !path.isAbsolute(relPath)) {
+                    relPath = `.${path.sep}${relPath.startsWith(path.sep) ? relPath.substring(1) : relPath}`;
+                }
+                return relPath;
+            }
+            return absPath;
+        };
+        storeConfig.serverDirectory = makeRelativeIfNeeded(storeConfig.serverDirectory);
+        storeConfig.tempDirectory = makeRelativeIfNeeded(storeConfig.tempDirectory);
+        storeConfig.backupDirectory = makeRelativeIfNeeded(storeConfig.backupDirectory);
+        await fs.promises.writeFile(configPath, JSON.stringify(storeConfig, null, 2), 'utf8');
+        log('INFO', `Wrote configuration to ${configPath}`);
     } catch (error) {
-        log('ERROR', `Error writing global config file ${configPath}: ${error.message}`);
+        log('ERROR', `Error writing configuration file ${configPath}: ${error.message}`);
         throw error;
     }
 }
 
-/**
- * Starts the automatic update scheduler.
- * This function will periodically check for and install updates if enabled in the config.
- */
 async function startAutoUpdateScheduler() {
-    const config = await readGlobalConfig();
+    const currentConfig = await readGlobalConfig(); // Ensure we use the most up-to-date config
     if (autoUpdateIntervalId) {
         clearInterval(autoUpdateIntervalId);
         autoUpdateIntervalId = null;
         log('INFO', 'Cleared existing auto-update scheduler.');
     }
-
-    if (config.autoUpdateEnabled && config.autoUpdateIntervalMinutes > 0) {
-        const intervalMs = config.autoUpdateIntervalMinutes * 60 * 1000;
-        log('INFO', `Starting auto-update scheduler to run every ${config.autoUpdateIntervalMinutes} minutes.`);
-        // Run immediately on start, then periodically
+    if (currentConfig.autoUpdateEnabled && currentConfig.autoUpdateIntervalMinutes > 0) {
+        const intervalMs = currentConfig.autoUpdateIntervalMinutes * 60 * 1000;
+        log('INFO', `Starting auto-update scheduler to run every ${currentConfig.autoUpdateIntervalMinutes} minutes.`);
         const initialCheckResult = await checkAndInstall();
         if (!initialCheckResult.success) {
             log('ERROR', `Initial auto-update check failed: ${initialCheckResult.message}`);
         }
-
         autoUpdateIntervalId = setInterval(async () => {
             log('INFO', 'Auto-update check initiated by scheduler.');
             const result = await checkAndInstall();
-            if (!result.success) {
-                log('ERROR', `Auto-update failed: ${result.message}`);
-            }
+            if (!result.success) { log('ERROR', `Auto-update failed: ${result.message}`); }
         }, intervalMs);
     } else {
         log('INFO', 'Auto-update is disabled or interval is invalid. Scheduler not started.');
     }
 }
 
-// Export functions for use by the Express.js frontend
 module.exports = {
-    init,
-    log,
-    getLatestVersion,
-    downloadFile,
-    extractFiles,
-    changeOwnership,
-    storeLatestVersion,
-    getStoredVersion,
-    backupServer,
-    copyDir,
-    copyExistingData,
-    stopServer,
-    startServer,
-    checkAndInstall,
-    removeDir,
-    readServerProperties,
-    writeServerProperties,
-    listWorlds,
-    activateWorld,
-    restartServer,
-    isProcessRunning,
-    readGlobalConfig,
-    writeGlobalConfig,
-    startAutoUpdateScheduler, // Export for starting the scheduler
-    SERVER_DIRECTORY,
-    SERVER_EXE_NAME
+    init,  log, getLatestVersion, downloadFile, extractFiles, changeOwnership, storeLatestVersion,
+    getStoredVersion, backupServer, copyDir, copyExistingData, stopServer, startServer, checkAndInstall,
+    removeDir, readServerProperties, writeServerProperties, listWorlds, activateWorld, restartServer,
+    isProcessRunning, readGlobalConfig, writeGlobalConfig, startAutoUpdateScheduler, SERVER_EXE_NAME,
 };

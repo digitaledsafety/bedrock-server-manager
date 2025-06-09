@@ -31,13 +31,48 @@ app.use(express.static(path.join(__dirname, 'public'))); // Serve static files (
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
+// --- Input Validation Middleware/Helpers ---
+// validateInstanceId is removed as instanceId is no longer a route parameter.
+
+const validateWorldName = (req, res, next) => {
+    const { worldName } = req.body;
+    if (!worldName) {
+        return res.status(400).json({ error: 'World name is required.' });
+    }
+    const worldNameRegex = /^[a-zA-Z0-9_ -]+$/;
+    if (worldName.includes('.') || worldName.includes('/') || worldName.includes('\\') || !worldNameRegex.test(worldName)) {
+        log('ERROR', `Invalid worldName format or characters: ${worldName}`);
+        return res.status(400).json({ error: 'Invalid worldName format or characters. Avoid ., /, \\ and ensure it matches allowed pattern.' });
+    }
+    next();
+};
+
+const sanitizeServerProperties = (req, res, next) => {
+    const properties = req.body;
+    if (typeof properties !== 'object' || properties === null) {
+        return res.status(400).json({ error: 'Invalid server properties format. Expected an object.'});
+    }
+    for (const key in properties) {
+        if (typeof key !== 'string' || key.match(/[\n\r]/)) {
+            log('ERROR', `Invalid character in server property key: ${key}`);
+            return res.status(400).json({ error: `Invalid character in server property key: ${key}` });
+        }
+        const value = properties[key];
+        if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
+            properties[key] = String(value);
+            log('WARNING', `Property value for key '${key}' was converted to string.`);
+        }
+    }
+    req.body = properties;
+    next();
+};
+
 // --- API Endpoints ---
 
-// Endpoint to get server status (simplified for this example)
+// GET /api/status - Get server status
 app.get('/api/status', async (req, res) => {
     try {
-        // SERVER_EXE_NAME and isProcessRunning are now correctly imported from the backend module.
-        const isRunning = await isProcessRunning(SERVER_EXE_NAME);
+        const isRunning = await isProcessRunning(); // Uses global config implicitly
         res.json({ status: isRunning ? 'running' : 'stopped' });
     } catch (error) {
         log('ERROR', `Error getting server status: ${error.message}`);
@@ -45,10 +80,10 @@ app.get('/api/status', async (req, res) => {
     }
 });
 
-// Endpoint to start the server
+// POST /api/start - Start the server
 app.post('/api/start', async (req, res) => {
     try {
-        await startServer();
+        await startServer(); // Uses global config implicitly
         res.json({ success: true, message: 'Server start initiated.' });
     } catch (error) {
         log('ERROR', `Failed to start server: ${error.message}`);
@@ -56,10 +91,10 @@ app.post('/api/start', async (req, res) => {
     }
 });
 
-// Endpoint to stop the server
+// POST /api/stop - Stop the server
 app.post('/api/stop', async (req, res) => {
     try {
-        await stopServer();
+        await stopServer(); // Uses global config implicitly
         res.json({ success: true, message: 'Server stop initiated.' });
     } catch (error) {
         log('ERROR', `Failed to stop server: ${error.message}`);
@@ -67,10 +102,10 @@ app.post('/api/stop', async (req, res) => {
     }
 });
 
-// Endpoint to restart the server
+// POST /api/restart - Restart the server
 app.post('/api/restart', async (req, res) => {
     try {
-        await restartServer();
+        await restartServer(); // Uses global config implicitly
         res.json({ success: true, message: 'Server restart initiated.' });
     }
     catch (error) {
@@ -79,9 +114,10 @@ app.post('/api/restart', async (req, res) => {
     }
 });
 
-// Endpoint to check for updates and install
+// POST /api/update - Check for updates and install
 app.post('/api/update', async (req, res) => {
     try {
+        // checkAndInstall will use the global config implicitly
         const result = await checkAndInstall();
         res.json(result);
     } catch (error) {
@@ -90,22 +126,22 @@ app.post('/api/update', async (req, res) => {
     }
 });
 
-// Endpoint to get current server properties
+// GET /api/properties - Get current server properties
 app.get('/api/properties', async (req, res) => {
     try {
-        const properties = await readServerProperties();
-        res.json({ success: true, properties }); // Ensure success: true is returned
+        const properties = await readServerProperties(); // Uses global config implicitly
+        res.json({ success: true, properties });
     } catch (error) {
         log('ERROR', `Failed to read server properties: ${error.message}`);
         res.status(500).json({ error: 'Failed to read server properties' });
     }
 });
 
-// Endpoint to update server properties
-app.post('/api/properties', async (req, res) => {
+// POST /api/properties - Update server properties
+app.post('/api/properties', sanitizeServerProperties, async (req, res) => {
     try {
-        const newProperties = req.body;
-        await writeServerProperties(newProperties);
+        const newProperties = req.body; // Sanitized by middleware
+        await writeServerProperties(newProperties); // Uses global config implicitly
         res.json({ success: true, message: 'Server properties updated. Restart server for changes to take effect.' });
     } catch (error) {
         log('ERROR', `Failed to write server properties: ${error.message}`);
@@ -113,25 +149,22 @@ app.post('/api/properties', async (req, res) => {
     }
 });
 
-// Endpoint to list available worlds
+// GET /api/worlds - List available worlds
 app.get('/api/worlds', async (req, res) => {
     try {
-        const worlds = await listWorlds();
-        res.json({ success: true, worlds }); // Ensure success: true is returned
+        const worlds = await listWorlds(); // Uses global config implicitly
+        res.json({ success: true, worlds });
     } catch (error) {
         log('ERROR', `Failed to list worlds: ${error.message}`);
         res.status(500).json({ error: 'Failed to list worlds' });
     }
 });
 
-// Endpoint to activate a world
-app.post('/api/activate-world', async (req, res) => {
-    const { worldName } = req.body;
-    if (!worldName) {
-        return res.status(400).json({ error: 'World name is required.' });
-    }
+// POST /api/activate-world - Activate a world
+app.post('/api/activate-world', validateWorldName, async (req, res) => {
     try {
-        const success = await activateWorld(worldName);
+        const { worldName } = req.body; // Validated by middleware
+        const success = await activateWorld(worldName); // Uses global config implicitly
         if (success) {
             res.json({ message: `World '${worldName}' activated.` });
         } else {
@@ -143,24 +176,39 @@ app.post('/api/activate-world', async (req, res) => {
     }
 });
 
-// NEW: Endpoint to get global configuration (including auto-update settings)
+// Global Configuration Endpoint
+// GET /api/config - Returns the entire single-instance configuration
 app.get('/api/config', async (req, res) => {
     try {
-        const config = await readGlobalConfig();
-        res.json({ success: true, config });
+        const appConfig = await readGlobalConfig(); // This now returns the single-instance config
+        res.json({ success: true, config: appConfig });
     } catch (error) {
-        log('ERROR', `Error getting global config: ${error.message}`);
-        res.status(500).json({ error: 'Failed to get global config' });
+        log('ERROR', `Error getting application config: ${error.message}`);
+        res.status(500).json({ error: 'Failed to get application config' });
     }
 });
 
-// NEW: Endpoint to set global configuration (including auto-update settings)
+// POST /api/config - Updates specific global settings
 app.post('/api/config', async (req, res) => {
     try {
-        const newConfig = req.body;
-        await writeGlobalConfig(newConfig);
-        await startAutoUpdateScheduler(); // Restart scheduler with new config
-        res.json({ success: true, message: 'Global config updated successfully.' });
+        const newSettings = req.body;
+        let currentFullConfig = await readGlobalConfig();
+
+        // Update only specific global fields from newSettings
+        if (newSettings.autoUpdateEnabled !== undefined) {
+            currentFullConfig.autoUpdateEnabled = newSettings.autoUpdateEnabled;
+        }
+        if (newSettings.autoUpdateIntervalMinutes !== undefined) {
+            currentFullConfig.autoUpdateIntervalMinutes = parseInt(newSettings.autoUpdateIntervalMinutes, 10);
+        }
+        if (newSettings.logLevel !== undefined) {
+            currentFullConfig.logLevel = newSettings.logLevel.toUpperCase();
+        }
+        // Other fields like serverName, directories etc. are not meant to be changed via this endpoint.
+
+        await writeGlobalConfig(currentFullConfig);
+        await startAutoUpdateScheduler(); // Restart scheduler with potentially new interval
+        res.json({ success: true, message: 'Global config settings updated successfully.' });
     } catch (error) {
         log('ERROR', `Error setting global config: ${error.message}`);
         res.status(500).json({ error: 'Failed to set global config' });
@@ -172,15 +220,19 @@ app.post('/api/config', async (req, res) => {
 
 app.get('/', async (req, res) => {
     try {
+        // readGlobalConfig now returns the fully resolved single-instance config
+        const currentConfig = await readGlobalConfig();
+
         const properties = await readServerProperties();
         const worlds = await listWorlds();
-        const status = await isProcessRunning(SERVER_EXE_NAME); // Get current server status
-        const globalConfig = await readGlobalConfig(); // NEW: Read global config for frontend
+        const isRunning = await isProcessRunning();
+        const serverStatus = isRunning ? 'running' : 'stopped';
+
         res.render('index', { 
             properties, 
             worlds, 
-            serverStatus: status ? 'running' : 'stopped',
-            globalConfig // NEW: Pass global config to EJS template
+            serverStatus,
+            config: currentConfig // Pass the whole config object
         });
     } catch (error) {
         log('ERROR', `Error rendering index page: ${error.message}`);
