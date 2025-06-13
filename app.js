@@ -191,12 +191,14 @@ app.get('/', async (req, res) => {
         const worlds = await backend.listWorlds();
         const isRunning = await backend.isProcessRunning();
         const serverStatus = isRunning ? 'running' : 'stopped';
+        const currentServerVersion = backend.getStoredVersion(); // Added this line
 
         res.render('index', {
             properties,
             worlds,
             serverStatus,
-            config: currentConfig
+            config: currentConfig,
+            currentServerVersion // Added to template data
         });
     } catch (error) {
         backend.log('ERROR', `Error rendering index page: ${error.message}`);

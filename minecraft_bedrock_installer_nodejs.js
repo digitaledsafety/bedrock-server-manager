@@ -1,25 +1,21 @@
 import https from 'https';
 import http from 'http';
 import fs from 'fs';
-import path, { dirname, join as pathJoin } from 'path'; // Renamed join to pathJoin to avoid conflict
-import { exec as childProcessExec, spawn } from 'child_process'; // Renamed exec to avoid conflict
+import path, { dirname, join as pathJoin } from 'path';
+import { exec as childProcessExec, spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { URL } from 'url';
 import util from 'util';
-
-const execPromise = util.promisify(childProcessExec);
 import os from 'os';
 
-// ES Module __dirname and __filename
+const execPromise = util.promisify(childProcessExec);
+
 const __filenameESM = fileURLToPath(import.meta.url);
 const __dirnameESM = dirname(__filenameESM);
 
-// Configuration
 const MC_DOWNLOAD_API_URL = 'https://net-secondary.web.minecraft-services.net/api/v1.0/download/links';
-// const MC_BEDROCK_URL = 'https://www.minecraft.net/en-us/download/server/bedrock'; // Old URL, commented out
 const VERSION_REGEX = /bedrock-server-([\d\.]+)\.zip/;
 
-// Globals populated by readGlobalConfig and init
 let config = {};
 let SERVER_DIRECTORY;
 let TEMP_DIRECTORY;
@@ -37,8 +33,7 @@ const GLOBAL_CONFIG_FILE = 'config.json';
 
 let autoUpdateIntervalId = null;
 
-// Logging setup
-const logStream = fs.createWriteStream(pathJoin(__dirnameESM, 'mc_installer.log'), { flags: 'a' }); // Log file next to script
+const logStream = fs.createWriteStream(pathJoin(__dirnameESM, 'mc_installer.log'), { flags: 'a' });
 const LOG_LEVELS = { DEBUG: 0, INFO: 1, WARNING: 2, ERROR: 3, FATAL: 4 };
 let currentLogLevel = LOG_LEVELS.INFO;
 
@@ -46,9 +41,11 @@ function setLogLevel(levelName) {
     const levelNameToUse = (levelName || "INFO").toUpperCase();
     const newLevel = LOG_LEVELS[levelNameToUse];
     if (newLevel !== undefined) {
-        const oldLevel = currentLogLevel;
+        const oldLogLevel = currentLogLevel;
         currentLogLevel = newLevel;
-        if (LOG_LEVELS.INFO >= currentLogLevel && LOG_LEVELS.INFO >= oldLevel) { // Log only if new level allows INFO
+        // Log this message only if the new level allows INFO messages AND the old level also allowed it,
+        // or if we are increasing verbosity to INFO from something more restrictive.
+        if (LOG_LEVELS.INFO >= currentLogLevel && (LOG_LEVELS.INFO >= oldLogLevel || currentLogLevel <= oldLogLevel) ) {
             const initialLogMessage = `${new Date().toISOString()} [INFO] Log level set to ${levelNameToUse}\n`;
             console.log(initialLogMessage);
             logStream.write(initialLogMessage);
@@ -61,7 +58,7 @@ function setLogLevel(levelName) {
     }
 }
 
-export function log(level, message) { // Export log if app.js needs it (it does)
+export function log(level, message) {
     const messageLevel = LOG_LEVELS[level.toUpperCase()];
     if (messageLevel === undefined) {
         console.warn(`Invalid log level used in log() call: ${level}`);
@@ -85,7 +82,7 @@ export function init(effectiveConfigFromRead) {
     log('INFO', `Using Server Directory: ${SERVER_DIRECTORY}`);
     log('INFO', `Using Temp Directory: ${TEMP_DIRECTORY}`);
     log('INFO', `Using Backup Directory: ${BACKUP_DIRECTORY}`);
-    const dirsToCreate = [SERVER_DIRECTORY, TEMP_DIRECTORY, BACKUP_DIRECTORY];
+    const dirsToCreate = [SERVER_DIRECTORY, TEMP_DIRECTORY, BACKUP_DIRECTORY].filter(Boolean);
     for (const dir of dirsToCreate) {
         if (!fs.existsSync(dir)) {
             try {
@@ -101,7 +98,7 @@ export function init(effectiveConfigFromRead) {
 export async function getLatestVersion() {
     return new Promise((resolve, reject) => {
         const apiURL = new URL(MC_DOWNLOAD_API_URL);
-        https.get(apiURL, { headers: { 'Accept-Language': 'en-US,en;q=0.5' } }, (res) => { // Added headers as some APIs might require it
+        https.get(apiURL, { headers: { 'Accept-Language': 'en-US,en;q=0.5' } }, (res) => {
             let data = '';
             if (res.statusCode < 200 || res.statusCode >= 300) {
                 log('ERROR', `Failed to fetch download links from API. Status: ${res.statusCode} ${res.statusMessage}. Response: ${data}`);
@@ -114,11 +111,9 @@ export async function getLatestVersion() {
                     const platform = os.platform();
                     const targetDownloadType = platform === 'win32' ? 'serverBedrockWindows' : 'serverBedrockLinux';
                     let foundLink = null;
-
                     if (jsonResponse && jsonResponse.result && jsonResponse.result.links) {
                         foundLink = jsonResponse.result.links.find(link => link.downloadType === targetDownloadType);
                     }
-
                     if (foundLink && foundLink.downloadUrl) {
                         const downloadUrl = foundLink.downloadUrl;
                         log('DEBUG', `Found download URL via API: ${downloadUrl}`);
@@ -144,7 +139,6 @@ export async function getLatestVersion() {
         });
     });
 }
-
 
 export function downloadFile(downloadUrl, downloadPath) {
     return new Promise((resolve, reject) => {
@@ -205,8 +199,8 @@ export async function changeOwnership(dirPath, user, group) {
         log('INFO', `Skipping changeOwnership on Windows.`);
         return;
     }
-    const validBasePaths = [SERVER_DIRECTORY, BACKUP_DIRECTORY]; // Use global vars
-    if (!validBasePaths.some(base => base && dirPath.startsWith(base))) { // Ensure base is defined
+    const validBasePaths = [SERVER_DIRECTORY, BACKUP_DIRECTORY].filter(Boolean);
+    if (!validBasePaths.some(base => dirPath.startsWith(base))) {
         log('ERROR', `changeOwnership attempted on restricted path: ${dirPath}. Expected to be within configured server or backup directories.`);
         throw new Error(`Invalid path for changeOwnership: ${dirPath}. Operation aborted for security.`);
     }
@@ -240,7 +234,7 @@ export async function changeOwnership(dirPath, user, group) {
 
 export function storeLatestVersion(version) {
     try {
-        fs.writeFileSync(pathJoin(__dirnameESM, LAST_VERSION_FILE), version); // Use __dirnameESM
+        fs.writeFileSync(pathJoin(__dirnameESM, LAST_VERSION_FILE), version);
         log('INFO', `Stored latest version: ${version}`);
     } catch (error) {
         log('ERROR', `Error storing version to file: ${error.message}`);
@@ -249,7 +243,7 @@ export function storeLatestVersion(version) {
 
 export function getStoredVersion() {
     try {
-        const lastVersionFilePath = pathJoin(__dirnameESM, LAST_VERSION_FILE); // Use __dirnameESM
+        const lastVersionFilePath = pathJoin(__dirnameESM, LAST_VERSION_FILE);
         if (fs.existsSync(lastVersionFilePath)) {
             const version = fs.readFileSync(lastVersionFilePath, 'utf8').trim();
             log('INFO', `Retrieved stored version: ${version}`);
@@ -390,12 +384,12 @@ export async function startServer() {
 
 export async function checkAndInstall() {
     log('INFO', 'Checking for new Minecraft Bedrock server releases...');
-    const versionInfo = await getLatestVersion(); // Now returns an object or null
-    if (!versionInfo || !versionInfo.latestVersion || !versionInfo.downloadUrl) { // Check all parts of versionInfo
+    const versionInfo = await getLatestVersion();
+    if (!versionInfo || !versionInfo.latestVersion || !versionInfo.downloadUrl) {
         log('WARNING', 'Failed to retrieve the latest version or download URL. Aborting update check.');
         return { success: false, message: 'Failed to retrieve latest version information from API.' };
     }
-    const { latestVersion, downloadUrl: apiDownloadUrl } = versionInfo; // Destructure for clarity
+    const { latestVersion, downloadUrl: apiDownloadUrl } = versionInfo;
 
     const lastVersion = getStoredVersion();
     if (lastVersion && latestVersion === lastVersion) {
@@ -419,15 +413,15 @@ export async function checkAndInstall() {
         } else {
             fs.mkdirSync(tempInstallPath, { recursive: true });
             log('INFO', `Created temporary installation directory: ${tempInstallPath}`);
-            log('INFO', `Downloading server files from ${apiDownloadUrl} to ${downloadPath}`); // Use apiDownloadUrl
-            await downloadFile(apiDownloadUrl, downloadPath); // Use apiDownloadUrl
+            log('INFO', `Downloading server files from ${apiDownloadUrl} to ${downloadPath}`);
+            await downloadFile(apiDownloadUrl, downloadPath);
             log('INFO', 'Download complete.');
             log('INFO', `Extracting files to ${tempInstallPath}`);
             await extractFiles(downloadPath, tempInstallPath);
             fs.unlinkSync(downloadPath);
             log('INFO', 'Extraction complete.');
         }
-        if (fs.existsSync(SERVER_DIRECTORY)) {
+        if (SERVER_DIRECTORY && fs.existsSync(SERVER_DIRECTORY)) { // Check if SERVER_DIRECTORY is defined
             await removeDir(SERVER_DIRECTORY);
             log('INFO', `Removed existing server directory ${SERVER_DIRECTORY}`);
         }
@@ -461,14 +455,14 @@ export async function removeDir(dirPath) {
         log('INFO', `Directory not found, skipping removal: ${dirPath}`);
         return;
     }
-    const validBasePathsForRemove = [SERVER_DIRECTORY, TEMP_DIRECTORY, BACKUP_DIRECTORY].filter(p => p); // Filter out undefined paths
+    const validBasePathsForRemove = [SERVER_DIRECTORY, TEMP_DIRECTORY, BACKUP_DIRECTORY].filter(p => p);
     const isPathValidForRemove = validBasePathsForRemove.some(base => dirPath.startsWith(base) && path.resolve(dirPath) !== path.resolve(base));
-    if (!isPathValidForRemove && validBasePathsForRemove.length > 0) { // only error if base paths are defined
+    if (!isPathValidForRemove && validBasePathsForRemove.length > 0) {
         log('ERROR', `removeDir attempted on restricted or base path: ${dirPath}. Must be a sub-directory within configured paths.`);
         throw new Error(`Invalid path for removeDir: ${dirPath}. Operation aborted for security.`);
     }
     log('INFO', `Attempting to remove directory recursively: ${dirPath}`);
-    if (fs.promises && fs.promises.rm) { // Check fs.promises itself first
+    if (fs.promises && fs.promises.rm) {
         try {
             await fs.promises.rm(dirPath, { recursive: true, force: true });
             log('INFO', `Successfully removed directory using fs.promises.rm: ${dirPath}`);
@@ -506,8 +500,8 @@ export async function removeDir(dirPath) {
 
 export async function readServerProperties() {
     const configPath = pathJoin(SERVER_DIRECTORY, 'server.properties');
-    if (!fs.existsSync(configPath)) {
-        log('WARNING', `server.properties not found at ${configPath}. Returning empty config.`);
+    if (!SERVER_DIRECTORY || !fs.existsSync(configPath)) { // Check SERVER_DIRECTORY is defined
+        log('WARNING', `server.properties not found at ${configPath} (or server directory not set). Returning empty config.`);
         return {};
     }
     const data = await fs.promises.readFile(configPath, 'utf8');
@@ -524,6 +518,10 @@ export async function readServerProperties() {
 }
 
 export async function writeServerProperties(propertiesToWrite) {
+    if (!SERVER_DIRECTORY) {
+        log('ERROR', 'SERVER_DIRECTORY not set. Cannot write server.properties.');
+        throw new Error('Server directory not configured.');
+    }
     const configPath = pathJoin(SERVER_DIRECTORY, 'server.properties');
     let content = '';
     for (const key in propertiesToWrite) {
@@ -536,6 +534,10 @@ export async function writeServerProperties(propertiesToWrite) {
 }
 
 export async function listWorlds() {
+    if (!SERVER_DIRECTORY) {
+        log('WARNING', 'SERVER_DIRECTORY not set. Cannot list worlds.');
+        return [];
+    }
     const worldsPath = pathJoin(SERVER_DIRECTORY, 'worlds');
     if (!fs.existsSync(worldsPath)) {
         log('WARNING', `Worlds directory not found at ${worldsPath}. Returning empty world list.`);
@@ -550,6 +552,10 @@ export async function listWorlds() {
 }
 
 export async function activateWorld(worldName) {
+    if (!SERVER_DIRECTORY) {
+        log('ERROR', 'SERVER_DIRECTORY not set. Cannot activate world.');
+        return false;
+    }
     const worldsPath = pathJoin(SERVER_DIRECTORY, 'worlds');
     const targetWorldPath = pathJoin(worldsPath, worldName);
     if (!fs.existsSync(targetWorldPath)) {
@@ -640,7 +646,7 @@ export async function sendWebhookNotification(message) {
 }
 
 export async function readGlobalConfig() {
-    const configPath = pathJoin(__dirnameESM, GLOBAL_CONFIG_FILE); // Use __dirnameESM
+    const configPath = pathJoin(__dirnameESM, GLOBAL_CONFIG_FILE);
     let effectiveConfig = {
         serverName: "Default Minecraft Server", serverPortIPv4: 19132, serverPortIPv6: 19133,
         serverDirectory: "./server_data/default_server", tempDirectory: "./server_data/temp/default_server",
@@ -691,7 +697,7 @@ export async function readGlobalConfig() {
         } else if (arg === '--no-autoUpdateEnabled') { effectiveConfig.autoUpdateEnabled = false; log('DEBUG', `CLI Override (boolean flag): ${arg} = false`); }
     }
     setLogLevel(effectiveConfig.logLevel || "INFO");
-    const resolvePath = (p) => path.isAbsolute(p) ? p : path.resolve(__dirnameESM, p); // Use __dirnameESM
+    const resolvePath = (p) => path.isAbsolute(p) ? p : path.resolve(__dirnameESM, p);
     effectiveConfig.serverDirectory = resolvePath(effectiveConfig.serverDirectory);
     effectiveConfig.tempDirectory = resolvePath(effectiveConfig.tempDirectory);
     effectiveConfig.backupDirectory = resolvePath(effectiveConfig.backupDirectory);
@@ -701,12 +707,12 @@ export async function readGlobalConfig() {
 }
 
 export async function writeGlobalConfig(configToWrite) {
-    const configPath = pathJoin(__dirnameESM, GLOBAL_CONFIG_FILE); // Use __dirnameESM
+    const configPath = pathJoin(__dirnameESM, GLOBAL_CONFIG_FILE);
     try {
         const storeConfig = JSON.parse(JSON.stringify(configToWrite));
         const makeRelativeIfNeeded = (absPath) => {
-            if (absPath.startsWith(__dirnameESM) && absPath !== __dirnameESM) { // Use __dirnameESM
-                let relPath = path.relative(__dirnameESM, absPath); // Use __dirnameESM
+            if (absPath.startsWith(__dirnameESM) && absPath !== __dirnameESM) {
+                let relPath = path.relative(__dirnameESM, absPath);
                 if (!relPath.startsWith('..') && !path.isAbsolute(relPath)) {
                     relPath = `.${path.sep}${relPath.startsWith(path.sep) ? relPath.substring(1) : relPath}`;
                 }
@@ -748,9 +754,3 @@ export async function startAutoUpdateScheduler() {
         log('INFO', 'Auto-update is disabled or interval is invalid. Scheduler not started.');
     }
 }
-
-// Removed module.exports, functions are exported individually.
-// Note: Not all functions are exported, only those needed by app.js or potentially other modules.
-// For example, setLogLevel is internal. Helper functions like setLegacyGlobalDirectories were removed.
-// SERVER_DIRECTORY, etc., are global vars within this module, not exported.
-// instancePIDs was replaced by serverPID (internal).

@@ -113,6 +113,7 @@
                 <p><strong>Default World:</strong> <%= config.worldName %></p>
                 <p><strong>Log Level:</strong> <%= config.logLevel %></p>
                 <p><strong>Auto Start:</strong> <%= config.autoStart ? 'Enabled' : 'Disabled' %></p>
+                <p class="md:col-span-2"><strong>Current Server Version:</strong> <%= typeof currentServerVersion !== 'undefined' && currentServerVersion ? currentServerVersion : 'Unknown' %></p>
             </div>
         </div>
         <% } %>
