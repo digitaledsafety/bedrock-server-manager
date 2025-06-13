@@ -358,7 +358,7 @@ export async function startServer() {
         const serverProcess = spawn(serverExePath, [], {
             cwd: SERVER_DIRECTORY,
             stdio: 'inherit',
-            //detached: false
+            detached: false
         });
         if (serverProcess.pid) {
             serverPID = serverProcess.pid;

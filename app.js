@@ -213,9 +213,11 @@ app.get('/', async (req, res) => {
         backend.init(initialConfig); // Pass loaded config to init
         await backend.startAutoUpdateScheduler();
 
-        app.listen(PORT, () => {
-            backend.log('INFO', `Express frontend server listening on port ${PORT}`);
-            console.log(`Open your browser to http://localhost:${PORT}`);
+        let port = (initialConfig.uiPort ?? PORT);
+
+        app.listen(port, () => {
+            backend.log('INFO', `Express frontend server listening on port ${port}`);
+            console.log(`Open your browser to http://localhost:${port}`);
         });
     } catch (error) {
         backend.log('FATAL', `Failed to initialize and start application: ${error.message}`);
