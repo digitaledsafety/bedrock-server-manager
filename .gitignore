@@ -3,3 +3,5 @@ node_modules/
 *.txt
 package-lock.json
 node-v22.14.0-win-x64/
+server_data/
+config.json

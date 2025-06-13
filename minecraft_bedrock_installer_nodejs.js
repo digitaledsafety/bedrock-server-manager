@@ -358,7 +358,7 @@ export async function startServer() {
         const serverProcess = spawn(serverExePath, [], {
             cwd: SERVER_DIRECTORY,
             stdio: 'inherit',
-            detached: true
+            //detached: false
         });
         if (serverProcess.pid) {
             serverPID = serverProcess.pid;
@@ -458,53 +458,41 @@ export async function checkAndInstall() {
     }
 }
 
-export async function removeDir(dirPath) {
-    if (!fs.existsSync(dirPath)) {
-        log('INFO', `Directory not found, skipping removal: ${dirPath}`);
-        return;
-    }
-    const validBasePathsForRemove = [SERVER_DIRECTORY, TEMP_DIRECTORY, BACKUP_DIRECTORY].filter(p => p);
-    const isPathValidForRemove = validBasePathsForRemove.some(base => dirPath.startsWith(base) && path.resolve(dirPath) !== path.resolve(base));
-    if (!isPathValidForRemove && validBasePathsForRemove.length > 0) {
-        log('ERROR', `removeDir attempted on restricted or base path: ${dirPath}. Must be a sub-directory within configured paths.`);
-        throw new Error(`Invalid path for removeDir: ${dirPath}. Operation aborted for security.`);
-    }
-    log('INFO', `Attempting to remove directory recursively: ${dirPath}`);
-    if (fs.promises && fs.promises.rm) {
-        try {
-            await fs.promises.rm(dirPath, { recursive: true, force: true });
-            log('INFO', `Successfully removed directory using fs.promises.rm: ${dirPath}`);
-            return;
-        } catch (error) {
-            log('ERROR', `fs.promises.rm failed for ${dirPath}: ${error.message}. Falling back to spawn.`);
-        }
-    }
+/**
+ * Removes a directory recursively. Cross-platform compatible.
+ * @param {string} dirPath The path to the directory to remove.
+ * @returns {Promise<void>} A promise that resolves when the directory is removed.
+ */
+function removeDir(dirPath) {
     return new Promise((resolve, reject) => {
+        if (!fs.existsSync(dirPath)) {
+            resolve(); // Resolve if the directory does not exist
+            return;
+        }
+
         const platform = os.platform();
-        let command, args;
-        if (platform === 'win32') { command = 'rmdir'; args = ['/s', '/q', dirPath]; }
-        else { command = 'rm'; args = ['-rf', dirPath]; }
-        log('INFO', `Using command for removeDir: ${command} ${args.join(' ')}`);
-        const childProcess = spawn(command, args, { stdio: 'pipe' });
-        let stdoutData = ''; let stderrData = '';
-        childProcess.stdout.on('data', (data) => stdoutData += data.toString());
-        childProcess.stderr.on('data', (data) => stderrData += data.toString());
-        childProcess.on('close', (code) => {
-            if (stdoutData) log('DEBUG', `removeDir stdout: ${stdoutData}`);
-            if (stderrData) log('ERROR', `removeDir stderr: ${stderrData}`);
-            if (code === 0) {
-                log('INFO', `Successfully removed directory using spawn: ${dirPath}`);
-                resolve();
-            } else {
-                reject(new Error(`Failed to remove directory ${dirPath} using spawn. Exit code: ${code}. Stderr: ${stderrData}`));
-            }
-        });
-        childProcess.on('error', (error) => {
-            log('ERROR', `Failed to start removeDir process for ${dirPath} using spawn: ${error.message}`);
-            reject(new Error(`Failed to start removeDir process: ${error.message}`));
-        });
+        if (platform === 'win32') {
+            // Use Windows command to remove directory recursively and quietly
+            childProcessExec(`rmdir /s /q "${dirPath}"`, (error, stdout, stderr) => {
+                if (error) {
+                    reject(new Error(`Failed to remove directory ${dirPath}: ${error.message} ${stderr}`));
+                } else {
+                    resolve();
+                }
+            });
+        } else {
+            // Use Linux command to remove directory recursively and forcefully
+            childProcessExec(`rm -rf "${dirPath}"`, (error, stdout, stderr) => {
+                if (error) {
+                    reject(new Error(`Failed to remove directory ${dirPath}: ${error.message} ${stderr}`));
+                } else {
+                    resolve();
+                }
+            });
+        }
     });
 }
+
 
 export async function readServerProperties() {
     const configPath = pathJoin(SERVER_DIRECTORY, 'server.properties');
