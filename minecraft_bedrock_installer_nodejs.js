@@ -8,7 +8,7 @@ import { URL } from 'url';
 import util from 'util';
 
 const execPromise = util.promisify(childProcessExec);
-const os = os; // This was 'os = require('os')' which is fine, but can just be os if imported directly. Let's use 'os' directly.
+import os from 'os';
 
 // ES Module __dirname and __filename
 const __filenameESM = fileURLToPath(import.meta.url);
