@@ -1,8 +1,9 @@
-# Your Awesome Minecraft Bedrock Server Manager!
+# Minecraft Bedrock Server Manager
 
-Hey there! This app is super handy for looking after your Minecraft Bedrock Dedicated Server. You can fire it up, shut it down, restart it, grab updates, tweak settings, sort out your worlds, and even set up automatic updates! How cool is that?! Oh, and it's built to be **mobile-friendly**, so you can easily manage your server right from your phone or tablet!
+This application provides a web-based interface to manage a single Minecraft Bedrock Dedicated Server. You can start, stop, and restart your server, manage updates, tweak server properties (`server.properties`), manage worlds, and configure automatic updates. The interface is designed to be mobile-friendly.
 
 ![A clear view of the Minecraft Bedrock Server Manager web interface](public/mbsm-screen.PNG)
+*(Note: The screenshot shows the general UI. Some minor details might differ slightly with the current version.)*
 
 **Just so you know: This is a fan-made tool! It's not officially linked to or endorsed by Mojang, Minecraft, or Microsoft.**
 
@@ -10,152 +11,210 @@ Hey there! This app is super handy for looking after your Minecraft Bedrock Dedi
 
 ## What's Inside?
 
-1.  [Stuff You'll Need](#1-prerequisites)
-2.  [Getting It Set Up](#2-installation)
-    * [Node.js for Windows](#nodejs-installation-windows)
-    * [Node.js for Linux](#nodejs-installation-linux)
-3.  [App Prep](#3-application-setup)
-4.  [Let's Get This Party Started!](#4-starting-the-application)
-5.  [How to Use It](#5-basic-usage)
-    * [Server Buttons](#server-buttons)
-    * [Auto-Update Fun](#auto-update-fun)
-    * [Server Settings](#server-settings)
-    * [World Magic](#world-magic)
+1.  [Prerequisites](#1-prerequisites)
+2.  [Node.js Installation](#2-nodejs-installation)
+    *   [Windows](#nodejs-for-windows)
+    *   [Linux](#nodejs-for-linux)
+3.  [Application Setup](#3-application-setup)
+    *   [Configuration (`config.json`)](#configuration-configjson)
+    *   [Command-Line Overrides](#command-line-overrides)
+4.  [Starting the Application](#4-starting-the-application)
+5.  [Basic Usage](#5-basic-usage)
+    *   [Server Information](#server-information)
+    *   [Server Controls](#server-controls)
+    *   [Auto-Update Settings](#auto-update-settings)
+    *   [World Management](#world-management)
+    *   [Server Properties](#server-properties)
+6.  [Running Multiple Server Managers](#6-running-multiple-server-managers)
 
 ---
 
-## 1. Stuff You'll Need
+## 1. Prerequisites
 
-Before we jump in, just make sure you've got these bits and bobs ready:
-
-* **Node.js and npm:** This app runs on Node.js, and `npm` (that's Node Package Manager) comes right along with it when you install Node.js. Easy peasy!
-
-* **Minecraft Bedrock Dedicated Server:** This manager works with a Minecraft server you've already got. You should've downloaded it and probably even run it once to get all the basic files ready.
-
-* **Unzip Tool (Linux folks only):** If you're on Linux, you'll need `unzip` to, well, unzip files! Just run `sudo apt-get install unzip` or `sudo yum install unzip` if you haven't already.
-
-* **Systemd (Linux folks only):** If you're thinking about running your server seriously, `systemd` is your friend. It helps keep things running smoothly. The app uses some basic commands to stop/start the server, but `systemd` is great for a more solid setup.
-
-* **PowerShell (Windows folks only):** Just make sure PowerShell is ready to go on your Windows machine.
+*   **Node.js and npm:** The application runs on Node.js. `npm` (Node Package Manager) is included with Node.js.
+*   **Minecraft Bedrock Dedicated Server Software:** You should have the server software from Mojang. The manager can download it for you if it's not present in the configured server directory during the first update check.
+*   **System Utilities:**
+    *   **Linux:** `unzip` is required for extracting server files. Install via `sudo apt-get install unzip` (Debian/Ubuntu) or `sudo yum install unzip` (CentOS/RHEL).
+    *   **Windows:** PowerShell (typically version 5.1+) is required for server extraction. This is usually available by default on modern Windows systems.
 
 ---
 
-## 2. Getting It Set Up
+## 2. Node.js Installation
 
 ### Node.js for Windows
 
-1.  **Grab Node.js:** Head over to the official Node.js website: [https://nodejs.org/en/download/](https://nodejs.org/en/download/)
-2.  **Get the Installer:** Download the Windows Installer (`.msi` file) for the latest LTS (that's Long Term Support) version. It's the stable one!
-3.  **Run It!** Double-click that `.msi` file and just follow the steps. Sticking with the default options, including npm, is usually a good shout.
-4.  **Check It Out:** Open a fresh Command Prompt or PowerShell window and type these in:
-    ```bash
-    node -v
-    npm -v
-    ```
-    You should see the versions pop up if it's all good!
+1.  **Download:** Go to [https://nodejs.org/](https://nodejs.org/) and download the Windows Installer (.msi) for the latest LTS version.
+2.  **Install:** Run the installer, accepting default options.
+3.  **Verify:** Open Command Prompt or PowerShell and type `node -v` and `npm -v`. You should see their versions.
 
 ### Node.js for Linux
 
-For Linux, `nvm` (Node Version Manager) is a brilliant way to install Node.js. It lets you easily swap between different Node.js versions.
+Using Node Version Manager (`nvm`) is recommended:
 
 1.  **Install `nvm`:**
     ```bash
-    curl -o- [https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh](https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh) | bash
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
     ```
-    (Just double-check `v0.39.1` is the latest `nvm` version on their GitHub page, and update it if needed!).
-    Once it's done, close and reopen your terminal. If that doesn't work, try `source ~/.bashrc` (or `~/.zshrc` for Zsh users).
-2.  **Install Node.js (LTS):**
+    *(Check the `nvm` GitHub page for the latest version number).* Close and reopen your terminal, or run `source ~/.bashrc` (or `~/.zshrc`).
+2.  **Install Node.js LTS:**
     ```bash
     nvm install --lts
     nvm use --lts
     ```
-3.  **Check It Out:**
-    ```bash
-    node -v
-    npm -v
-    ```
-    You should see your installed versions here!
-4.  **Install `unzip` (if you don't have it):**
-    * **Debian/Ubuntu:** `sudo apt update && sudo apt install unzip`
-    * **CentOS/RHEL/Fedora:** `sudo yum install unzip` or `sudo dnf install unzip`
+3.  **Verify:** Type `node -v` and `npm -v`.
 
 ---
 
-## 3. App Prep
+## 3. Application Setup
 
-1.  **Get the Files:** Either clone the Git repository or just download the ZIP file.
+1.  **Get the Application Files:**
+    Clone this repository or download and extract the ZIP file.
     ```bash
     git clone <repository-url>
-    cd minecraft-bedrock-server-manager # Or whatever you named the folder
+    cd minecraft-bedrock-server-manager
     ```
-2.  **Install the Bits:** Hop into the project folder in your terminal and run this to get all the necessary bits:
+2.  **Install Dependencies:**
+    Navigate to the application directory in your terminal and run:
     ```bash
     npm install
     ```
-3.  **Set Up Server Paths:**
-    * Open up the `minecraft_bedrock_installer_nodejs.js` file.
-    * Find the `init()` function. You'll see where the app expects your server files (`SERVER_DIRECTORY`), temporary downloads (`TEMP_DIRECTORY`), and backups (`BACKUP_DIRECTORY`) to live. Feel free to change these if you like!
-        * **Windows example:** `C:\MinecraftBedrockServer\server`
-        * **Linux example:** `/opt/bedrock/server`
-    * Also, make sure `MC_USER` and `MC_GROUP` in that same file match the user and group that'll own your Minecraft server files on Linux.
+3.  **Configuration (`config.json`):**
+    The primary way to configure the server manager is through the `config.json` file located in the application's root directory. If this file is missing, a default one will be created when you first run the application.
 
-4.  **First-Time Server Setup (Totally Recommended!):**
-    * If you haven't got a Minecraft Bedrock server chilling at your `SERVER_DIRECTORY` yet, no worries! Once you start this app, you can just hit the "Check & Install Update" button in the web interface. It'll download and set up the latest server for you!
+    Here's an overview of the `config.json` structure and fields:
+
+    ```json
+    {
+      "serverName": "Default Minecraft Server",
+      "serverPortIPv4": 19132,
+      "serverPortIPv6": 19133,
+      "serverDirectory": "./server_data/default_server",
+      "tempDirectory": "./server_data/temp/default_server",
+      "backupDirectory": "./server_data/backup/default_server",
+      "worldName": "Bedrock level",
+      "autoStart": false,
+      "autoUpdateEnabled": true,
+      "autoUpdateIntervalMinutes": 60,
+      "logLevel": "INFO"
+    }
+    ```
+
+    *   `serverName`: A friendly name for your server (displayed in the UI).
+    *   `serverPortIPv4`: The IPv4 port for the Minecraft server (must match `server-port` in `server.properties`).
+    *   `serverPortIPv6`: The IPv6 port for the Minecraft server (must match `server-portv6` in `server.properties`).
+    *   `serverDirectory`: Path to your Minecraft server files.
+        *   If relative (e.g., starts with `./` or `../`), it's resolved relative to the application's root directory.
+        *   If absolute, it's used as is.
+    *   `tempDirectory`: Path for temporary downloads (e.g., server updates). Resolved like `serverDirectory`.
+    *   `backupDirectory`: Path to store server backups. Resolved like `serverDirectory`.
+    *   `worldName`: The default world name to set in `server.properties` if not already set.
+    *   `autoStart`: (boolean) If `true`, the manager will attempt to start the Minecraft server when the manager itself starts.
+    *   `autoUpdateEnabled`: (boolean) If `true`, enables automatic checking and installation of server updates.
+    *   `autoUpdateIntervalMinutes`: (number) How often (in minutes) to check for updates if auto-update is enabled.
+    *   `logLevel`: (string) Controls log verbosity. Options: "DEBUG", "INFO", "WARNING", "ERROR", "FATAL". Defaults to "INFO".
+
+4.  **Command-Line Overrides:**
+    You can override settings from `config.json` at runtime using command-line arguments when starting the application (e.g., `node app.js --serverPortIPv4 19134 --autoStart true`).
+
+    Supported overrides:
+    *   `--serverName <name>`
+    *   `--serverPortIPv4 <port>`
+    *   `--serverPortIPv6 <port>`
+    *   `--serverDirectory <path>`
+    *   `--tempDirectory <path>`
+    *   `--backupDirectory <path>`
+    *   `--worldName <name>`
+    *   `--autoStart` or `--autoStart true` / `--autoStart false` (or `--no-autoStart`)
+    *   `--autoUpdateEnabled` or `--autoUpdateEnabled true` / `--autoUpdateEnabled false` (or `--no-autoUpdateEnabled`)
+    *   `--logLevel <level>` (e.g., DEBUG, INFO)
+
+5.  **First-Time Server Setup:**
+    If the directory specified in `serverDirectory` is empty or doesn't contain server files, use the "Check & Install Update" button in the web interface. This will download and set up the latest official Bedrock server software.
 
 ---
 
-## 4. Let's Get This Party Started!
+## 4. Starting the Application
 
-1.  **Go to the Folder:** Open your terminal or command prompt and navigate to where you put the app files.
-2.  **Fire It Up!**
+1.  Navigate to the application directory in your terminal.
+2.  Run the application:
     ```bash
-    node app.js
+    node app.js [cli-overrides]
     ```
-3.  **Open in Your Browser:** Pop open your web browser and go to:
-    ```
-    http://localhost:3000
-    ```
-    (If something else is using port 3000, the app might tell you it's running on a different one, or you can just change it in `app.js`).
+    For example: `node app.js --serverPortIPv4 19134`
+3.  Open your web browser and go to `http://localhost:3000` (or the port specified if `PORT` in `app.js` was changed).
 
 ---
 
-## 5. How to Use It
+## 5. Basic Usage
 
-Once your app is up and running and you're looking at the web page, you'll see a few handy sections:
+The web interface provides several sections for managing your server:
 
-### Server Buttons
+### Server Information
+At the top of the page, you'll see details about the configured Minecraft server, such as its name, directory, and ports, as read from `config.json` and CLI overrides.
 
-* **Server Status:** This just tells you if your Minecraft server is `running` or `stopped`. Simple as that!
-* **Start Server:** Kicks off your Minecraft Bedrock server.
-* **Stop Server:** Shuts down your Minecraft Bedrock server.
-* **Restart Server:** Stops your server, then starts it back up again. Handy for applying changes!
-* **Check & Install Update:** This button is neat! It peeks at the official Minecraft website to see if there's a newer server version. If there is, it'll:
-    1.  Pause your current server.
-    2.  Make a quick backup of your old server stuff (worlds, `server.properties`, all that good stuff!).
-    3.  Download and unpack the shiny new server files.
-    4.  Copy your old worlds and `server.properties` into the new setup.
-    5.  Bring the updated server back online!
+### Server Controls
+*   **Server Status:** Indicates if the Minecraft server is `RUNNING` or `STOPPED`.
+*   **Start Server:** Starts the Minecraft server.
+*   **Stop Server:** Stops the Minecraft server.
+*   **Restart Server:** Restarts the Minecraft server.
+*   **Check & Install Update:**
+    1.  Checks the official Minecraft website for the latest server version.
+    2.  If a new version is found:
+        *   Stops the current server (if running).
+        *   Backs up existing server data (worlds, `server.properties`, `permissions.json`, `whitelist.json`).
+        *   Downloads and extracts the new server files.
+        *   Restores the backed-up data into the new server directory.
+        *   Starts the updated server.
 
-### Auto-Update Fun
+### Auto-Update Settings
+*   **Enable Automatic Updates:** Check this box to have the manager automatically check for and install updates.
+*   **Update Check Interval (minutes):** Set how often (in minutes) to check for new server versions.
+*   **Save Auto-Update Settings:** Click to apply your auto-update preferences.
 
-This section lets you decide if you want the app to handle updates automatically.
+### World Management
+*   Displays a list of world folders found in your server's `worlds` directory.
+*   The currently active world (as per `server.properties`) is highlighted.
+*   **Activate Button:** Click this next to a world's name. This updates the `level-name` field in the "Server Properties" section below. You **must** click "Save Properties" in that section and then restart the server for the world change to take effect.
 
-* **Enable Automatic Updates:** Tick this box if you want the app to check for updates all on its own.
-* **Update Check Interval (minutes):** Here, you can tell the app how often (in minutes) to look for new server versions.
-* **Save Auto-Update Settings:** Hit this to save your choices. The auto-update magic will kick in right away with your new settings!
+### Server Properties
+*   Allows you to view and edit your `server.properties` file directly from the UI.
+*   Modify values as needed.
+*   **Save Properties:** Click to save your changes to `server.properties`. **A server restart is usually required for most property changes to apply.**
 
-### Server Settings
+---
 
-This is where you can peek at and change your `server.properties` file.
+## 6. Running Multiple Server Managers
 
-* **Tweak Values:** Just type in the new values next to each setting.
-* **Save Properties:** Click this to save your changes to the `server.properties` file. **Heads up:** For most of these changes to actually do anything, you'll need to hit that "Restart Server" button in the "Server Buttons" section!
+Each instance of this application manages a *single* Minecraft Bedrock server. If you want to manage multiple Minecraft servers, you need to run multiple independent instances of this server manager. Here are two common ways:
 
-### World Magic
+1.  **Separate Directories:**
+    *   Copy the entire application into separate folders (e.g., `mc_manager_server1`, `mc_manager_server2`).
+    *   Each folder will have its own `config.json`. Edit each `config.json` to point to unique `serverDirectory`, `tempDirectory`, `backupDirectory`, and importantly, ensure the Minecraft server ports (`serverPortIPv4`, `serverPortIPv6`) are unique for each server to avoid conflicts.
+    *   You'll also need to run `node app.js` from within each directory, ensuring each manager instance listens on a unique web interface port (by modifying `PORT` in `app.js` for each copy, or by using a reverse proxy).
 
-This section shows you all the worlds you have in your Minecraft server's `worlds` folder.
+2.  **CLI Overrides from a Single Application Directory:**
+    *   You can run multiple `node app.js` processes from the same application code.
+    *   For each process, use command-line arguments to specify unique settings, especially:
+        *   `--serverDirectory <unique_path_for_server1_data>`
+        *   `--tempDirectory <unique_path_for_server1_temp>`
+        *   `--backupDirectory <unique_path_for_server1_backup>`
+        *   `--serverPortIPv4 <unique_port_for_server1_ipv4>`
+        *   `--serverPortIPv6 <unique_port_for_server1_ipv6>`
+        *   You'll also need to ensure each manager instance's web UI runs on a different port. This currently requires modifying the `PORT` constant in `app.js` for each process or using a reverse proxy setup.
+    *   Example:
+        ```bash
+        # Terminal 1 (for server 1 on UI port 3000)
+        # (Modify app.js to use PORT 3000 or ensure it's default)
+        node app.js --serverName "Server One" --serverDirectory ./server1_data --serverPortIPv4 19132 --serverPortIPv6 19133
 
-* **World List:** See all your worlds listed here! The one currently being used by your server will be highlighted.
-* **Activate Button:** Click this next to a world's name to make it the active world in your `server.properties` file. **Don't forget to click "Save Properties" after picking a new world, and then restart your server to load it up!**
+        # Terminal 2 (for server 2 on UI port 3001)
+        # (Modify app.js to use PORT 3001 for this run, or use PM2 with port args)
+        node app.js --serverName "Server Two" --serverDirectory ./server2_data --serverPortIPv4 19134 --serverPortIPv6 19135
+        ```
+    *   Managing the different web UI ports for each manager instance is key. Using a process manager like PM2 can help manage multiple Node.js processes with different environment variables or arguments.
 
-Have a blast managing your Minecraft Bedrock Server!
+**Key for multiple servers:** Each Minecraft Bedrock server *must* have its own unique data directory and operate on unique game ports.
+
+---
+
+Have fun managing your Minecraft Bedrock Server!

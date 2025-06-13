@@ -1,199 +1,226 @@
-const express = require('express');
-const path = require('path');
-const {
-    init,
-    log,
-    startServer,
-    stopServer,
-    restartServer,
-    checkAndInstall,
-    readServerProperties,
-    writeServerProperties,
-    listWorlds,
-    activateWorld,
-    SERVER_DIRECTORY, // Import SERVER_DIRECTORY to access server files
-    SERVER_EXE_NAME, // Import SERVER_EXE_NAME from the backend script
-    isProcessRunning, // Import isProcessRunning from the backend script
-    startAutoUpdateScheduler, // Import startAutoUpdateScheduler from the backend script
-    readGlobalConfig, // NEW: Import readGlobalConfig for frontend access
-    writeGlobalConfig // NEW: Import writeGlobalConfig for frontend access
-} = require('./minecraft_bedrock_installer_nodejs'); // Import functions from your backend script
+import express from 'express';
+import path, { dirname, join as pathJoin } from 'path';
+import { fileURLToPath } from 'url';
+
+import * as backend from './minecraft_bedrock_installer_nodejs.js';
+
+const __filenameESM = fileURLToPath(import.meta.url);
+const __dirnameESM = dirname(__filenameESM);
 
 const app = express();
 const PORT = 3000;
 
-// Middleware - Using Express's built-in body parsers
-app.use(express.json()); // To parse JSON request bodies
-app.use(express.urlencoded({ extended: true })); // To parse URL-encoded request bodies
-app.use(express.static(path.join(__dirname, 'public'))); // Serve static files (HTML, CSS, JS)
+// Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(pathJoin(__dirnameESM, 'public')));
 
-// Set EJS as the templating engine
+// EJS Setup
 app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, 'views'));
+app.set('views', pathJoin(__dirnameESM, 'views'));
 
-// --- API Endpoints ---
-
-// Endpoint to get server status (simplified for this example)
-app.get('/api/status', async (req, res) => {
-    try {
-        // SERVER_EXE_NAME and isProcessRunning are now correctly imported from the backend module.
-        const isRunning = await isProcessRunning(SERVER_EXE_NAME);
-        res.json({ status: isRunning ? 'running' : 'stopped' });
-    } catch (error) {
-        log('ERROR', `Error getting server status: ${error.message}`);
-        res.status(500).json({ error: 'Failed to get server status' });
-    }
-});
-
-// Endpoint to start the server
-app.post('/api/start', async (req, res) => {
-    try {
-        await startServer();
-        res.json({ success: true, message: 'Server start initiated.' });
-    } catch (error) {
-        log('ERROR', `Failed to start server: ${error.message}`);
-        res.status(500).json({ error: 'Failed to start server' });
-    }
-});
-
-// Endpoint to stop the server
-app.post('/api/stop', async (req, res) => {
-    try {
-        await stopServer();
-        res.json({ success: true, message: 'Server stop initiated.' });
-    } catch (error) {
-        log('ERROR', `Failed to stop server: ${error.message}`);
-        res.status(500).json({ error: 'Failed to stop server' });
-    }
-});
-
-// Endpoint to restart the server
-app.post('/api/restart', async (req, res) => {
-    try {
-        await restartServer();
-        res.json({ success: true, message: 'Server restart initiated.' });
-    }
-    catch (error) {
-        log('ERROR', `Failed to restart server: ${error.message}`);
-        res.status(500).json({ error: 'Failed to restart server' });
-    }
-});
-
-// Endpoint to check for updates and install
-app.post('/api/update', async (req, res) => {
-    try {
-        const result = await checkAndInstall();
-        res.json(result);
-    } catch (error) {
-        log('ERROR', `Failed to check/install update: ${error.message}`);
-        res.status(500).json({ error: 'Failed to check/install update' });
-    }
-});
-
-// Endpoint to get current server properties
-app.get('/api/properties', async (req, res) => {
-    try {
-        const properties = await readServerProperties();
-        res.json({ success: true, properties }); // Ensure success: true is returned
-    } catch (error) {
-        log('ERROR', `Failed to read server properties: ${error.message}`);
-        res.status(500).json({ error: 'Failed to read server properties' });
-    }
-});
-
-// Endpoint to update server properties
-app.post('/api/properties', async (req, res) => {
-    try {
-        const newProperties = req.body;
-        await writeServerProperties(newProperties);
-        res.json({ success: true, message: 'Server properties updated. Restart server for changes to take effect.' });
-    } catch (error) {
-        log('ERROR', `Failed to write server properties: ${error.message}`);
-        res.status(500).json({ error: 'Failed to write server properties' });
-    }
-});
-
-// Endpoint to list available worlds
-app.get('/api/worlds', async (req, res) => {
-    try {
-        const worlds = await listWorlds();
-        res.json({ success: true, worlds }); // Ensure success: true is returned
-    } catch (error) {
-        log('ERROR', `Failed to list worlds: ${error.message}`);
-        res.status(500).json({ error: 'Failed to list worlds' });
-    }
-});
-
-// Endpoint to activate a world
-app.post('/api/activate-world', async (req, res) => {
+// --- Input Validation Middleware ---
+const validateWorldName = (req, res, next) => {
     const { worldName } = req.body;
     if (!worldName) {
         return res.status(400).json({ error: 'World name is required.' });
     }
+    const worldNameRegex = /^[a-zA-Z0-9_ -]+$/;
+    if (worldName.includes('.') || worldName.includes('/') || worldName.includes('\\') || !worldNameRegex.test(worldName)) {
+        backend.log('ERROR', `Invalid worldName format or characters: ${worldName}`);
+        return res.status(400).json({ error: 'Invalid worldName format. Avoid ., /, \\ and ensure it matches allowed pattern.' });
+    }
+    next();
+};
+
+const sanitizeServerProperties = (req, res, next) => {
+    const properties = req.body;
+    if (typeof properties !== 'object' || properties === null) {
+        return res.status(400).json({ error: 'Invalid server properties format. Expected an object.' });
+    }
+    for (const key in properties) {
+        if (typeof key !== 'string' || key.match(/[\n\r]/)) {
+            backend.log('ERROR', `Invalid character in server property key: ${key}`);
+            return res.status(400).json({ error: `Invalid character in server property key: ${key}` });
+        }
+        const value = properties[key];
+        if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
+            properties[key] = String(value);
+            backend.log('WARNING', `Property value for key '${key}' was converted to string.`);
+        }
+    }
+    req.body = properties;
+    next();
+};
+
+// --- API Endpoints ---
+app.get('/api/status', async (req, res) => {
     try {
-        const success = await activateWorld(worldName);
+        const isRunning = await backend.isProcessRunning();
+        res.json({ status: isRunning ? 'running' : 'stopped' });
+    } catch (error) {
+        backend.log('ERROR', `Error getting server status: ${error.message}`);
+        res.status(500).json({ error: 'Failed to get server status' });
+    }
+});
+
+app.post('/api/start', async (req, res) => {
+    try {
+        await backend.startServer();
+        res.json({ success: true, message: 'Server start initiated.' });
+    } catch (error) {
+        backend.log('ERROR', `Failed to start server: ${error.message}`);
+        res.status(500).json({ error: 'Failed to start server' });
+    }
+});
+
+app.post('/api/stop', async (req, res) => {
+    try {
+        await backend.stopServer();
+        res.json({ success: true, message: 'Server stop initiated.' });
+    } catch (error) {
+        backend.log('ERROR', `Failed to stop server: ${error.message}`);
+        res.status(500).json({ error: 'Failed to stop server' });
+    }
+});
+
+app.post('/api/restart', async (req, res) => {
+    try {
+        await backend.restartServer();
+        res.json({ success: true, message: 'Server restart initiated.' });
+    }
+    catch (error) {
+        backend.log('ERROR', `Failed to restart server: ${error.message}`);
+        res.status(500).json({ error: 'Failed to restart server' });
+    }
+});
+
+app.post('/api/update', async (req, res) => {
+    try {
+        const result = await backend.checkAndInstall();
+        res.json(result);
+    } catch (error) {
+        backend.log('ERROR', `Failed to check/install update: ${error.message}`);
+        res.status(500).json({ error: 'Failed to check/install update' });
+    }
+});
+
+app.get('/api/properties', async (req, res) => {
+    try {
+        const properties = await backend.readServerProperties();
+        res.json({ success: true, properties });
+    } catch (error) {
+        backend.log('ERROR', `Failed to read server properties: ${error.message}`);
+        res.status(500).json({ error: 'Failed to read server properties' });
+    }
+});
+
+app.post('/api/properties', sanitizeServerProperties, async (req, res) => {
+    try {
+        const newProperties = req.body;
+        await backend.writeServerProperties(newProperties);
+        res.json({ success: true, message: 'Server properties updated. Restart server for changes to take effect.' });
+    } catch (error) {
+        backend.log('ERROR', `Failed to write server properties: ${error.message}`);
+        res.status(500).json({ error: 'Failed to write server properties' });
+    }
+});
+
+app.get('/api/worlds', async (req, res) => {
+    try {
+        const worlds = await backend.listWorlds();
+        res.json({ success: true, worlds });
+    } catch (error) {
+        backend.log('ERROR', `Failed to list worlds: ${error.message}`);
+        res.status(500).json({ error: 'Failed to list worlds' });
+    }
+});
+
+app.post('/api/activate-world', validateWorldName, async (req, res) => {
+    try {
+        const { worldName } = req.body;
+        const success = await backend.activateWorld(worldName);
         if (success) {
             res.json({ message: `World '${worldName}' activated.` });
         } else {
             res.status(400).json({ error: `Failed to activate world '${worldName}'.` });
         }
     } catch (error) {
-        log('ERROR', `Failed to activate world: ${error.message}`);
+        backend.log('ERROR', `Failed to activate world: ${error.message}`);
         res.status(500).json({ error: 'Failed to activate world' });
     }
 });
 
-// NEW: Endpoint to get global configuration (including auto-update settings)
 app.get('/api/config', async (req, res) => {
     try {
-        const config = await readGlobalConfig();
-        res.json({ success: true, config });
+        const appConfig = await backend.readGlobalConfig();
+        res.json({ success: true, config: appConfig });
     } catch (error) {
-        log('ERROR', `Error getting global config: ${error.message}`);
-        res.status(500).json({ error: 'Failed to get global config' });
+        backend.log('ERROR', `Error getting application config: ${error.message}`);
+        res.status(500).json({ error: 'Failed to get application config' });
     }
 });
 
-// NEW: Endpoint to set global configuration (including auto-update settings)
 app.post('/api/config', async (req, res) => {
     try {
-        const newConfig = req.body;
-        await writeGlobalConfig(newConfig);
-        await startAutoUpdateScheduler(); // Restart scheduler with new config
-        res.json({ success: true, message: 'Global config updated successfully.' });
+        const newSettings = req.body;
+        let currentFullConfig = await backend.readGlobalConfig();
+        if (newSettings.autoUpdateEnabled !== undefined) {
+            currentFullConfig.autoUpdateEnabled = newSettings.autoUpdateEnabled;
+        }
+        if (newSettings.autoUpdateIntervalMinutes !== undefined) {
+            currentFullConfig.autoUpdateIntervalMinutes = parseInt(newSettings.autoUpdateIntervalMinutes, 10);
+        }
+        if (newSettings.logLevel !== undefined) {
+            currentFullConfig.logLevel = newSettings.logLevel.toUpperCase();
+        }
+        await backend.writeGlobalConfig(currentFullConfig);
+        await backend.startAutoUpdateScheduler();
+        res.json({ success: true, message: 'Global config settings updated successfully.' });
     } catch (error) {
-        log('ERROR', `Error setting global config: ${error.message}`);
+        backend.log('ERROR', `Error setting global config: ${error.message}`);
         res.status(500).json({ error: 'Failed to set global config' });
     }
 });
 
-
-// --- Frontend Routes (using EJS for rendering) ---
-
+// --- Frontend Routes ---
 app.get('/', async (req, res) => {
     try {
-        const properties = await readServerProperties();
-        const worlds = await listWorlds();
-        const status = await isProcessRunning(SERVER_EXE_NAME); // Get current server status
-        const globalConfig = await readGlobalConfig(); // NEW: Read global config for frontend
-        res.render('index', { 
-            properties, 
-            worlds, 
-            serverStatus: status ? 'running' : 'stopped',
-            globalConfig // NEW: Pass global config to EJS template
+        const currentConfig = await backend.readGlobalConfig();
+        const properties = await backend.readServerProperties();
+        const worlds = await backend.listWorlds();
+        const isRunning = await backend.isProcessRunning();
+        const serverStatus = isRunning ? 'running' : 'stopped';
+        const currentServerVersion = backend.getStoredVersion(); // Added this line
+
+        res.render('index', {
+            properties,
+            worlds,
+            serverStatus,
+            config: currentConfig,
+            currentServerVersion // Added to template data
         });
     } catch (error) {
-        log('ERROR', `Error rendering index page: ${error.message}`);
+        backend.log('ERROR', `Error rendering index page: ${error.message}`);
         res.status(500).send('Error loading page.');
     }
 });
 
-// Start the server
-app.listen(PORT, () => {
-    log('INFO', `Express frontend server listening on port ${PORT}`);
-    console.log(`Open your browser to http://localhost:${PORT}`);
-    // Start the auto-update scheduler when the Express app starts
-    // This will now use the config.json file to determine if auto-update is enabled
-    init(); // Ensure init is called before scheduler starts
-    startAutoUpdateScheduler();
-});
+// Server Initialization
+(async () => {
+    try {
+        const initialConfig = await backend.readGlobalConfig();
+        backend.init(initialConfig); // Pass loaded config to init
+        await backend.startAutoUpdateScheduler();
+
+        let port = (initialConfig.uiPort ?? PORT);
+
+        app.listen(port, () => {
+            backend.log('INFO', `Express frontend server listening on port ${port}`);
+            console.log(`Open your browser to http://localhost:${port}`);
+        });
+    } catch (error) {
+        backend.log('FATAL', `Failed to initialize and start application: ${error.message}`);
+        process.exit(1);
+    }
+})();
