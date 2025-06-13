@@ -421,12 +421,20 @@ export async function checkAndInstall() {
             fs.unlinkSync(downloadPath);
             log('INFO', 'Extraction complete.');
         }
+
+        log('DEBUG', `Preparing to move files from temporary path: ${tempInstallPath} to SERVER_DIRECTORY: ${SERVER_DIRECTORY}`);
+        if (!fs.existsSync(tempInstallPath)) {
+            throw new Error(`Temporary installation path ${tempInstallPath} not found after extraction.`);
+        }
+
         if (SERVER_DIRECTORY && fs.existsSync(SERVER_DIRECTORY)) { // Check if SERVER_DIRECTORY is defined
-            await removeDir(SERVER_DIRECTORY);
+            log('INFO', `Removing existing server directory: ${SERVER_DIRECTORY}`);
+            await removeDir(SERVER_DIRECTORY);
             log('INFO', `Removed existing server directory ${SERVER_DIRECTORY}`);
         }
+        log('INFO', `Moving new server files from ${tempInstallPath} to ${SERVER_DIRECTORY}`);
         fs.renameSync(tempInstallPath, SERVER_DIRECTORY);
-        log('INFO', `Moved new server files to ${SERVER_DIRECTORY}`);
+        log('INFO', 'Successfully moved new server files to SERVER_DIRECTORY.');
         if (backupDir) {
             await copyExistingData(backupDir, SERVER_DIRECTORY);
             log('INFO', `Copied existing data from backup to new server directory.`);
