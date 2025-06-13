@@ -1,15 +1,22 @@
-const https = require('https');
-const http = require('http');
-const fs = require('fs');
-const path = require('path');
-const { exec, spawn } = require('child_process');
-const { URL } = require('url');
-const util = require('util');
-const execPromise = util.promisify(exec);
-const os = require('os');
+import https from 'https';
+import http from 'http';
+import fs from 'fs';
+import path, { dirname, join as pathJoin } from 'path'; // Renamed join to pathJoin to avoid conflict
+import { exec as childProcessExec, spawn } from 'child_process'; // Renamed exec to avoid conflict
+import { fileURLToPath } from 'url';
+import { URL } from 'url';
+import util from 'util';
+
+const execPromise = util.promisify(childProcessExec);
+const os = os; // This was 'os = require('os')' which is fine, but can just be os if imported directly. Let's use 'os' directly.
+
+// ES Module __dirname and __filename
+const __filenameESM = fileURLToPath(import.meta.url);
+const __dirnameESM = dirname(__filenameESM);
 
 // Configuration
-const MC_BEDROCK_URL = 'https://www.minecraft.net/en-us/download/server/bedrock';
+const MC_DOWNLOAD_API_URL = 'https://net-secondary.web.minecraft-services.net/api/v1.0/download/links';
+// const MC_BEDROCK_URL = 'https://www.minecraft.net/en-us/download/server/bedrock'; // Old URL, commented out
 const VERSION_REGEX = /bedrock-server-([\d\.]+)\.zip/;
 
 // Globals populated by readGlobalConfig and init
@@ -23,7 +30,7 @@ const MC_USER = 'minecraft';
 const MC_GROUP = 'minecraft';
 const LAST_VERSION_FILE = 'last_version.txt';
 const WEBHOOK_URL = process.env.MC_UPDATE_WEBHOOK;
-const SERVER_EXE_NAME = os.platform() === 'win32' ? 'bedrock_server.exe' : 'bedrock_server';
+export const SERVER_EXE_NAME = os.platform() === 'win32' ? 'bedrock_server.exe' : 'bedrock_server';
 const CONFIG_FILES = ['server.properties', 'permissions.json', 'whitelist.json'];
 const WORLD_DIRECTORIES = ['worlds'];
 const GLOBAL_CONFIG_FILE = 'config.json';
@@ -31,7 +38,7 @@ const GLOBAL_CONFIG_FILE = 'config.json';
 let autoUpdateIntervalId = null;
 
 // Logging setup
-const logStream = fs.createWriteStream('mc_installer.log', { flags: 'a' });
+const logStream = fs.createWriteStream(pathJoin(__dirnameESM, 'mc_installer.log'), { flags: 'a' }); // Log file next to script
 const LOG_LEVELS = { DEBUG: 0, INFO: 1, WARNING: 2, ERROR: 3, FATAL: 4 };
 let currentLogLevel = LOG_LEVELS.INFO;
 
@@ -39,9 +46,9 @@ function setLogLevel(levelName) {
     const levelNameToUse = (levelName || "INFO").toUpperCase();
     const newLevel = LOG_LEVELS[levelNameToUse];
     if (newLevel !== undefined) {
+        const oldLevel = currentLogLevel;
         currentLogLevel = newLevel;
-        // Log this message only if the new level allows INFO messages
-        if (LOG_LEVELS.INFO >= currentLogLevel) {
+        if (LOG_LEVELS.INFO >= currentLogLevel && LOG_LEVELS.INFO >= oldLevel) { // Log only if new level allows INFO
             const initialLogMessage = `${new Date().toISOString()} [INFO] Log level set to ${levelNameToUse}\n`;
             console.log(initialLogMessage);
             logStream.write(initialLogMessage);
@@ -54,7 +61,7 @@ function setLogLevel(levelName) {
     }
 }
 
-function log(level, message) {
+export function log(level, message) { // Export log if app.js needs it (it does)
     const messageLevel = LOG_LEVELS[level.toUpperCase()];
     if (messageLevel === undefined) {
         console.warn(`Invalid log level used in log() call: ${level}`);
@@ -68,7 +75,7 @@ function log(level, message) {
     }
 }
 
-function init(effectiveConfigFromRead) {
+export function init(effectiveConfigFromRead) {
     config = effectiveConfigFromRead;
     setLogLevel(config.logLevel || "INFO");
     log('INFO', `Initializing with configuration: ${JSON.stringify(config, null, 2)}`);
@@ -91,50 +98,55 @@ function init(effectiveConfigFromRead) {
     }
 }
 
-async function getLatestVersion() {
-    return new Promise((resolve, reject) => {
-        const url = new URL(MC_BEDROCK_URL);
-        const protocol = url.protocol === 'https:' ? https : http;
-        protocol.get(url, (res) => {
-            if (res.statusCode < 200 || res.statusCode >= 300) {
-                reject(new Error(`HTTP error! Status code: ${res.statusCode}`));
-                return;
-            }
-            let data = '';
-            res.on('data', (chunk) => { data += chunk; });
-            res.on('end', () => {
-                try {
-                    const htmlContent = data;
-                    const linkRegex = /<a\s+[^>]*?href="([^"]*?bedrock-server[^"]*?)"[^>]*?>/i;
-                    const linkMatch = htmlContent.match(linkRegex);
-                    if (linkMatch && linkMatch[1]) {
-                        const downloadUrl = linkMatch[1];
-                        log('DEBUG', `Download URL found: ${downloadUrl}`); // DEBUG as it's verbose
-                        const versionMatch = downloadUrl.match(VERSION_REGEX);
-                        if (versionMatch && versionMatch[1]) {
-                            resolve(versionMatch[1].trim());
-                        } else {
-                            log('WARNING', 'Could not extract version from the download URL.');
-                            resolve(null);
-                        }
-                    } else {
-                        log('WARNING', 'Could not find the download link on the page.');
-                        resolve(null);
-                    }
-                } catch (error) {
-                    log('ERROR', `Error parsing HTML: ${error}`);
-                    reject(error);
-                }
-            });
-            res.on('error', (err) => {
-                log('ERROR', `Error fetching data: ${err.message}`);
-                reject(err);
-            });
-        });
-    });
+export async function getLatestVersion() {
+    return new Promise((resolve, reject) => {
+        const apiURL = new URL(MC_DOWNLOAD_API_URL);
+        https.get(apiURL, { headers: { 'Accept-Language': 'en-US,en;q=0.5' } }, (res) => { // Added headers as some APIs might require it
+            let data = '';
+            if (res.statusCode < 200 || res.statusCode >= 300) {
+                log('ERROR', `Failed to fetch download links from API. Status: ${res.statusCode} ${res.statusMessage}. Response: ${data}`);
+                return reject(new Error(`API error! Status code: ${res.statusCode}`));
+            }
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                try {
+                    const jsonResponse = JSON.parse(data);
+                    const platform = os.platform();
+                    const targetDownloadType = platform === 'win32' ? 'serverBedrockWindows' : 'serverBedrockLinux';
+                    let foundLink = null;
+
+                    if (jsonResponse && jsonResponse.result && jsonResponse.result.links) {
+                        foundLink = jsonResponse.result.links.find(link => link.downloadType === targetDownloadType);
+                    }
+
+                    if (foundLink && foundLink.downloadUrl) {
+                        const downloadUrl = foundLink.downloadUrl;
+                        log('DEBUG', `Found download URL via API: ${downloadUrl}`);
+                        const versionMatch = downloadUrl.match(VERSION_REGEX);
+                        if (versionMatch && versionMatch[1]) {
+                            resolve({ latestVersion: versionMatch[1].trim(), downloadUrl: downloadUrl });
+                        } else {
+                            log('WARNING', `Could not extract version from API download URL: ${downloadUrl}`);
+                            resolve(null);
+                        }
+                    } else {
+                        log('WARNING', `Could not find download link for '${targetDownloadType}' in API response.`);
+                        resolve(null);
+                    }
+                } catch (error) {
+                    log('ERROR', `Error parsing JSON response from download API: ${error.message}. Response: ${data}`);
+                    reject(error);
+                }
+            });
+        }).on('error', err => {
+            log('ERROR', `Error fetching data from download API: ${err.message}`);
+            reject(err);
+        });
+    });
 }
 
-function downloadFile(downloadUrl, downloadPath) {
+
+export function downloadFile(downloadUrl, downloadPath) {
     return new Promise((resolve, reject) => {
         const url = new URL(downloadUrl);
         const protocol = url.protocol === 'https:' ? https : http;
@@ -152,12 +164,12 @@ function downloadFile(downloadUrl, downloadPath) {
     });
 }
 
-function extractFiles(zipPath, extractPath) {
+export function extractFiles(zipPath, extractPath) {
     return new Promise((resolve, reject) => {
         const platform = os.platform();
         let childProcess;
         if (platform === 'win32') {
-            const psPath = path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+            const psPath = pathJoin(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
             const commandArgs = [
                 '-NoProfile', '-NonInteractive', '-Command',
                 `Expand-Archive -Path '${zipPath.replace(/'/g, "''")}' -DestinationPath '${extractPath.replace(/'/g, "''")}' -Force`
@@ -172,7 +184,7 @@ function extractFiles(zipPath, extractPath) {
         childProcess.stdout.on('data', (data) => { stdoutData += data.toString(); });
         childProcess.stderr.on('data', (data) => { stderrData += data.toString(); });
         childProcess.on('close', (code) => {
-            log('DEBUG', `Extraction stdout: ${stdoutData}`); // DEBUG as it can be verbose
+            log('DEBUG', `Extraction stdout: ${stdoutData}`);
             if (stderrData) { log('ERROR', `Extraction stderr: ${stderrData}`); }
             if (code === 0) {
                 log('INFO', `Extraction completed successfully for ${zipPath} to ${extractPath}.`);
@@ -188,14 +200,14 @@ function extractFiles(zipPath, extractPath) {
     });
 }
 
-async function changeOwnership(dirPath, user, group) {
+export async function changeOwnership(dirPath, user, group) {
     if (os.platform() === 'win32') {
         log('INFO', `Skipping changeOwnership on Windows.`);
         return;
     }
-    const validBasePaths = [SERVER_DIRECTORY, BACKUP_DIRECTORY];
-    if (!validBasePaths.some(base => dirPath.startsWith(base))) {
-        log('ERROR', `changeOwnership attempted on restricted path: ${dirPath}. Expected to be within ${validBasePaths.join(' or ')}.`);
+    const validBasePaths = [SERVER_DIRECTORY, BACKUP_DIRECTORY]; // Use global vars
+    if (!validBasePaths.some(base => base && dirPath.startsWith(base))) { // Ensure base is defined
+        log('ERROR', `changeOwnership attempted on restricted path: ${dirPath}. Expected to be within configured server or backup directories.`);
         throw new Error(`Invalid path for changeOwnership: ${dirPath}. Operation aborted for security.`);
     }
     try {
@@ -206,7 +218,7 @@ async function changeOwnership(dirPath, user, group) {
         childProcess.stderr.on('data', (data) => stderrData += data.toString());
         return new Promise((resolve, reject) => {
             childProcess.on('close', (code) => {
-                if (stdoutData) log('DEBUG', `chown stdout: ${stdoutData}`); // DEBUG as it can be verbose
+                if (stdoutData) log('DEBUG', `chown stdout: ${stdoutData}`);
                 if (stderrData) log('ERROR', `chown stderr: ${stderrData}`);
                 if (code === 0) {
                     log('INFO', `Changed ownership of ${dirPath} to ${user}:${group} successfully.`);
@@ -226,19 +238,20 @@ async function changeOwnership(dirPath, user, group) {
     }
 }
 
-function storeLatestVersion(version) {
+export function storeLatestVersion(version) {
     try {
-        fs.writeFileSync(LAST_VERSION_FILE, version); // This file is in the app root, not server specific
+        fs.writeFileSync(pathJoin(__dirnameESM, LAST_VERSION_FILE), version); // Use __dirnameESM
         log('INFO', `Stored latest version: ${version}`);
     } catch (error) {
         log('ERROR', `Error storing version to file: ${error.message}`);
     }
 }
 
-function getStoredVersion() {
+export function getStoredVersion() {
     try {
-        if (fs.existsSync(LAST_VERSION_FILE)) {
-            const version = fs.readFileSync(LAST_VERSION_FILE, 'utf8').trim();
+        const lastVersionFilePath = pathJoin(__dirnameESM, LAST_VERSION_FILE); // Use __dirnameESM
+        if (fs.existsSync(lastVersionFilePath)) {
+            const version = fs.readFileSync(lastVersionFilePath, 'utf8').trim();
             log('INFO', `Retrieved stored version: ${version}`);
             return version;
         } else {
@@ -251,12 +264,12 @@ function getStoredVersion() {
     }
 }
 
-async function backupServer() {
+export async function backupServer() {
     if (!SERVER_DIRECTORY || !fs.existsSync(SERVER_DIRECTORY)) {
         log('INFO', `Server directory not found or not set. Skipping backup.`);
         return null;
     }
-    const backupDir = path.join(BACKUP_DIRECTORY, new Date().toISOString().replace(/:/g, '-').replace(/\./g, '_'));
+    const backupDir = pathJoin(BACKUP_DIRECTORY, new Date().toISOString().replace(/:/g, '-').replace(/\./g, '_'));
     fs.mkdirSync(backupDir, { recursive: true });
     log('INFO', `Creating backup in ${backupDir}`);
     try {
@@ -275,12 +288,12 @@ async function backupServer() {
     }
 }
 
-async function copyDir(src, dest) {
+export async function copyDir(src, dest) {
     fs.mkdirSync(dest, { recursive: true });
     const entries = fs.readdirSync(src, { withFileTypes: true });
     for (const entry of entries) {
-        const srcPath = path.join(src, entry.name);
-        const destPath = path.join(dest, entry.name);
+        const srcPath = pathJoin(src, entry.name);
+        const destPath = pathJoin(dest, entry.name);
         if (entry.isDirectory()) {
             await copyDir(srcPath, destPath);
         } else {
@@ -289,11 +302,11 @@ async function copyDir(src, dest) {
     }
 }
 
-async function copyExistingData(backupDir, newInstallDir) {
+export async function copyExistingData(backupDir, newInstallDir) {
     log('INFO', `Copying existing data from ${backupDir} to ${newInstallDir}`);
     for (const worldDir of WORLD_DIRECTORIES) {
-        const srcPath = path.join(backupDir, worldDir);
-        const destPath = path.join(newInstallDir, worldDir);
+        const srcPath = pathJoin(backupDir, worldDir);
+        const destPath = pathJoin(newInstallDir, worldDir);
         if (fs.existsSync(srcPath)) {
             log('INFO', `Copying world directory: ${worldDir}`);
             await copyDir(srcPath, destPath);
@@ -302,8 +315,8 @@ async function copyExistingData(backupDir, newInstallDir) {
         }
     }
     for (const file of CONFIG_FILES) {
-        const srcPath = path.join(backupDir, file);
-        const destPath = path.join(newInstallDir, file);
+        const srcPath = pathJoin(backupDir, file);
+        const destPath = pathJoin(newInstallDir, file);
         if (fs.existsSync(srcPath)) {
             log('INFO', `Copying config file: ${file}`);
             fs.copyFileSync(srcPath, destPath);
@@ -314,7 +327,7 @@ async function copyExistingData(backupDir, newInstallDir) {
     log('INFO', 'Finished copying existing data.');
 }
 
-async function stopServer() {
+export async function stopServer() {
     if (!serverPID) {
         log('INFO', `Server process PID not found. Server may already be stopped.`);
         return;
@@ -330,7 +343,7 @@ async function stopServer() {
     }
 }
 
-async function startServer() {
+export async function startServer() {
     if (serverPID) {
         log('INFO', `Server process already has a PID: ${serverPID}. Check if it's running.`);
         if (await isProcessRunning()) {
@@ -342,7 +355,7 @@ async function startServer() {
         }
     }
     try {
-        const serverExePath = path.join(SERVER_DIRECTORY, SERVER_EXE_NAME);
+        const serverExePath = pathJoin(SERVER_DIRECTORY, SERVER_EXE_NAME);
         if (!fs.existsSync(serverExePath)) {
             log('WARNING', `Server executable not found at ${serverExePath}. Cannot start server. Run update/install first.`);
             return;
@@ -375,26 +388,24 @@ async function startServer() {
     }
 }
 
-async function checkAndInstall() {
+export async function checkAndInstall() {
     log('INFO', 'Checking for new Minecraft Bedrock server releases...');
-    const latestVersion = await getLatestVersion();
-    if (!latestVersion) {
-        log('WARNING', 'Failed to retrieve the latest version. Aborting update check.');
-        return { success: false, message: 'Failed to retrieve latest version.' };
+    const versionInfo = await getLatestVersion(); // Now returns an object or null
+    if (!versionInfo || !versionInfo.latestVersion || !versionInfo.downloadUrl) { // Check all parts of versionInfo
+        log('WARNING', 'Failed to retrieve the latest version or download URL. Aborting update check.');
+        return { success: false, message: 'Failed to retrieve latest version information from API.' };
     }
+    const { latestVersion, downloadUrl: apiDownloadUrl } = versionInfo; // Destructure for clarity
+
     const lastVersion = getStoredVersion();
     if (lastVersion && latestVersion === lastVersion) {
         log('INFO', 'No new version found. Server is up to date.');
         return { success: true, message: 'Server is already up to date.' };
     }
     log('INFO', `New version found: ${latestVersion}. Current version: ${lastVersion || 'None'}`);
-    const platform = os.platform();
-    let downloadUrl = `https://www.minecraft.net/bedrockdedicatedserver/bin-linux/bedrock-server-${latestVersion}.zip`;
-    if (platform === 'win32') {
-        downloadUrl = `https://www.minecraft.net/bedrockdedicatedserver/bin-win/bedrock-server-${latestVersion}.zip`;
-    }
-    const tempInstallPath = path.join(TEMP_DIRECTORY, latestVersion);
-    const downloadPath = path.join(tempInstallPath, `bedrock-server-${latestVersion}.zip`);
+   
+    const tempInstallPath = pathJoin(TEMP_DIRECTORY, latestVersion);
+    const downloadPath = pathJoin(tempInstallPath, `bedrock-server-${latestVersion}.zip`);
     try {
         if (WEBHOOK_URL) {
             try { await sendWebhookNotification(`New Minecraft Bedrock Server version ${latestVersion} is available! Server going down for update...`); }
@@ -408,8 +419,8 @@ async function checkAndInstall() {
         } else {
             fs.mkdirSync(tempInstallPath, { recursive: true });
             log('INFO', `Created temporary installation directory: ${tempInstallPath}`);
-            log('INFO', `Downloading server files from ${downloadUrl} to ${downloadPath}`);
-            await downloadFile(downloadUrl, downloadPath);
+            log('INFO', `Downloading server files from ${apiDownloadUrl} to ${downloadPath}`); // Use apiDownloadUrl
+            await downloadFile(apiDownloadUrl, downloadPath); // Use apiDownloadUrl
             log('INFO', 'Download complete.');
             log('INFO', `Extracting files to ${tempInstallPath}`);
             await extractFiles(downloadPath, tempInstallPath);
@@ -445,19 +456,19 @@ async function checkAndInstall() {
     }
 }
 
-async function removeDir(dirPath) { // Removed instanceIdForLogging
+export async function removeDir(dirPath) {
     if (!fs.existsSync(dirPath)) {
         log('INFO', `Directory not found, skipping removal: ${dirPath}`);
         return;
     }
-    const validBasePathsForRemove = [SERVER_DIRECTORY, TEMP_DIRECTORY, BACKUP_DIRECTORY];
+    const validBasePathsForRemove = [SERVER_DIRECTORY, TEMP_DIRECTORY, BACKUP_DIRECTORY].filter(p => p); // Filter out undefined paths
     const isPathValidForRemove = validBasePathsForRemove.some(base => dirPath.startsWith(base) && path.resolve(dirPath) !== path.resolve(base));
-    if (!isPathValidForRemove) {
+    if (!isPathValidForRemove && validBasePathsForRemove.length > 0) { // only error if base paths are defined
         log('ERROR', `removeDir attempted on restricted or base path: ${dirPath}. Must be a sub-directory within configured paths.`);
         throw new Error(`Invalid path for removeDir: ${dirPath}. Operation aborted for security.`);
     }
     log('INFO', `Attempting to remove directory recursively: ${dirPath}`);
-    if (fs.promises.rm) {
+    if (fs.promises && fs.promises.rm) { // Check fs.promises itself first
         try {
             await fs.promises.rm(dirPath, { recursive: true, force: true });
             log('INFO', `Successfully removed directory using fs.promises.rm: ${dirPath}`);
@@ -477,7 +488,7 @@ async function removeDir(dirPath) { // Removed instanceIdForLogging
         childProcess.stdout.on('data', (data) => stdoutData += data.toString());
         childProcess.stderr.on('data', (data) => stderrData += data.toString());
         childProcess.on('close', (code) => {
-            if (stdoutData) log('DEBUG', `removeDir stdout: ${stdoutData}`); // DEBUG for potentially verbose output
+            if (stdoutData) log('DEBUG', `removeDir stdout: ${stdoutData}`);
             if (stderrData) log('ERROR', `removeDir stderr: ${stderrData}`);
             if (code === 0) {
                 log('INFO', `Successfully removed directory using spawn: ${dirPath}`);
@@ -493,8 +504,8 @@ async function removeDir(dirPath) { // Removed instanceIdForLogging
     });
 }
 
-async function readServerProperties() { // Removed instanceConfig
-    const configPath = path.join(SERVER_DIRECTORY, 'server.properties');
+export async function readServerProperties() {
+    const configPath = pathJoin(SERVER_DIRECTORY, 'server.properties');
     if (!fs.existsSync(configPath)) {
         log('WARNING', `server.properties not found at ${configPath}. Returning empty config.`);
         return {};
@@ -512,8 +523,8 @@ async function readServerProperties() { // Removed instanceConfig
     return properties;
 }
 
-async function writeServerProperties(propertiesToWrite) { // Removed instanceConfig
-    const configPath = path.join(SERVER_DIRECTORY, 'server.properties');
+export async function writeServerProperties(propertiesToWrite) {
+    const configPath = pathJoin(SERVER_DIRECTORY, 'server.properties');
     let content = '';
     for (const key in propertiesToWrite) {
         if (Object.hasOwnProperty.call(propertiesToWrite, key)) {
@@ -524,8 +535,8 @@ async function writeServerProperties(propertiesToWrite) { // Removed instanceCon
     log('INFO', `Wrote server.properties to ${configPath}`);
 }
 
-async function listWorlds() { // Removed instanceConfig
-    const worldsPath = path.join(SERVER_DIRECTORY, 'worlds');
+export async function listWorlds() {
+    const worldsPath = pathJoin(SERVER_DIRECTORY, 'worlds');
     if (!fs.existsSync(worldsPath)) {
         log('WARNING', `Worlds directory not found at ${worldsPath}. Returning empty world list.`);
         return [];
@@ -538,9 +549,9 @@ async function listWorlds() { // Removed instanceConfig
     return worldNames;
 }
 
-async function activateWorld(worldName) { // Removed instanceConfig
-    const worldsPath = path.join(SERVER_DIRECTORY, 'worlds');
-    const targetWorldPath = path.join(worldsPath, worldName);
+export async function activateWorld(worldName) {
+    const worldsPath = pathJoin(SERVER_DIRECTORY, 'worlds');
+    const targetWorldPath = pathJoin(worldsPath, worldName);
     if (!fs.existsSync(targetWorldPath)) {
         log('ERROR', `World directory '${worldName}' not found at ${targetWorldPath}. Cannot activate.`);
         return false;
@@ -562,7 +573,7 @@ async function activateWorld(worldName) { // Removed instanceConfig
     }
 }
 
-async function restartServer() {
+export async function restartServer() {
     log('INFO', `Restarting Minecraft server.`);
     await stopServer();
     await new Promise(resolve => setTimeout(resolve, 3000));
@@ -570,7 +581,7 @@ async function restartServer() {
     log('INFO', 'Minecraft server restart command executed.');
 }
 
-async function isProcessRunning() {
+export async function isProcessRunning() {
     if (!serverPID) {
         log('DEBUG', `No PID found for server. Assuming not running.`);
         return false;
@@ -590,7 +601,7 @@ async function isProcessRunning() {
     }
 }
 
-async function sendWebhookNotification(message) {
+export async function sendWebhookNotification(message) {
     if (!WEBHOOK_URL) {
         log('INFO', 'Webhook URL is not configured. Skipping notification.');
         return;
@@ -628,8 +639,8 @@ async function sendWebhookNotification(message) {
     });
 }
 
-async function readGlobalConfig() {
-    const configPath = path.join(__dirname, GLOBAL_CONFIG_FILE);
+export async function readGlobalConfig() {
+    const configPath = pathJoin(__dirnameESM, GLOBAL_CONFIG_FILE); // Use __dirnameESM
     let effectiveConfig = {
         serverName: "Default Minecraft Server", serverPortIPv4: 19132, serverPortIPv6: 19133,
         serverDirectory: "./server_data/default_server", tempDirectory: "./server_data/temp/default_server",
@@ -680,7 +691,7 @@ async function readGlobalConfig() {
         } else if (arg === '--no-autoUpdateEnabled') { effectiveConfig.autoUpdateEnabled = false; log('DEBUG', `CLI Override (boolean flag): ${arg} = false`); }
     }
     setLogLevel(effectiveConfig.logLevel || "INFO");
-    const resolvePath = (p) => path.isAbsolute(p) ? p : path.resolve(__dirname, p);
+    const resolvePath = (p) => path.isAbsolute(p) ? p : path.resolve(__dirnameESM, p); // Use __dirnameESM
     effectiveConfig.serverDirectory = resolvePath(effectiveConfig.serverDirectory);
     effectiveConfig.tempDirectory = resolvePath(effectiveConfig.tempDirectory);
     effectiveConfig.backupDirectory = resolvePath(effectiveConfig.backupDirectory);
@@ -689,13 +700,13 @@ async function readGlobalConfig() {
     return effectiveConfig;
 }
 
-async function writeGlobalConfig(configToWrite) {
-    const configPath = path.join(__dirname, GLOBAL_CONFIG_FILE);
+export async function writeGlobalConfig(configToWrite) {
+    const configPath = pathJoin(__dirnameESM, GLOBAL_CONFIG_FILE); // Use __dirnameESM
     try {
         const storeConfig = JSON.parse(JSON.stringify(configToWrite));
         const makeRelativeIfNeeded = (absPath) => {
-            if (absPath.startsWith(__dirname) && absPath !== __dirname) {
-                let relPath = path.relative(__dirname, absPath);
+            if (absPath.startsWith(__dirnameESM) && absPath !== __dirnameESM) { // Use __dirnameESM
+                let relPath = path.relative(__dirnameESM, absPath); // Use __dirnameESM
                 if (!relPath.startsWith('..') && !path.isAbsolute(relPath)) {
                     relPath = `.${path.sep}${relPath.startsWith(path.sep) ? relPath.substring(1) : relPath}`;
                 }
@@ -714,8 +725,8 @@ async function writeGlobalConfig(configToWrite) {
     }
 }
 
-async function startAutoUpdateScheduler() {
-    const currentConfig = await readGlobalConfig(); // Ensure we use the most up-to-date config
+export async function startAutoUpdateScheduler() {
+    const currentConfig = await readGlobalConfig();
     if (autoUpdateIntervalId) {
         clearInterval(autoUpdateIntervalId);
         autoUpdateIntervalId = null;
@@ -738,9 +749,8 @@ async function startAutoUpdateScheduler() {
     }
 }
 
-module.exports = {
-    init,  log, getLatestVersion, downloadFile, extractFiles, changeOwnership, storeLatestVersion,
-    getStoredVersion, backupServer, copyDir, copyExistingData, stopServer, startServer, checkAndInstall,
-    removeDir, readServerProperties, writeServerProperties, listWorlds, activateWorld, restartServer,
-    isProcessRunning, readGlobalConfig, writeGlobalConfig, startAutoUpdateScheduler, SERVER_EXE_NAME,
-};
+// Removed module.exports, functions are exported individually.
+// Note: Not all functions are exported, only those needed by app.js or potentially other modules.
+// For example, setLogLevel is internal. Helper functions like setLegacyGlobalDirectories were removed.
+// SERVER_DIRECTORY, etc., are global vars within this module, not exported.
+// instancePIDs was replaced by serverPID (internal).
