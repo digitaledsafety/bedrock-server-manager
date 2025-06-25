@@ -802,13 +802,14 @@ async function updateWorldPackJson(worldPath, packTypeJsonFile, packId, packVers
 }
 
 /**
- * Uploads and applies a pack to a specific world.
- * @param {string} tempFilePath - Path to the temporary uploaded .mcpack file.
- * @param {string} packType - Type of pack ('behavior', 'resource', 'dev_behavior', 'dev_resource').
- * @param {string} worldName - Name of the world to apply the pack to.
+ * Uploads and applies a pack (or packs from an addon) to a specific world.
+ * @param {string} tempFilePath - Path to the temporary uploaded file (.mcpack or .mcaddon).
+ * @param {string} originalFilename - The original name of the uploaded file.
+ * @param {string} requestedPackType - Type of pack if uploading a single .mcpack ('behavior', 'resource', 'dev_behavior', 'dev_resource'). Ignored for .mcaddon.
+ * @param {string} worldName - Name of the world to apply the pack(s) to.
  * @returns {Promise<{success: boolean, message: string}>} Result object.
  */
-export async function uploadPack(tempFilePath, packType, worldName) {
+export async function uploadPack(tempFilePath, originalFilename, requestedPackType, worldName) {
     if (!SERVER_DIRECTORY) {
         return { success: false, message: 'Server directory not configured.' };
     }
@@ -821,130 +822,195 @@ export async function uploadPack(tempFilePath, packType, worldName) {
         return { success: false, message: `World '${worldName}' not found.` };
     }
 
-    let targetPackDirName;
-    let worldPackJsonFile;
-
-    switch (packType) {
-        case 'behavior':
-            targetPackDirName = 'behavior_packs';
-            worldPackJsonFile = 'world_behavior_packs.json';
-            break;
-        case 'resource':
-            targetPackDirName = 'resource_packs';
-            worldPackJsonFile = 'world_resource_packs.json';
-            break;
-        case 'dev_behavior':
-            targetPackDirName = 'development_behavior_packs';
-            // Dev packs usually don't need to be in world_*.json, but let's be consistent for now
-            // Or handle differently if server loads them automatically without JSON declaration
-            worldPackJsonFile = 'world_behavior_packs.json'; // Or handle specially if not needed
-            break;
-        case 'dev_resource':
-            targetPackDirName = 'development_resource_packs';
-            worldPackJsonFile = 'world_resource_packs.json'; // Or handle specially
-            break;
-        default:
-            return { success: false, message: 'Invalid pack type specified.' };
-    }
-
-    const finalPackDirPathBase = path.join(SERVER_DIRECTORY, targetPackDirName);
-    if (!fs.existsSync(finalPackDirPathBase)) {
-        try {
-            fs.mkdirSync(finalPackDirPathBase, { recursive: true });
-            log('INFO', `Created directory: ${finalPackDirPathBase}`);
-        } catch (e) {
-            log('ERROR', `Failed to create directory ${finalPackDirPathBase}: ${e.message}.`);
-            return { success: false, message: `Failed to create pack directory: ${e.message}` };
-        }
-    }
+    const isMcAddon = originalFilename.toLowerCase().endsWith('.mcaddon');
+    let overallSuccess = true;
+    let messages = [];
+    let packsProcessedCount = 0;
 
     try {
         const zip = new AdmZip(tempFilePath);
         const zipEntries = zip.getEntries();
         if (zipEntries.length === 0) {
-            return { success: false, message: 'Uploaded pack file is empty or invalid.' };
+            return { success: false, message: 'Uploaded file is empty or invalid.' };
         }
 
-        // Determine the root directory within the zip, if any.
-        // Packs should ideally have their contents directly, or within a single root folder.
-        let packFolderName = '';
-        const firstEntryName = zipEntries[0].entryName;
-        if (zipEntries.every(entry => entry.entryName.startsWith(firstEntryName.split('/')[0] + '/') || entry.entryName === firstEntryName.split('/')[0])) {
-           // If all entries are under a common root folder or it's a single file (manifest.json at root)
-           // We need to find the manifest.json to confirm the actual pack root.
-        }
+        if (isMcAddon) {
+            log('INFO', `Processing .mcaddon file: ${originalFilename}`);
+            // Find all manifest.json files to identify individual packs
+            const manifestEntries = zipEntries.filter(entry => entry.entryName.endsWith('manifest.json') && !entry.isDirectory);
 
-        // Find manifest.json to determine the actual pack root within the zip
-        const manifestEntry = zipEntries.find(entry => entry.entryName.endsWith('manifest.json'));
-        if (!manifestEntry) {
-            return { success: false, message: 'manifest.json not found in the uploaded pack.' };
-        }
-
-        // The directory containing manifest.json is the root of the pack's content.
-        const packRootInZip = path.dirname(manifestEntry.entryName);
-        const manifestDataInZip = JSON.parse(zip.readAsText(manifestEntry));
-
-        if (!manifestDataInZip.header || !manifestDataInZip.header.uuid || !manifestDataInZip.header.version) {
-            return { success: false, message: 'Invalid manifest.json: missing header, uuid, or version.' };
-        }
-        const packId = manifestDataInZip.header.uuid;
-        const packVersion = manifestDataInZip.header.version; // Array of numbers [major, minor, patch]
-
-        // Use a unique name for the pack folder, e.g., based on name in manifest or a generated one
-        // For simplicity, let's use a name derived from manifest name or a UUID if not present
-        let packDirNameInFilesystem = manifestDataInZip.header.name ? manifestDataInZip.header.name.replace(/[^a-zA-Z0-9_-]/g, '_') : packId;
-        // Ensure it's unique enough or handle collisions, for now, we overwrite.
-        const finalPackPath = path.join(finalPackDirPathBase, packDirNameInFilesystem);
-
-        if (fs.existsSync(finalPackPath)) {
-            log('INFO', `Pack directory ${finalPackPath} already exists. Removing before extraction.`);
-            await removeDir(finalPackPath); // Use existing removeDir for cleanup
-        }
-        fs.mkdirSync(finalPackPath, { recursive: true });
-
-        // Extract the pack, adjusting paths to be relative to the packRootInZip
-        zipEntries.forEach(zipEntry => {
-            if (zipEntry.entryName.startsWith(packRootInZip) && !zipEntry.isDirectory) {
-                const relativePathInPack = path.relative(packRootInZip, zipEntry.entryName);
-                const targetFilePath = path.join(finalPackPath, relativePathInPack);
-                const targetFileDir = path.dirname(targetFilePath);
-                if (!fs.existsSync(targetFileDir)) {
-                    fs.mkdirSync(targetFileDir, { recursive: true });
-                }
-                fs.writeFileSync(targetFilePath, zipEntry.getData());
+            if (manifestEntries.length === 0) {
+                return { success: false, message: 'No valid packs found within the .mcaddon file.' };
             }
-        });
 
-        log('INFO', `Pack extracted to ${finalPackPath}`);
+            for (const manifestEntry of manifestEntries) {
+                const packRootInZip = path.dirname(manifestEntry.entryName);
+                const manifestData = JSON.parse(zip.readAsText(manifestEntry));
 
-        // Update world pack JSON (skip for dev packs if server loads them automatically)
-        // For now, we assume dev packs also need to be listed for consistency,
-        // but this might need adjustment based on Bedrock server behavior.
-        if (worldPackJsonFile) {
+                if (!manifestData.header || !manifestData.header.uuid || !manifestData.header.version || !manifestData.header.name) {
+                    log('WARNING', `Skipping pack in .mcaddon due to invalid manifest (missing header/uuid/version/name): ${manifestEntry.entryName}`);
+                    messages.push(`Skipped pack from ${manifestEntry.entryName} (invalid manifest).`);
+                    overallSuccess = false;
+                    continue;
+                }
+
+                const packId = manifestData.header.uuid;
+                const packVersion = manifestData.header.version;
+                const packName = manifestData.header.name;
+
+                // Determine pack type from manifest module type or location (simplistic for now)
+                let packTypeModule = manifestData.modules && manifestData.modules[0] ? manifestData.modules[0].type : null;
+                let currentPackTargetDirName;
+                let currentWorldPackJsonFile;
+
+                if (packTypeModule === 'data' || packRootInZip.toLowerCase().includes('behavior')) { // Assuming 'data' is behavior
+                    currentPackTargetDirName = 'behavior_packs';
+                    currentWorldPackJsonFile = 'world_behavior_packs.json';
+                } else if (packTypeModule === 'resources' || packRootInZip.toLowerCase().includes('resource')) { // Assuming 'resources' is resource
+                    currentPackTargetDirName = 'resource_packs';
+                    currentWorldPackJsonFile = 'world_resource_packs.json';
+                } else {
+                    log('WARNING', `Skipping pack '${packName}' in .mcaddon: Could not determine pack type (behavior/resource) from manifest: ${manifestEntry.entryName}`);
+                    messages.push(`Skipped pack '${packName}' (unknown type).`);
+                    overallSuccess = false;
+                    continue;
+                }
+
+                const packDirNameInFilesystem = packName.replace(/[^a-zA-Z0-9_-]/g, '_') || packId;
+                const finalPackDirPathBase = path.join(SERVER_DIRECTORY, currentPackTargetDirName);
+                const finalPackPath = path.join(finalPackDirPathBase, packDirNameInFilesystem);
+
+                if (!fs.existsSync(finalPackDirPathBase)) {
+                    fs.mkdirSync(finalPackDirPathBase, { recursive: true });
+                }
+                if (fs.existsSync(finalPackPath)) {
+                    log('INFO', `Removing existing directory for pack '${packName}': ${finalPackPath}`);
+                    await removeDir(finalPackPath);
+                }
+                fs.mkdirSync(finalPackPath, { recursive: true });
+
+                zipEntries.forEach(zipEntry => {
+                    if (zipEntry.entryName.startsWith(packRootInZip + '/') && !zipEntry.isDirectory) {
+                        const relativePathInPack = path.relative(packRootInZip, zipEntry.entryName);
+                        if (relativePathInPack) { // Ensure it's not the root itself if packRootInZip is ""
+                            const targetFilePath = path.join(finalPackPath, relativePathInPack);
+                            const targetFileDir = path.dirname(targetFilePath);
+                            if (!fs.existsSync(targetFileDir)) {
+                                fs.mkdirSync(targetFileDir, { recursive: true });
+                            }
+                            fs.writeFileSync(targetFilePath, zipEntry.getData());
+                        }
+                    } else if (packRootInZip === "" && zipEntry.entryName.indexOf('/') === -1 && !zipEntry.isDirectory) {
+                        // Handle case where manifest is at the root of zip, and files are at root too
+                         const targetFilePath = path.join(finalPackPath, zipEntry.entryName);
+                         fs.writeFileSync(targetFilePath, zipEntry.getData());
+                    }
+                });
+                log('INFO', `Extracted pack '${packName}' to ${finalPackPath}`);
+
+                const updateSuccess = await updateWorldPackJson(worldPath, currentWorldPackJsonFile, packId, packVersion);
+                if (updateSuccess) {
+                    messages.push(`Applied pack '${packName}'.`);
+                    packsProcessedCount++;
+                } else {
+                    messages.push(`Failed to apply pack '${packName}' to world JSON.`);
+                    overallSuccess = false;
+                    await removeDir(finalPackPath); // Clean up extracted pack
+                }
+            }
+            if (packsProcessedCount === 0 && !overallSuccess) {
+                 return { success: false, message: "Failed to process any valid packs from the .mcaddon. " + messages.join(" ") };
+            }
+            return { success: overallSuccess, message: `.mcaddon processing complete. ${packsProcessedCount} pack(s) processed. Details: ${messages.join(" ")} Restart server if needed.` };
+
+        } else { // Handle as .mcpack
+            log('INFO', `Processing .mcpack file: ${originalFilename} with requested type: ${requestedPackType}`);
+            let targetPackDirName;
+            let worldPackJsonFile;
+
+            switch (requestedPackType) {
+                case 'behavior':
+                    targetPackDirName = 'behavior_packs';
+                    worldPackJsonFile = 'world_behavior_packs.json';
+                    break;
+                case 'resource':
+                    targetPackDirName = 'resource_packs';
+                    worldPackJsonFile = 'world_resource_packs.json';
+                    break;
+                case 'dev_behavior':
+                    targetPackDirName = 'development_behavior_packs';
+                    worldPackJsonFile = 'world_behavior_packs.json'; // Assumed to be listed
+                    break;
+                case 'dev_resource':
+                    targetPackDirName = 'development_resource_packs';
+                    worldPackJsonFile = 'world_resource_packs.json'; // Assumed to be listed
+                    break;
+                default:
+                    return { success: false, message: 'Invalid pack type specified for .mcpack.' };
+            }
+
+            const finalPackDirPathBase = path.join(SERVER_DIRECTORY, targetPackDirName);
+            if (!fs.existsSync(finalPackDirPathBase)) {
+                fs.mkdirSync(finalPackDirPathBase, { recursive: true });
+            }
+
+            const manifestEntry = zipEntries.find(entry => entry.entryName.endsWith('manifest.json') && !entry.isDirectory);
+            if (!manifestEntry) {
+                return { success: false, message: 'manifest.json not found in the uploaded .mcpack.' };
+            }
+            const packRootInZip = path.dirname(manifestEntry.entryName);
+            const manifestData = JSON.parse(zip.readAsText(manifestEntry));
+
+            if (!manifestData.header || !manifestData.header.uuid || !manifestData.header.version || !manifestData.header.name) {
+                return { success: false, message: 'Invalid manifest.json: missing header, uuid, version, or name.' };
+            }
+            const packId = manifestData.header.uuid;
+            const packVersion = manifestData.header.version;
+            const packName = manifestData.header.name;
+
+            let packDirNameInFilesystem = packName.replace(/[^a-zA-Z0-9_-]/g, '_') || packId;
+            const finalPackPath = path.join(finalPackDirPathBase, packDirNameInFilesystem);
+
+            if (fs.existsSync(finalPackPath)) {
+                log('INFO', `Removing existing directory for pack '${packName}': ${finalPackPath}`);
+                await removeDir(finalPackPath);
+            }
+            fs.mkdirSync(finalPackPath, { recursive: true });
+
+            zipEntries.forEach(zipEntry => {
+                 if (zipEntry.entryName.startsWith(packRootInZip) && !zipEntry.isDirectory) {
+                    // Make sure path.relative doesn't return an empty string if packRootInZip is the entry itself (e.g. "manifest.json")
+                    // or if packRootInZip is "." and entryName is "manifest.json"
+                    let relativePathInPack = path.relative(packRootInZip, zipEntry.entryName);
+                    if (packRootInZip === "." && zipEntry.entryName.indexOf('/') === -1) relativePathInPack = zipEntry.entryName;
+
+
+                    if(relativePathInPack){
+                        const targetFilePath = path.join(finalPackPath, relativePathInPack);
+                        const targetFileDir = path.dirname(targetFilePath);
+                        if (!fs.existsSync(targetFileDir)) {
+                            fs.mkdirSync(targetFileDir, { recursive: true });
+                        }
+                        fs.writeFileSync(targetFilePath, zipEntry.getData());
+                    } else if (manifestEntry.entryName === zipEntry.entryName && packRootInZip === path.dirname(manifestEntry.entryName)) {
+                        // if packRootInZip is the directory of manifest, and this is the manifest, place it at root of finalPackPath
+                        const targetFilePath = path.join(finalPackPath, path.basename(zipEntry.entryName));
+                         fs.writeFileSync(targetFilePath, zipEntry.getData());
+                    }
+                }
+            });
+            log('INFO', `Extracted .mcpack '${packName}' to ${finalPackPath}`);
+
             const updateSuccess = await updateWorldPackJson(worldPath, worldPackJsonFile, packId, packVersion);
             if (!updateSuccess) {
-                // Attempt to clean up extracted pack if JSON update fails
                 await removeDir(finalPackPath);
-                return { success: false, message: `Failed to update ${worldPackJsonFile} for world '${worldName}'.` };
+                return { success: false, message: `Failed to update ${worldPackJsonFile} for .mcpack '${packName}'.` };
             }
+            return { success: true, message: `Pack '${packName}' uploaded and applied to ${worldName}. Restart server if needed.` };
         }
-
-        // Clean up temporary file
-        try {
-            if (fs.existsSync(tempFilePath)) {
-                fs.unlinkSync(tempFilePath);
-                log('INFO', `Removed temporary pack file: ${tempFilePath}`);
-            }
-        } catch (unlinkError) {
-            log('WARNING', `Could not delete temporary file ${tempFilePath}: ${unlinkError.message}`);
-        }
-
-        log('INFO', `Pack '${packId}' (version ${packVersion.join('.')}) uploaded and applied to world '${worldName}' in ${targetPackDirName}.`);
-        return { success: true, message: `Pack uploaded and applied to ${worldName}. Restart server if needed.` };
 
     } catch (error) {
-        log('ERROR', `Error processing pack upload: ${error.message}`);
-        // Clean up temporary file in case of error
+        log('ERROR', `Error processing pack upload for ${originalFilename}: ${error.message} ${error.stack}`);
         try {
             if (fs.existsSync(tempFilePath)) {
                 fs.unlinkSync(tempFilePath);

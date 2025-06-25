@@ -31,9 +31,11 @@ const storage = multer.diskStorage({
 const upload = multer({
     storage: storage,
     fileFilter: function (req, file, cb) {
-        // Basic validation for .mcpack files
-        if (!file.originalname.toLowerCase().endsWith('.mcpack')) {
-            return cb(new Error('Only .mcpack files are allowed!'), false);
+        // Validation for .mcpack and .mcaddon files
+        const allowedExtensions = ['.mcpack', '.mcaddon'];
+        const fileExtension = path.extname(file.originalname).toLowerCase();
+        if (!allowedExtensions.includes(fileExtension)) {
+            return cb(new Error('Only .mcpack and .mcaddon files are allowed!'), false);
         }
         cb(null, true);
     },
@@ -268,8 +270,10 @@ app.post('/api/upload-pack', upload.single('packFile'), async (req, res) => {
     }
 
     try {
-        backend.log('INFO', `Processing pack upload: File=${packFile.path}, Type=${packType}, World=${worldName}`);
-        const result = await backend.uploadPack(packFile.path, packType, worldName);
+        backend.log('INFO', `Processing pack upload: File=${packFile.path}, OriginalName=${packFile.originalname}, Type=${packType}, World=${worldName}`);
+        // Pass originalname so backend can distinguish .mcpack from .mcaddon
+        // packType is relevant for .mcpack, ignored for .mcaddon by the backend logic
+        const result = await backend.uploadPack(packFile.path, packFile.originalname, packType, worldName);
         if (result.success) {
             res.json({ success: true, message: result.message });
         } else {
