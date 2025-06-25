@@ -25,6 +25,7 @@ This application provides a web-based interface to manage a single Minecraft Bed
     *   [Auto-Update Settings](#auto-update-settings)
     *   [World Management](#world-management)
     *   [Server Properties](#server-properties)
+    *   [Pack Management](#pack-management)
 6.  [Running Multiple Server Managers](#6-running-multiple-server-managers)
 
 ---
@@ -180,6 +181,20 @@ At the top of the page, you'll see details about the configured Minecraft server
 *   Allows you to view and edit your `server.properties` file directly from the UI.
 *   Modify values as needed.
 *   **Save Properties:** Click to save your changes to `server.properties`. **A server restart is usually required for most property changes to apply.**
+
+### Pack Management
+This section allows you to upload and manage behavior and resource packs for your server.
+*   **Pack File (.mcpack):** Select the `.mcpack` file you want to upload.
+*   **Pack Type:** Choose the type of pack you are uploading:
+    *   `Behavior Pack`: For custom behaviors, entities, etc. Installed in `behavior_packs`.
+    *   `Resource Pack`: For custom textures, sounds, UI, etc. Installed in `resource_packs`.
+    *   `Development Behavior Pack`: For behavior packs used during development. Installed in `development_behavior_packs`.
+    *   `Development Resource Pack`: For resource packs used during development. Installed in `development_resource_packs`.
+*   **Target World:** Select the world to which this pack should be applied. The manager will update the corresponding `world_behavior_packs.json` or `world_resource_packs.json` file for that world.
+*   **Upload Pack:** Click to upload the selected pack.
+    *   The pack will be extracted to the appropriate directory within your `serverDirectory`.
+    *   The relevant world configuration JSON file will be updated to include the pack.
+    *   **Note:** A server restart might be required for the pack to become active or for changes to take full effect, especially for behavior packs or if a world is already loaded.
 
 ---
 

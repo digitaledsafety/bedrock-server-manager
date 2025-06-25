@@ -14,6 +14,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const autoUpdateEnabledCheckbox = document.getElementById('autoUpdateEnabled');
     const autoUpdateIntervalMinutesInput = document.getElementById('autoUpdateIntervalMinutes');
 
+    // Pack Management specific elements
+    const uploadPackForm = document.getElementById('uploadPackForm');
+    const packFileInput = document.getElementById('packFile');
+    const packTypeSelect = document.getElementById('packType');
+    const packWorldNameSelect = document.getElementById('packWorldName');
+    const uploadPackButton = document.getElementById('uploadPackButton');
+
 
     // --- Utility Functions ---
     function showMessage(message, type = 'success') {
@@ -42,6 +49,56 @@ document.addEventListener('DOMContentLoaded', () => {
             stopButton.disabled = true;
             restartButton.disabled = true;
             updateButton.disabled = true; // Disable update if status is unknown
+        }
+    }
+
+    // --- Pack Management Functions ---
+    async function handleUploadPack(event) {
+        event.preventDefault();
+        if (!packFileInput.files || packFileInput.files.length === 0) {
+            showMessage('Please select a .mcpack file to upload.', 'error');
+            return;
+        }
+
+        const packFile = packFileInput.files[0];
+        const packType = packTypeSelect.value;
+        const worldName = packWorldNameSelect.value;
+
+        if (!worldName) {
+            showMessage('Please select a target world for the pack.', 'error');
+            return;
+        }
+        if (!packType) {
+            showMessage('Please select a pack type.', 'error');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('packFile', packFile);
+        formData.append('packType', packType);
+        formData.append('worldName', worldName);
+
+        uploadPackButton.disabled = true;
+        showMessage('Uploading pack...', 'success');
+
+        try {
+            const response = await fetch('/api/upload-pack', {
+                method: 'POST',
+                body: formData
+                // 'Content-Type': 'multipart/form-data' is automatically set by browser with FormData
+            });
+            const data = await response.json();
+            if (response.ok && data.success) {
+                showMessage(data.message || 'Pack uploaded successfully!', 'success');
+                uploadPackForm.reset(); // Reset form on success
+            } else {
+                showMessage(data.message || 'Failed to upload pack.', 'error');
+            }
+        } catch (error) {
+            console.error('Error uploading pack:', error);
+            showMessage('An error occurred while uploading the pack.', 'error');
+        } finally {
+            uploadPackButton.disabled = false;
         }
     }
 
@@ -270,8 +327,10 @@ document.addEventListener('DOMContentLoaded', () => {
     stopButton.addEventListener('click', () => sendCommand('stop'));
     restartButton.addEventListener('click', () => sendCommand('restart'));
     updateButton.addEventListener('click', () => sendCommand('update'));
-    propertiesForm.addEventListener('submit', saveServerProperties);
-    autoUpdateConfigForm.addEventListener('submit', saveAutoUpdateConfig); // New event listener for auto-update form
+    if (propertiesForm) propertiesForm.addEventListener('submit', saveServerProperties);
+    if (autoUpdateConfigForm) autoUpdateConfigForm.addEventListener('submit', saveAutoUpdateConfig);
+    if (uploadPackForm) uploadPackForm.addEventListener('submit', handleUploadPack);
+
 
     // Initial load
     fetchServerStatus(); // This will now also set initial button states
