@@ -658,7 +658,7 @@ export async function readGlobalConfig() {
         serverName: "Default Minecraft Server", serverPortIPv4: 19132, serverPortIPv6: 19133,
         serverDirectory: "./server_data/default_server", tempDirectory: "./server_data/temp/default_server",
         backupDirectory: "./server_data/backup/default_server", worldName: "Bedrock level",
-        autoStart: false, autoUpdateEnabled: true, autoUpdateIntervalMinutes: 60, logLevel: "INFO"
+        autoStart: true, autoUpdateEnabled: false, autoUpdateIntervalMinutes: 60, logLevel: "INFO"
     };
     setLogLevel(effectiveConfig.logLevel);
     if (fs.existsSync(configPath)) {

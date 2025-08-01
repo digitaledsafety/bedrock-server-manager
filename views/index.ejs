@@ -3,177 +3,87 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Minecraft Bedrock Server Manager</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #f0f2f5;
-        }
-        .container {
-            max-width: 900px;
-        }
-        .card {
-            background-color: #ffffff;
-            border-radius: 0.75rem; /* rounded-xl */
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-        .status-indicator {
-            padding: 0.25rem 0.75rem;
-            border-radius: 9999px; /* rounded-full */
-            font-weight: bold;
-            color: white;
-            display: inline-block;
-        }
-        .status-running {
-            background-color: #10b981; /* green-500 */
-        }
-        .status-stopped {
-            background-color: #ef4444; /* red-500 */
-        }
-        .message-box {
-            background-color: #d1fae5; /* green-100 */
-            color: #065f46; /* green-800 */
-            border-color: #34d399; /* green-400 */
-            padding: 0.75rem;
-            border-radius: 0.5rem;
-            margin-bottom: 1rem;
-            /* Removed fixed positioning, will now flow with parent */
-            display: none; /* Hidden by default */
-        }
-        .error-box {
-            background-color: #fee2e2; /* red-100 */
-            color: #991b1b; /* red-800 */
-            border-color: #f87171; /* red-400 */
-            padding: 0.75rem;
-            border-radius: 0.5rem;
-            margin-bottom: 1rem;
-            /* Removed fixed positioning, will now flow with parent */
-            display: none; /* Hidden by default */
-        }
-        .form-group label {
-            display: block;
-            margin-bottom: 0.5rem;
-            font-weight: 600;
-            color: #374151; /* gray-700 */
-        }
-        .form-group input[type="text"],
-        .form-group input[type="number"] {
-            width: 100%;
-            padding: 0.625rem;
-            border: 1px solid #d1d5db; /* gray-300 */
-            border-radius: 0.375rem; /* rounded-md */
-            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
-        }
-        .world-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 0.75rem 1rem;
-            border-bottom: 1px solid #e5e7eb; /* gray-200 */
-        }
-        .world-item:last-child {
-            border-bottom: none;
-        }
-        .world-item.active {
-            background-color: #eff6ff; /* blue-50 */
-            font-weight: bold;
-        }
-        /* Style for sticky header */
-        .sticky-header {
-            position: sticky;
-            top: 0;
-            z-index: 10;
-            background-color: #ffffff; /* Ensure background is white when sticky */
-            padding-top: 1.5rem; /* Add some padding to match original top padding */
-            padding-bottom: 1.5rem; /* Add some padding to match original bottom padding */
-            margin-bottom: 0 !important; /* Remove bottom margin when sticky */
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05); /* Optional: subtle shadow for sticky effect */
-        }
-        /* Adjust padding for body to prevent content being hidden by sticky elements */
-        body {
-            padding-top: 5rem; /* Adjust based on the height of your sticky elements */
-        }
-    </style>
+    <title>Bedrock Server Manager</title>
+    <link href="/style.css" rel="stylesheet">
 </head>
-<body class="bg-gray-100 min-h-screen flex items-center justify-center py-10">
-    <div class="container mx-auto p-6 bg-white rounded-xl shadow-lg">
-        <h1 class="text-3xl font-bold text-center text-gray-800 mb-8">
-            <img src="/favicon.ico" alt="Minecraft Grass Block" class="inline-block align-middle mr-2 rounded-md">
-            Minecraft Bedrock Server Manager
+<body>
+    <div class="container">
+        <h1>
+            <img src="/favicon.ico" alt="Minecraft Grass Block" style="vertical-align: middle; margin-right: 10px; image-rendering: pixelated;">
+            Bedrock Server Manager
         </h1>
 
         <% if (config && config.serverName) { %>
-        <div class="card p-6 mb-8">
-            <h2 class="text-2xl font-semibold text-gray-700 mb-2">Managed Server: <span class="text-blue-600"><%= config.serverName %></span></h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 text-sm text-gray-600">
+        <div class="section">
+            <h2>Managed Server: <span><%= config.serverName %></span></h2>
+            <div>
                 <p><strong>Port (IPv4):</strong> <%= config.serverPortIPv4 %></p>
                 <p><strong>Port (IPv6):</strong> <%= config.serverPortIPv6 %></p>
-                <p class="md:col-span-2"><strong>Server Directory:</strong> <code class="text-xs bg-gray-100 p-1 rounded"><%= config.serverDirectory %></code></p>
+                <p><strong>Server Directory:</strong> <code><%= config.serverDirectory %></code></p>
                 <p><strong>Default World:</strong> <%= config.worldName %></p>
                 <p><strong>Log Level:</strong> <%= config.logLevel %></p>
                 <p><strong>Auto Start:</strong> <%= config.autoStart ? 'Enabled' : 'Disabled' %></p>
-                <p class="md:col-span-2"><strong>Current Server Version:</strong> <%= typeof currentServerVersion !== 'undefined' && currentServerVersion ? currentServerVersion : 'Unknown' %></p>
+                <p><strong>Current Server Version:</strong> <%= typeof currentServerVersion !== 'undefined' && currentServerVersion ? currentServerVersion : 'Unknown' %></p>
             </div>
         </div>
         <% } %>
 
-        <div class="card p-6 mb-8 sticky-header">
-            <div id="messageBox" class="message-box" role="alert"></div>
-            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Server Status</h2>
-            <p class="text-lg text-gray-600 mb-4">Current Status: <span id="serverStatus" class="status-indicator status-<%= serverStatus %>"><%= serverStatus.toUpperCase() %></span></p>
-            <div class="flex flex-wrap gap-4">
-                <button id="startButton" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">Start Server</button>
-                <button id="stopButton" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">Stop Server</button>
-                <button id="restartButton" class="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">Restart Server</button>
-                <button id="updateButton" class="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">Check & Install Update</button>
+        <div class="section">
+            <div id="messageBox" class="message-box" role="alert" style="display: none;"></div>
+            <h2>Server Status</h2>
+            <p>Current Status: <span id="serverStatus" class="status-indicator status-<%= serverStatus %>"><%= serverStatus.toUpperCase() %></span></p>
+            <div class="button-group">
+                <button id="startButton">Start Server</button>
+                <button id="stopButton">Stop Server</button>
+                <button id="restartButton">Restart Server</button>
+                <button id="updateButton">Check & Install Update</button>
             </div>
         </div>
 
-        <div class="card p-6 mb-8">
-            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Auto-Update Configuration</h2>
-            <form id="autoUpdateConfigForm" class="space-y-4">
-                <div class="flex items-center">
-                    <input type="checkbox" id="autoUpdateEnabled" name="autoUpdateEnabled" class="h-5 w-5 text-blue-600 rounded" <%= config.autoUpdateEnabled ? 'checked' : '' %>>
-                    <label for="autoUpdateEnabled" class="ml-2 text-gray-700">Enable Automatic Updates</label>
+        <div class="section">
+            <h2>Auto-Update Configuration</h2>
+            <form id="autoUpdateConfigForm">
+                <div class="form-group">
+                    <input type="checkbox" id="autoUpdateEnabled" name="autoUpdateEnabled" <%= config.autoUpdateEnabled ? 'checked' : '' %>>
+                    <label for="autoUpdateEnabled">Enable Automatic Updates</label>
                 </div>
                 <div class="form-group">
                     <label for="autoUpdateIntervalMinutes">Update Check Interval (minutes):</label>
-                    <input type="number" id="autoUpdateIntervalMinutes" name="autoUpdateIntervalMinutes" value="<%= config.autoUpdateIntervalMinutes %>" min="1" class="w-full">
+                    <input type="number" id="autoUpdateIntervalMinutes" name="autoUpdateIntervalMinutes" value="<%= config.autoUpdateIntervalMinutes %>" min="1">
                 </div>
-                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">Save Auto-Update Settings</button>
+                <button type="submit">Save Auto-Update Settings</button>
             </form>
         </div>
 
-        <div class="card p-6 mb-8">
-            <h2 class="text-2xl font-semibold text-gray-700 mb-4">World Management</h2>
-            <div class="world-list border border-gray-200 rounded-lg overflow-hidden mb-4">
+        <div class="section">
+            <h2>World Management</h2>
+            <div class="world-list">
                 <% if (worlds && worlds.length > 0) { %>
                     <% worlds.forEach(world => { %>
-                        <div class="world-item <%= properties['level-name'] === world ? 'active' : '' %>" data-world-name="<%= world %>">
-                            <span class="text-gray-800"><%= world %></span>
-                            <button class="activate-world-button bg-blue-500 hover:bg-blue-700 text-white text-sm py-1 px-3 rounded transition duration-300">
+                        <li class="world-item <%= properties['level-name'] === world ? 'active' : '' %>" data-world-name="<%= world %>">
+                            <span><%= world %></span>
+                            <button class="activate-world-button" data-world-name="<%= world %>">
                                 Activate
                             </button>
-                        </div>
+                        </li>
                     <% }); %>
                 <% } else { %>
-                    <p class="text-gray-600 p-4">No worlds found. Start the server to generate a default world.</p>
+                    <p>No worlds found. Start the server to generate a default world.</p>
                 <% } %>
             </div>
-            <p class="text-sm text-gray-500">To activate a world, click 'Activate' next to its name. This will update the 'level-name' property. Remember to click "Save Properties" to apply the change.</p>
+            <p>To activate a world, click 'Activate' next to its name. This will update the 'level-name' property. Remember to click "Save Properties" to apply the change.</p>
         </div>
 
-        <div class="card p-6 mb-8">
-            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Pack Management</h2>
-            <form id="uploadPackForm" class="space-y-4">
+        <div class="section">
+            <h2>Pack Management</h2>
+            <form id="uploadPackForm">
                 <div class="form-group">
                     <label for="packFile">Pack File (.mcpack or .mcaddon):</label>
-                    <input type="file" id="packFile" name="packFile" accept=".mcpack,.mcaddon" class="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                    <input type="file" id="packFile" name="packFile" accept=".mcpack,.mcaddon">
                 </div>
                 <div class="form-group">
                     <label for="packType">Pack Type (if uploading a single .mcpack):</label>
-                    <select id="packType" name="packType" class="w-full p-2.5 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    <select id="packType" name="packType">
                         <option value="behavior">Behavior Pack</option>
                         <option value="resource">Resource Pack</option>
                         <option value="dev_behavior">Development Behavior Pack</option>
@@ -182,7 +92,7 @@
                 </div>
                 <div class="form-group">
                     <label for="packWorldName">Target World:</label>
-                    <select id="packWorldName" name="worldName" class="w-full p-2.5 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    <select id="packWorldName" name="worldName">
                         <% if (worlds && worlds.length > 0) { %>
                             <% worlds.forEach(world => { %>
                                 <option value="<%= world %>" <%= properties['level-name'] === world ? 'selected' : '' %>><%= world %></option>
@@ -192,24 +102,25 @@
                         <% } %>
                     </select>
                 </div>
-                <button type="submit" id="uploadPackButton" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">Upload Pack</button>
+                <button type="submit" id="uploadPackButton">Upload Pack</button>
             </form>
-            <!-- Future: Display applied packs for selected world -->
-            <!-- <div id="appliedPacksDisplay" class="mt-4"></div> -->
         </div>
 
-        <div class="card p-6 mb-8">
-            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Server Properties</h2>
-            <form id="propertiesForm" class="space-y-4">
-                <% for (const key in properties) { %>
-                    <div class="form-group">
-                        <label for="<%= key %>" class="capitalize"><%= key.replace(/-/g, ' ') %>:</label>
-                        <input type="text" id="<%= key %>" name="<%= key %>" value="<%= properties[key] %>" class="w-full">
-                    </div>
-                <% } %>
-                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">Save Properties</button>
+        <div class="section">
+            <h2>Server Properties</h2>
+            <form id="propertiesForm">
+                <div class="form-grid">
+                    <% for (const key in properties) { %>
+                        <div class="form-group">
+                            <label for="<%= key %>"><%= key.replace(/-/g, ' ') %>:</label>
+                            <input type="text" id="<%= key %>" name="<%= key %>" value="<%= properties[key] %>">
+                        </div>
+                    <% } %>
+                </div>
+                <button type="submit">Save Properties</button>
             </form>
         </div>
+        <p style="text-align: center;"><img src="/icon.ico" alt="by the Digital Education & Safety Foundation Logo" style="width:25px; vertical-align: middle; margin-right: 10px; image-rendering: pixelated;">by the Digital Education & Safety Foundation</p>
     </div>
 
     <script src="/script.js"></script>
