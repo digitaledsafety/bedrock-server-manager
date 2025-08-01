@@ -1,4 +1,4 @@
-# Minecraft Bedrock Server Manager
+# Bedrock Server Manager
 
 This application provides a web-based interface to manage a single Minecraft Bedrock Dedicated Server. You can start, stop, and restart your server, manage updates, tweak server properties (`server.properties`), manage worlds, and configure automatic updates. The interface is designed to be mobile-friendly.
 
