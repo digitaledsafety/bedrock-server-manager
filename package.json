@@ -1,8 +1,19 @@
 {
+  "type": "module",
   "dependencies": {
     "adm-zip": "^0.5.16",
     "ejs": "^3.1.10",
     "express": "^5.1.0",
     "multer": "^2.0.1"
+  },
+  "devDependencies": {
+    "jest": "^30.0.5",
+    "supertest": "^7.1.4"
+  },
+  "scripts": {
+    "test": "NODE_ENV=test node --experimental-vm-modules node_modules/jest/bin/jest.js"
+  },
+  "jest": {
+    "testEnvironment": "node"
   }
 }
