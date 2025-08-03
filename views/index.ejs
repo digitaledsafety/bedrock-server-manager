@@ -110,10 +110,49 @@
             <h2>Server Properties</h2>
             <form id="propertiesForm">
                 <div class="form-grid">
-                    <% for (const key in properties) { %>
+                    <%
+                    const dropdownProperties = {
+                        'gamemode': ['survival', 'creative', 'adventure'],
+                        'difficulty': ['peaceful', 'easy', 'normal', 'hard'],
+                        'force-gamemode': ['true', 'false'],
+                        'allow-cheats': ['true', 'false'],
+                        'online-mode': ['true', 'false'],
+                        'white-list': ['true', 'false'],
+                        'allow-list': ['true', 'false'],
+                        'enable-lan-visibility': ['true', 'false'],
+                        'default-player-permission-level': ['visitor', 'member', 'operator'],
+                        'texturepack-required': ['true', 'false'],
+                        'content-log-file-enabled': ['true', 'false'],
+                        'compression-algorithm': ['zlib', 'snappy'],
+                        'server-authoritative-dismount-strict': ['true', 'false'],
+                        'server-authoritative-movement-strict': ['true', 'false'],
+                        'server-authoritative-entity-interactions-strict': ['true', 'false'],
+                        'chat-restriction': ['None', 'Dropped', 'Disabled'],
+                        'disable-player-interaction': ['true', 'false'],
+                        'disable-persona': ['true', 'false'],
+                        'disable-custom-skins': ['true', 'false'],
+                        'allow-outbound-script-debugging': ['true', 'false'],
+                        'allow-inbound-script-debugging': ['true', 'false'],
+                        'client-side-chunk-generation-enabled': ['true', 'false'],
+                        'block-network-ids-are-hashes': ['true', 'false'],
+                        'script-debugger-auto-attach': ['true', 'false'],
+                        'pvp': ['true', 'false'],
+                        'hardcore': ['true', 'false']
+                    };
+                    for (const key in properties) {
+                        const isDropdown = dropdownProperties.hasOwnProperty(key);
+                    %>
                         <div class="form-group">
                             <label for="<%= key %>"><%= key.replace(/-/g, ' ') %>:</label>
-                            <input type="text" id="<%= key %>" name="<%= key %>" value="<%= properties[key] %>">
+                            <% if (isDropdown) { %>
+                                <select class="form-control" id="<%= key %>" name="<%= key %>">
+                                    <% dropdownProperties[key].forEach(function(value) { %>
+                                        <option value="<%= value %>" <%= properties[key] == value ? 'selected' : '' %>><%= value %></option>
+                                    <% }); %>
+                                </select>
+                            <% } else { %>
+                                <input type="text" id="<%= key %>" name="<%= key %>" value="<%= properties[key] %>">
+                            <% } %>
                         </div>
                     <% } %>
                 </div>
