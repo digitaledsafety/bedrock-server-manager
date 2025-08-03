@@ -19,14 +19,15 @@ This application provides a web-based interface to manage a single Minecraft Bed
     *   [Configuration (`config.json`)](#configuration-configjson)
     *   [Command-Line Overrides](#command-line-overrides)
 4.  [Starting the Application](#4-starting-the-application)
-5.  [Basic Usage](#5-basic-usage)
+5.  [Testing](#5-testing)
+6.  [Basic Usage](#6-basic-usage)
     *   [Server Information](#server-information)
     *   [Server Controls](#server-controls)
     *   [Auto-Update Settings](#auto-update-settings)
     *   [World Management](#world-management)
     *   [Server Properties](#server-properties)
     *   [Pack Management](#pack-management)
-6.  [Running Multiple Server Managers](#6-running-multiple-server-managers)
+7.  [Running Multiple Server Managers](#7-running-multiple-server-managers)
 
 ---
 
@@ -146,7 +147,27 @@ Using Node Version Manager (`nvm`) is recommended:
 
 ---
 
-## 5. Basic Usage
+## 5. Testing
+
+This project uses [Jest](https://jestjs.io/) for testing. The tests cover the main API endpoints and server logic.
+
+To run the tests:
+
+1.  **Install Dependencies:**
+    If you haven't already, make sure all dependencies, including development dependencies, are installed.
+    ```bash
+    npm install
+    ```
+2.  **Run the Test Suite:**
+    Execute the test script defined in `package.json`.
+    ```bash
+    npm test
+    ```
+    This will run all test files located in the `test/` directory.
+
+---
+
+## 6. Basic Usage
 
 The web interface provides several sections for managing your server:
 
@@ -198,7 +219,7 @@ This section allows you to upload and manage behavior and resource packs for you
 
 ---
 
-## 6. Running Multiple Server Managers
+## 7. Running Multiple Server Managers
 
 Each instance of this application manages a *single* Minecraft Bedrock server. If you want to manage multiple Minecraft servers, you need to run multiple independent instances of this server manager. Here are two common ways:
 
