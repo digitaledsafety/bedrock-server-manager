@@ -2,7 +2,7 @@ import express from 'express';
 import path, { dirname, join as pathJoin } from 'path';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
-import fs from 'fs';
+import * as fs from 'fs';
 
 import * as backend from './minecraft_bedrock_installer_nodejs.js';
 
@@ -332,21 +332,30 @@ app.get('/', async (req, res) => {
     }
 });
 
-// Server Initialization
-(async () => {
+// --- Server Initialization ---
+const start = async () => {
     try {
         const initialConfig = await backend.readGlobalConfig();
-        backend.init(initialConfig); // Pass loaded config to init
+        backend.init(initialConfig);
         await backend.startAutoUpdateScheduler();
 
-        let port = (initialConfig.uiPort ?? PORT);
+        const port = initialConfig.uiPort ?? PORT;
 
-        app.listen(port, () => {
-            backend.log('INFO', `Express frontend server listening on port ${port}`);
-            console.log(`Open your browser to http://localhost:${port}`);
-        });
+        // This check prevents the server from starting during tests
+        if (process.env.NODE_ENV !== 'test') {
+            app.listen(port, () => {
+                backend.log('INFO', `Express frontend server listening on port ${port}`);
+                console.log(`Open your browser to http://localhost:${port}`);
+            });
+        }
     } catch (error) {
         backend.log('FATAL', `Failed to initialize and start application: ${error.message}`);
-        process.exit(1);
+        if (process.env.NODE_ENV !== 'test') {
+            process.exit(1);
+        }
     }
-})();
+};
+
+start();
+
+export default app;

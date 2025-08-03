@@ -1,6 +1,6 @@
 import https from 'https';
 import http from 'http';
-import fs from 'fs';
+import * as fs from 'fs';
 import path, { dirname, join as pathJoin } from 'path';
 import { exec as childProcessExec, spawn } from 'child_process';
 import { fileURLToPath } from 'url';
