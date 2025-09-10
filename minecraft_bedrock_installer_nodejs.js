@@ -23,8 +23,6 @@ let TEMP_DIRECTORY;
 let BACKUP_DIRECTORY;
 let serverPID = null;
 
-const MC_USER = 'minecraft';
-const MC_GROUP = 'minecraft';
 const LAST_VERSION_FILE = 'last_version.txt';
 const WEBHOOK_URL = process.env.MC_UPDATE_WEBHOOK;
 export const SERVER_EXE_NAME = os.platform() === 'win32' ? 'bedrock_server.exe' : 'bedrock_server';
@@ -196,8 +194,8 @@ export function extractFiles(zipPath, extractPath) {
 }
 
 export async function changeOwnership(dirPath, user, group) {
-    if (os.platform() === 'win32') {
-        log('INFO', `Skipping changeOwnership on Windows.`);
+    if (os.platform() === 'win32' || !user || !group) {
+        log('INFO', 'Skipping changeOwnership on Windows or if user/group is not configured.');
         return;
     }
     const validBasePaths = [SERVER_DIRECTORY, BACKUP_DIRECTORY].filter(Boolean);
@@ -270,7 +268,7 @@ export async function backupServer() {
     try {
         await copyDir(SERVER_DIRECTORY, backupDir);
         if (os.platform() !== 'win32') {
-            await changeOwnership(backupDir, MC_USER, MC_GROUP);
+            await changeOwnership(backupDir, config.minecraftUser, config.minecraftGroup);
         }
         log('INFO', `Backup complete in ${backupDir}`);
         return backupDir;
@@ -452,8 +450,8 @@ export async function checkAndInstall() {
         }
         storeLatestVersion(latestVersion);
         log('INFO', `Successfully installed/updated to version ${latestVersion}`);
-        await changeOwnership(SERVER_DIRECTORY, MC_USER, MC_GROUP);
-        log('INFO', `Changed ownership to ${MC_USER}:${MC_GROUP} (if applicable).`);
+        await changeOwnership(SERVER_DIRECTORY, config.minecraftUser, config.minecraftGroup);
+        log('INFO', `Changed ownership to ${config.minecraftUser}:${config.minecraftGroup} (if applicable).`);
         if (WEBHOOK_URL) {
             try { await sendWebhookNotification(`Minecraft Bedrock Server updated to version ${latestVersion}! Server restarting...`); }
             catch (error) { log('ERROR', `Failed to send webhook notification: ${error}`);}
@@ -658,7 +656,8 @@ export async function readGlobalConfig() {
         serverName: "Default Minecraft Server", serverPortIPv4: 19132, serverPortIPv6: 19133,
         serverDirectory: "./server_data/default_server", tempDirectory: "./server_data/temp/default_server",
         backupDirectory: "./server_data/backup/default_server", worldName: "Bedrock level",
-        autoStart: true, autoUpdateEnabled: false, autoUpdateIntervalMinutes: 60, logLevel: "INFO"
+        autoStart: true, autoUpdateEnabled: false, autoUpdateIntervalMinutes: 60, logLevel: "INFO",
+        minecraftUser: "minecraft", minecraftGroup: "minecraft"
     };
     setLogLevel(effectiveConfig.logLevel);
     if (fs.existsSync(configPath)) {
