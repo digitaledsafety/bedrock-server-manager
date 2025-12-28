@@ -337,6 +337,10 @@ const start = async () => {
     try {
         const initialConfig = await backend.readGlobalConfig();
         backend.init(initialConfig);
+        if (initialConfig.autoStart) {
+            backend.log('INFO', 'autoStart is enabled, attempting to start the server...');
+            await backend.startServer();
+        }
         await backend.startAutoUpdateScheduler();
 
         const port = initialConfig.uiPort ?? PORT;
