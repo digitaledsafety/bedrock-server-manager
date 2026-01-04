@@ -186,21 +186,44 @@ export async function getLatestVersion() {
 }
 
 export function downloadFile(downloadUrl, downloadPath) {
-    return new Promise((resolve, reject) => {
-        const url = new URL(downloadUrl);
-        const protocol = url.protocol === 'https:' ? https : http;
-        const file = fs.createWriteStream(downloadPath);
-        protocol.get(url, (response) => {
-            if (response.statusCode < 200 || response.statusCode >= 300) {
-                reject(new Error(`Failed to download file: ${response.statusCode} ${response.statusMessage}`));
-                return;
-            }
-            response.pipe(file);
-            file.on('finish', () => { file.close(resolve); });
-            file.on('error', (err) => { fs.unlink(downloadPath, () => reject(new Error(`Error writing to file: ${err.message}`))); });
-            response.on('error', (err) => { fs.unlink(downloadPath, () => reject(new Error(`Error during download: ${err.message}`))); });
-        });
-    });
+    return new Promise((resolve, reject) => {
+        const request = (url) => {
+            const urlObject = new URL(url);
+            const protocol = urlObject.protocol === 'https:' ? https : http;
+
+            protocol.get(urlObject, (response) => {
+                if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+                    log('INFO', `Redirecting to ${response.headers.location}`);
+                    request(response.headers.location); // Recursive call for redirect
+                    return;
+                }
+
+                if (response.statusCode < 200 || response.statusCode >= 300) {
+                    reject(new Error(`Failed to download file: ${response.statusCode} ${response.statusMessage}`));
+                    return;
+                }
+
+                const file = fs.createWriteStream(downloadPath);
+                response.pipe(file);
+
+                file.on('finish', () => {
+                    file.close(resolve);
+                });
+
+                file.on('error', (err) => {
+                    fs.unlink(downloadPath, () => reject(new Error(`Error writing to file: ${err.message}`)));
+                });
+
+                response.on('error', (err) => {
+                    fs.unlink(downloadPath, () => reject(new Error(`Error during download: ${err.message}`)));
+                });
+            }).on('error', (err) => {
+                reject(new Error(`Error making download request: ${err.message}`));
+            });
+        };
+
+        request(downloadUrl);
+    });
 }
 
 export function extractFiles(zipPath, extractPath) {
