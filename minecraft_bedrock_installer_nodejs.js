@@ -95,48 +95,94 @@ export function init(effectiveConfigFromRead) {
 }
 
 export async function getLatestVersion() {
-    return new Promise((resolve, reject) => {
-        const apiURL = new URL(MC_DOWNLOAD_API_URL);
-        https.get(apiURL, { headers: { 'Accept-Language': 'en-US,en;q=0.5' } }, (res) => {
-            let data = '';
-            if (res.statusCode < 200 || res.statusCode >= 300) {
-                log('ERROR', `Failed to fetch download links from API. Status: ${res.statusCode} ${res.statusMessage}. Response: ${data}`);
-                return reject(new Error(`API error! Status code: ${res.statusCode}`));
-            }
-            res.on('data', chunk => data += chunk);
-            res.on('end', () => {
-                try {
-                    const jsonResponse = JSON.parse(data);
-                    const platform = os.platform();
-                    const targetDownloadType = platform === 'win32' ? 'serverBedrockWindows' : 'serverBedrockLinux';
-                    let foundLink = null;
-                    if (jsonResponse && jsonResponse.result && jsonResponse.result.links) {
-                        foundLink = jsonResponse.result.links.find(link => link.downloadType === targetDownloadType);
-                    }
-                    if (foundLink && foundLink.downloadUrl) {
-                        const downloadUrl = foundLink.downloadUrl;
-                        log('DEBUG', `Found download URL via API: ${downloadUrl}`);
-                        const versionMatch = downloadUrl.match(VERSION_REGEX);
-                        if (versionMatch && versionMatch[1]) {
-                            resolve({ latestVersion: versionMatch[1].trim(), downloadUrl: downloadUrl });
+    if (config.useEducationBuild) {
+        return new Promise((resolve, reject) => {
+            const platform = os.platform();
+            const downloadUrl = platform === 'win32'
+                ? 'https://aka.ms/downloadmee-winServerBeta'
+                : 'https://aka.ms/downloadmee-linuxServerBeta';
+
+            const performHeadRequest = (urlToRequest) => {
+                const url = new URL(urlToRequest);
+                const options = {
+                    method: 'HEAD',
+                    host: url.hostname,
+                    path: url.pathname + url.search,
+                    headers: { 'Accept-Language': 'en-US,en;q=0.5' }
+                };
+
+                const req = https.request(options, (res) => {
+                    if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                        log('INFO', `Following redirect to ${res.headers.location}`);
+                        performHeadRequest(res.headers.location); // Recursive call for redirect
+                    } else if (res.statusCode >= 200 && res.statusCode < 300) {
+                        const contentLength = res.headers['content-length'];
+                        if (contentLength) {
+                            log('INFO', `Got content length for Education build: ${contentLength}`);
+                            resolve({ latestVersion: contentLength.trim(), downloadUrl: downloadUrl });
                         } else {
-                            log('WARNING', `Could not extract version from API download URL: ${downloadUrl}`);
-                            resolve(null);
+                            log('ERROR', 'Content-Length header not found for Education build.');
+                            reject(new Error('Content-Length header not found.'));
                         }
                     } else {
-                        log('WARNING', `Could not find download link for '${targetDownloadType}' in API response.`);
-                        resolve(null);
+                        log('ERROR', `Failed to get Education build info. Status: ${res.statusCode}`);
+                        reject(new Error(`HEAD request failed with status code: ${res.statusCode}`));
                     }
-                } catch (error) {
-                    log('ERROR', `Error parsing JSON response from download API: ${error.message}. Response: ${data}`);
-                    reject(error);
-                }
-            });
-        }).on('error', err => {
-            log('ERROR', `Error fetching data from download API: ${err.message}`);
-            reject(err);
+                });
+
+                req.on('error', (err) => {
+                    log('ERROR', `Error on HEAD request for Education build: ${err.message}`);
+                    reject(err);
+                });
+                req.end();
+            };
+
+            performHeadRequest(downloadUrl);
         });
-    });
+    } else {
+        return new Promise((resolve, reject) => {
+            const apiURL = new URL(MC_DOWNLOAD_API_URL);
+            https.get(apiURL, { headers: { 'Accept-Language': 'en-US,en;q=0.5' } }, (res) => {
+                let data = '';
+                if (res.statusCode < 200 || res.statusCode >= 300) {
+                    log('ERROR', `Failed to fetch download links from API. Status: ${res.statusCode} ${res.statusMessage}. Response: ${data}`);
+                    return reject(new Error(`API error! Status code: ${res.statusCode}`));
+                }
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => {
+                    try {
+                        const jsonResponse = JSON.parse(data);
+                        const platform = os.platform();
+                        const targetDownloadType = platform === 'win32' ? 'serverBedrockWindows' : 'serverBedrockLinux';
+                        let foundLink = null;
+                        if (jsonResponse && jsonResponse.result && jsonResponse.result.links) {
+                            foundLink = jsonResponse.result.links.find(link => link.downloadType === targetDownloadType);
+                        }
+                        if (foundLink && foundLink.downloadUrl) {
+                            const downloadUrl = foundLink.downloadUrl;
+                            log('DEBUG', `Found download URL via API: ${downloadUrl}`);
+                            const versionMatch = downloadUrl.match(VERSION_REGEX);
+                            if (versionMatch && versionMatch[1]) {
+                                resolve({ latestVersion: versionMatch[1].trim(), downloadUrl: downloadUrl });
+                            } else {
+                                log('WARNING', `Could not extract version from API download URL: ${downloadUrl}`);
+                                resolve(null);
+                            }
+                        } else {
+                            log('WARNING', `Could not find download link for '${targetDownloadType}' in API response.`);
+                            resolve(null);
+                        }
+                    } catch (error) {
+                        log('ERROR', `Error parsing JSON response from download API: ${error.message}. Response: ${data}`);
+                        reject(error);
+                    }
+                });
+            }).on('error', err => {
+                log('ERROR', `Error fetching data from download API: ${err.message}`);
+                reject(err);
+            });
+        });
+    }
 }
 
 export function downloadFile(downloadUrl, downloadPath) {
@@ -657,7 +703,7 @@ export async function readGlobalConfig() {
         serverDirectory: "./server_data/default_server", tempDirectory: "./server_data/temp/default_server",
         backupDirectory: "./server_data/backup/default_server", worldName: "Bedrock level",
         autoStart: true, autoUpdateEnabled: false, autoUpdateIntervalMinutes: 60, logLevel: "INFO",
-        minecraftUser: "minecraft", minecraftGroup: "minecraft"
+        minecraftUser: "minecraft", minecraftGroup: "minecraft", useEducationBuild: false
     };
     setLogLevel(effectiveConfig.logLevel);
     if (fs.existsSync(configPath)) {
