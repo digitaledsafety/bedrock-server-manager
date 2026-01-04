@@ -187,14 +187,24 @@ export async function getLatestVersion() {
 
 export function downloadFile(downloadUrl, downloadPath) {
     return new Promise((resolve, reject) => {
+        const maxRedirects = 10;
+        let redirectCount = 0;
+
         const request = (url) => {
+            if (redirectCount++ > maxRedirects) {
+                reject(new Error('Too many redirects'));
+                return;
+            }
+
             const urlObject = new URL(url);
             const protocol = urlObject.protocol === 'https:' ? https : http;
 
             protocol.get(urlObject, (response) => {
                 if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
                     log('INFO', `Redirecting to ${response.headers.location}`);
-                    request(response.headers.location); // Recursive call for redirect
+                    const redirectUrl = new URL(response.headers.location, url).href;
+                    response.resume();
+                    request(redirectUrl);
                     return;
                 }
 
@@ -207,7 +217,13 @@ export function downloadFile(downloadUrl, downloadPath) {
                 response.pipe(file);
 
                 file.on('finish', () => {
-                    file.close(resolve);
+                    file.close(err => {
+                        if (err) {
+                            reject(new Error(`Error closing file stream: ${err.message}`));
+                        } else {
+                            resolve();
+                        }
+                    });
                 });
 
                 file.on('error', (err) => {
@@ -217,6 +233,7 @@ export function downloadFile(downloadUrl, downloadPath) {
                 response.on('error', (err) => {
                     fs.unlink(downloadPath, () => reject(new Error(`Error during download: ${err.message}`)));
                 });
+
             }).on('error', (err) => {
                 reject(new Error(`Error making download request: ${err.message}`));
             });
