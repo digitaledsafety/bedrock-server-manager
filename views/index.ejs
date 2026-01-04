@@ -24,6 +24,7 @@
                 <p><strong>Log Level:</strong> <%= config.logLevel %></p>
                 <p><strong>Auto Start:</strong> <%= config.autoStart ? 'Enabled' : 'Disabled' %></p>
                 <p><strong>Current Server Version:</strong> <%= typeof currentServerVersion !== 'undefined' && currentServerVersion ? currentServerVersion : 'Unknown' %></p>
+                <p><strong>Education Edition:</strong> <%= config.useEducationBuild ? 'Enabled' : 'Disabled' %></p>
             </div>
         </div>
         <% } %>
