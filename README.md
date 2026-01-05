@@ -1,5 +1,8 @@
 # Bedrock Server Manager
 
+[![CI](https://github.com/digitaledsafety/bedrock-server-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/digitaledsafety/bedrock-server-manager/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 This application provides a web-based interface to manage a single Minecraft Bedrock Dedicated Server. You can start, stop, and restart your server, manage updates, tweak server properties (`server.properties`), manage worlds, and configure automatic updates. The interface is designed to be mobile-friendly.
 
 ![A clear view of the Minecraft Bedrock Server Manager web interface](public/mbsm-screen.PNG)
