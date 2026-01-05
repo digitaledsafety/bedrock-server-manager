@@ -25,7 +25,6 @@ let serverPID = null;
 
 const LAST_VERSION_FILE = 'last_version.txt';
 const WEBHOOK_URL = process.env.MC_UPDATE_WEBHOOK;
-export const SERVER_EXE_NAME = os.platform() === 'win32' ? 'bedrock_server.exe' : 'bedrock_server';
 const CONFIG_FILES = ['server.properties', 'permissions.json', 'whitelist.json'];
 const WORLD_DIRECTORIES = ['worlds'];
 const GLOBAL_CONFIG_FILE = 'config.json';
@@ -71,6 +70,21 @@ export function log(level, message) {
     }
 }
 
+export function getServerExeName() {
+    const platform = os.platform();
+    const serverType = config.serverType || 'bedrock';
+
+    if (serverType === 'bedrock_education') {
+        if (platform === 'win32') {
+            return 'bedrock_server.exe';
+        } else {
+            return 'bedrock_server_edu';
+        }
+    } else { // Default to bedrock
+        return platform === 'win32' ? 'bedrock_server.exe' : 'bedrock_server';
+    }
+}
+
 export function init(effectiveConfigFromRead) {
     config = effectiveConfigFromRead;
     setLogLevel(config.logLevel || "INFO");
@@ -95,6 +109,25 @@ export function init(effectiveConfigFromRead) {
 }
 
 export async function getLatestVersion() {
+    const serverType = config.serverType || 'bedrock';
+    const platform = os.platform();
+
+    if (serverType === 'java') {
+        log('INFO', 'Java server type is not yet supported.');
+        return null;
+    }
+
+    if (serverType === 'bedrock_education') {
+        const version = '1.21.131.1'; // This should be updated as new versions are released.
+        const downloadUrl = platform === 'win32'
+            ? `https://downloads.minecrafteduservices.com/mee-betabuilds/WinDS/MinecraftEducation_Server_Windows_${version}.zip`
+            : `https://downloads.minecrafteduservices.com/mee-betabuilds/LinuxDS/MinecraftEducation_Server_Linux_${version}.zip`;
+
+        log('INFO', `Using hardcoded Minecraft Education Edition server version ${version}.`);
+        return { latestVersion: version, downloadUrl: downloadUrl };
+    }
+
+    // Default to bedrock
     return new Promise((resolve, reject) => {
         const apiURL = new URL(MC_DOWNLOAD_API_URL);
         https.get(apiURL, { headers: { 'Accept-Language': 'en-US,en;q=0.5' } }, (res) => {
@@ -107,7 +140,6 @@ export async function getLatestVersion() {
             res.on('end', () => {
                 try {
                     const jsonResponse = JSON.parse(data);
-                    const platform = os.platform();
                     const targetDownloadType = platform === 'win32' ? 'serverBedrockWindows' : 'serverBedrockLinux';
                     let foundLink = null;
                     if (jsonResponse && jsonResponse.result && jsonResponse.result.links) {
@@ -358,7 +390,7 @@ export async function startServer() {
         }
     }
     try {
-        const serverExePath = pathJoin(SERVER_DIRECTORY, SERVER_EXE_NAME);
+        const serverExePath = pathJoin(SERVER_DIRECTORY, getServerExeName());
         if (!fs.existsSync(serverExePath)) {
             log('WARNING', `Server executable not found at ${serverExePath}. Cannot start server. Run update/install first.`);
             return;
@@ -657,7 +689,7 @@ export async function readGlobalConfig() {
         serverDirectory: "./server_data/default_server", tempDirectory: "./server_data/temp/default_server",
         backupDirectory: "./server_data/backup/default_server", worldName: "Bedrock level",
         autoStart: true, autoUpdateEnabled: false, autoUpdateIntervalMinutes: 60, logLevel: "INFO",
-        minecraftUser: "minecraft", minecraftGroup: "minecraft"
+        minecraftUser: "minecraft", minecraftGroup: "minecraft", serverType: "bedrock"
     };
     setLogLevel(effectiveConfig.logLevel);
     if (fs.existsSync(configPath)) {
