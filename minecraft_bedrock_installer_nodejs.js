@@ -28,6 +28,7 @@ const WEBHOOK_URL = process.env.MC_UPDATE_WEBHOOK;
 const CONFIG_FILES = ['server.properties', 'permissions.json', 'whitelist.json'];
 const WORLD_DIRECTORIES = ['worlds'];
 const GLOBAL_CONFIG_FILE = 'config.json';
+const DEFAULT_EDUCATION_SERVER_VERSION = "1.21.131.1";
 
 let autoUpdateIntervalId = null;
 
@@ -118,12 +119,12 @@ export async function getLatestVersion() {
     }
 
     if (serverType === 'bedrock_education') {
-        const version = '1.21.131.1'; // This should be updated as new versions are released.
+        const version = config.educationServerVersion || DEFAULT_EDUCATION_SERVER_VERSION;
         const downloadUrl = platform === 'win32'
             ? `https://downloads.minecrafteduservices.com/mee-betabuilds/WinDS/MinecraftEducation_Server_Windows_${version}.zip`
             : `https://downloads.minecrafteduservices.com/mee-betabuilds/LinuxDS/MinecraftEducation_Server_Linux_${version}.zip`;
 
-        log('INFO', `Using hardcoded Minecraft Education Edition server version ${version}.`);
+        log('INFO', `Using configured Minecraft Education Edition server version ${version}.`);
         return { latestVersion: version, downloadUrl: downloadUrl };
     }
 
@@ -689,7 +690,8 @@ export async function readGlobalConfig() {
         serverDirectory: "./server_data/default_server", tempDirectory: "./server_data/temp/default_server",
         backupDirectory: "./server_data/backup/default_server", worldName: "Bedrock level",
         autoStart: true, autoUpdateEnabled: false, autoUpdateIntervalMinutes: 60, logLevel: "INFO",
-        minecraftUser: "minecraft", minecraftGroup: "minecraft", serverType: "bedrock"
+        minecraftUser: "minecraft", minecraftGroup: "minecraft", serverType: "bedrock",
+        educationServerVersion: DEFAULT_EDUCATION_SERVER_VERSION
     };
     setLogLevel(effectiveConfig.logLevel);
     if (fs.existsSync(configPath)) {

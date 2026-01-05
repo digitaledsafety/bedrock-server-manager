@@ -97,11 +97,18 @@ Using Node Version Manager (`nvm`) is recommended:
       "autoStart": false,
       "autoUpdateEnabled": true,
       "autoUpdateIntervalMinutes": 60,
-      "logLevel": "INFO"
+      "logLevel": "INFO",
+      "serverType": "bedrock",
+      "educationServerVersion": "1.21.131.1"
     }
     ```
 
     *   `serverName`: A friendly name for your server (displayed in the UI).
+    *   `serverType`: (string) Specifies the type of Minecraft server to manage.
+        *   `"bedrock"`: (Default) The standard Minecraft Bedrock server.
+        *   `"bedrock_education"`: The Minecraft Education Edition server.
+        *   `"java"`: Reserved for future use. Currently, this option will disable server management features in the UI.
+    *   `educationServerVersion`: (string) The version of the Minecraft Education Edition server to use. This should be updated manually when a new version is released.
     *   `serverPortIPv4`: The IPv4 port for the Minecraft server (must match `server-port` in `server.properties`).
     *   `serverPortIPv6`: The IPv6 port for the Minecraft server (must match `server-portv6` in `server.properties`).
     *   `serverDirectory`: Path to your Minecraft server files.
