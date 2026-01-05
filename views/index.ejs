@@ -24,6 +24,7 @@
                 <p><strong>Log Level:</strong> <%= config.logLevel %></p>
                 <p><strong>Auto Start:</strong> <%= config.autoStart ? 'Enabled' : 'Disabled' %></p>
                 <p><strong>Current Server Version:</strong> <%= typeof currentServerVersion !== 'undefined' && currentServerVersion ? currentServerVersion : 'Unknown' %></p>
+                <p><strong>Server Type:</strong> <%= config.serverType %></p>
             </div>
         </div>
         <% } %>
@@ -32,12 +33,22 @@
             <div id="messageBox" class="message-box" role="alert" style="display: none;"></div>
             <h2>Server Status</h2>
             <p>Current Status: <span id="serverStatus" class="status-indicator status-<%= serverStatus %>"><%= serverStatus.toUpperCase() %></span></p>
-            <div class="button-group">
-                <button id="startButton">Start Server</button>
-                <button id="stopButton">Stop Server</button>
-                <button id="restartButton">Restart Server</button>
-                <button id="updateButton">Check & Install Update</button>
-            </div>
+            <% if (config.serverType === 'java') { %>
+                <p>Java server support is coming soon!</p>
+                <div class="button-group">
+                    <button id="startButton" disabled>Start Server</button>
+                    <button id="stopButton" disabled>Stop Server</button>
+                    <button id="restartButton" disabled>Restart Server</button>
+                    <button id="updateButton" disabled>Check & Install Update</button>
+                </div>
+            <% } else { %>
+                <div class="button-group">
+                    <button id="startButton">Start Server</button>
+                    <button id="stopButton">Stop Server</button>
+                    <button id="restartButton">Restart Server</button>
+                    <button id="updateButton">Check & Install Update</button>
+                </div>
+            <% } %>
         </div>
 
         <div class="section">
