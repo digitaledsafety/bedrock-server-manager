@@ -118,41 +118,38 @@ export async function getLatestVersion() {
     }
 
     if (serverType === 'bedrock_education') {
-        return new Promise((resolve, reject) => {
-            const redirectUrlString = platform === 'win32'
-                ? 'https://aka.ms/downloadmee-winServerBeta'
-                : 'https://aka.ms/downloadmee-linuxServerBeta';
-            const redirectUrl = new URL(redirectUrlString);
+        const redirectUrlString = platform === 'win32'
+            ? 'https://aka.ms/downloadmee-winServerBeta'
+            : 'https://aka.ms/downloadmee-linuxServerBeta';
 
-            const request = https.get(redirectUrl, (res) => {
-                res.resume(); // Consume the response data to free up memory.
-
+        // Wrap https.get in a promise to use with async/await
+        const downloadUrl = await new Promise((resolve, reject) => {
+            const request = https.get(new URL(redirectUrlString), (res) => {
+                res.resume(); // Consume response data
                 if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-                    const downloadUrl = res.headers.location;
-                    log('DEBUG', `Redirected to: ${downloadUrl}`);
-
-                    const versionRegex = /MinecraftEducation_Server_(?:Windows|Linux)_([\d\.]+)\.zip/;
-                    const versionMatch = downloadUrl.match(versionRegex);
-
-                    if (versionMatch && versionMatch[1]) {
-                        const version = versionMatch[1].trim();
-                        log('INFO', `Found Minecraft Education Edition server version ${version} from redirect.`);
-                        resolve({ latestVersion: version, downloadUrl: downloadUrl });
-                    } else {
-                        log('ERROR', `Could not extract version from the redirected URL: ${downloadUrl}`);
-                        reject(new Error(`Could not extract version from redirected URL.`));
-                    }
+                    resolve(res.headers.location);
                 } else {
-                    log('ERROR', `Failed to get redirect location. Status: ${res.statusCode}`);
                     reject(new Error(`Failed to get redirect location. Status: ${res.statusCode}`));
                 }
             });
-
             request.on('error', (err) => {
-                log('ERROR', `Error getting Minecraft Education Edition download link: ${err.message}`);
-                reject(err);
+                reject(new Error(`Error getting Minecraft Education Edition download link: ${err.message}`));
             });
         });
+
+        log('DEBUG', `Redirected to: ${downloadUrl}`);
+        const versionRegex = /MinecraftEducation_Server_(?:Windows|Linux)_([\d\.]+)\.zip/;
+        const versionMatch = downloadUrl.match(versionRegex);
+
+        if (versionMatch && versionMatch[1]) {
+            const version = versionMatch[1].trim();
+            log('INFO', `Found Minecraft Education Edition server version ${version} from redirect.`);
+            return { latestVersion: version, downloadUrl: downloadUrl };
+        } else {
+            const error = new Error(`Could not extract version from the redirected URL: ${downloadUrl}`);
+            log('ERROR', error.message);
+            throw error;
+        }
     }
 
     // Default to bedrock
