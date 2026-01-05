@@ -191,37 +191,28 @@ export function downloadFile(downloadUrl, downloadPath) {
 
 export function extractFiles(zipPath, extractPath) {
     return new Promise((resolve, reject) => {
-        const platform = os.platform();
-        let childProcess;
-        if (platform === 'win32') {
-            const psPath = pathJoin(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-            const commandArgs = [
-                '-NoProfile', '-NonInteractive', '-Command',
-                `Expand-Archive -Path '${zipPath.replace(/'/g, "''")}' -DestinationPath '${extractPath.replace(/'/g, "''")}' -Force`
-            ];
-            log('INFO', `Using PowerShell for extraction: ${psPath} ${commandArgs.join(' ')}`);
-            childProcess = spawn(psPath, commandArgs, { stdio: 'pipe' });
-        } else {
-            log('INFO', `Using unzip for extraction. Command: unzip -o "${zipPath}" -d "${extractPath}"`);
-            childProcess = spawn('unzip', ['-o', zipPath, '-d', extractPath], { stdio: 'pipe' });
+        try {
+            log('INFO', `Using adm-zip for extraction for ${zipPath} to ${extractPath}.`);
+            const zip = new AdmZip(zipPath);
+            zip.extractAllTo(extractPath, true); // true for overwrite
+            log('INFO', `Extraction completed successfully.`);
+
+            // 2. Set permissions for specific executable files (e.g., a script named 'script.sh')
+            const executableFilePath = path.join(extractPath, getServerExeName());
+
+            try {
+                // Set permissions to 755 (owner can read/write/execute, others can read/execute)
+                fs.chmodSync(executableFilePath, 0o755);
+                console.log(`Permissions set to 755 for ${executableFilePath}`);
+            } catch (err) {
+                console.error(`Failed to set permissions for ${executableFilePath}:`, err);
+            }
+
+            resolve();
+        } catch (error) {
+            log('ERROR', `Extraction failed for ${zipPath}: ${error.message}`);
+            reject(new Error(`Extraction failed: ${error.message}`));
         }
-        let stdoutData = ''; let stderrData = '';
-        childProcess.stdout.on('data', (data) => { stdoutData += data.toString(); });
-        childProcess.stderr.on('data', (data) => { stderrData += data.toString(); });
-        childProcess.on('close', (code) => {
-            log('DEBUG', `Extraction stdout: ${stdoutData}`);
-            if (stderrData) { log('ERROR', `Extraction stderr: ${stderrData}`); }
-            if (code === 0) {
-                log('INFO', `Extraction completed successfully for ${zipPath} to ${extractPath}.`);
-                resolve();
-            } else {
-                reject(new Error(`Extraction failed with code ${code} for ${zipPath}. Stderr: ${stderrData}`));
-            }
-        });
-        childProcess.on('error', (error) => {
-            log('ERROR', `Failed to start extraction process for ${zipPath}: ${error.message}`);
-            reject(new Error(`Failed to start extraction process: ${error.message}`));
-        });
     });
 }
 
