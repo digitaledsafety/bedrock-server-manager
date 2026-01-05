@@ -118,12 +118,39 @@ export async function getLatestVersion() {
     }
 
     if (serverType === 'bedrock_education') {
-        const version = '1.21.131.1'; // This should be updated as new versions are released.
-        const downloadUrl = platform === 'win32'
-            ? `https://downloads.minecrafteduservices.com/mee-betabuilds/WinDS/MinecraftEducation_Server_Windows_${version}.zip`
-            : `https://downloads.minecrafteduservices.com/mee-betabuilds/LinuxDS/MinecraftEducation_Server_Linux_${version}.zip`;
+       const redirectUrlString = platform === 'win32'
+            ? 'https://aka.ms/downloadmee-winServerBeta'
+            : 'https://aka.ms/downloadmee-linuxServerBeta';
 
-        log('INFO', `Using hardcoded Minecraft Education Edition server version ${version}.`);
+        // Wrap https.get in a promise to use with async/await
+        const downloadUrl = await new Promise((resolve, reject) => {
+            const request = https.get(new URL(redirectUrlString), (res) => {
+                res.resume(); // Consume response data
+                if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                    resolve(res.headers.location);
+                } else {
+                    reject(new Error(`Failed to get redirect location. Status: ${res.statusCode}`));
+                }
+            });
+            request.on('error', (err) => {
+                reject(new Error(`Error getting Minecraft Education Edition download link: ${err.message}`));
+            });
+        });
+
+        log('DEBUG', `Redirected to: ${downloadUrl}`);
+        const versionRegex = /MinecraftEducation_Server_(?:Windows|Linux)_([\d\.]+)\.zip/;
+        const versionMatch = downloadUrl.match(versionRegex);
+
+       if (versionMatch && versionMatch[1]) {
+            const version = versionMatch[1].trim();
+            log('INFO', `Found Minecraft Education Edition server version ${version} from redirect.`);
+            return { latestVersion: version, downloadUrl: downloadUrl };
+        } else {
+            const error = new Error(`Could not extract version from the redirected URL: ${downloadUrl}`);
+            log('ERROR', error.message);
+            throw error;
+        }
+
         return { latestVersion: version, downloadUrl: downloadUrl };
     }
 
