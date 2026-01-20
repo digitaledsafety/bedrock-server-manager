@@ -862,9 +862,11 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
         const zipEntries = zip.getEntries();
         if (zipEntries.length === 0) {
             return { success: false, message: 'Uploaded file is empty or invalid.' };
-        }        if (isMcAddon) {
+        }
+
+        if (isMcAddon) {
             log('INFO', `Processing .mcaddon file: ${originalFilename}`);
-            const manifestEntries = zipEntries.filter(entry => entry.entryName.endsWith('manifest.json') && !entry.isDirectory);
+            const manifestEntries = zipEntries.filter(entry => entry.entryName.toLowerCase().endsWith('manifest.json') && !entry.isDirectory);
 
             if (manifestEntries.length === 0) {
                 return { success: false, message: 'No valid packs found within the .mcaddon file.' };
@@ -1029,7 +1031,7 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
                 fs.mkdirSync(finalPackDirPathBase, { recursive: true });
             }
 
-            const manifestEntry = zipEntries.find(entry => entry.entryName.endsWith('manifest.json') && !entry.isDirectory);
+            const manifestEntry = zipEntries.find(entry => entry.entryName.toLowerCase().endsWith('manifest.json') && !entry.isDirectory);
             if (!manifestEntry) {
                 return { success: false, message: 'manifest.json not found in the uploaded .mcpack.' };
             }
