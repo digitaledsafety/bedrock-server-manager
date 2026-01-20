@@ -867,11 +867,22 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
         if (isMcAddon) {
             log('INFO', `Processing .mcaddon file: ${originalFilename}`);
 
-            let manifestEntries = zipEntries.filter(entry => entry.entryName.toLowerCase().replace(/\\/g, '/').endsWith('manifest.json') && !entry.isDirectory);
+            // Normalize all entry names for easier matching
+            const entriesWithNormalizedNames = zipEntries.map(e => ({
+                entry: e,
+                normalizedName: e.entryName.toLowerCase().replace(/\\/g, '/')
+            }));
+
+            let manifestEntries = entriesWithNormalizedNames
+                .filter(e => e.normalizedName.endsWith('manifest.json') && !e.entry.isDirectory)
+                .map(e => e.entry);
 
             // If no manifests found, check if it contains .mcpack files
             if (manifestEntries.length === 0) {
-                const mcpackEntries = zipEntries.filter(entry => entry.entryName.toLowerCase().endsWith('.mcpack') && !entry.isDirectory);
+                const mcpackEntries = entriesWithNormalizedNames
+                    .filter(e => e.normalizedName.endsWith('.mcpack') && !e.entry.isDirectory)
+                    .map(e => e.entry);
+
                 if (mcpackEntries.length > 0) {
                     log('INFO', `Found ${mcpackEntries.length} .mcpack files within .mcaddon. Processing them...`);
                     for (const mcpackEntry of mcpackEntries) {
