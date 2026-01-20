@@ -956,7 +956,8 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
 
             for (const manifestEntry of manifestEntries) {
                 const entryName = manifestEntry.entryName;
-                const packRootInZip = path.posix.dirname(entryName) === '.' ? '' : path.posix.dirname(entryName);
+                const normalizedEntryName = entryName.replace(/\\/g, '/');
+                const packRootInZip = path.posix.dirname(normalizedEntryName) === '.' ? '' : path.posix.dirname(normalizedEntryName);
 
                 let manifestData;
                 try {
@@ -1027,15 +1028,16 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
             zipEntries.forEach(zipEntry => {
                 if (zipEntry.isDirectory) return;
                 const entryName = zipEntry.entryName;
+                const normalizedEntryName = entryName.replace(/\\/g, '/');
 
                 for (const pack of packsToExtract) {
                     let shouldExtract = false;
                     let relativePathInPack = '';
 
                     if (pack.prefix) {
-                        if (entryName.startsWith(pack.prefix)) {
+                        if (normalizedEntryName.startsWith(pack.prefix)) {
                             shouldExtract = true;
-                            relativePathInPack = entryName.substring(pack.prefix.length);
+                            relativePathInPack = normalizedEntryName.substring(pack.prefix.length);
                         }
                     } else {
                         shouldExtract = true;
@@ -1135,15 +1137,16 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
 
             zipEntries.forEach(zipEntry => {
                  const entryName = zipEntry.entryName;
+                 const normalizedEntryName = entryName.replace(/\\/g, '/');
                  if (zipEntry.isDirectory) return;
 
                  let shouldExtract = false;
                  let relativePathInPack = '';
 
                  if (prefix) {
-                     if (entryName.startsWith(prefix)) {
+                     if (normalizedEntryName.startsWith(prefix)) {
                          shouldExtract = true;
-                         relativePathInPack = entryName.substring(prefix.length);
+                         relativePathInPack = normalizedEntryName.substring(prefix.length);
                      }
                  } else {
                      // Pack is at root
