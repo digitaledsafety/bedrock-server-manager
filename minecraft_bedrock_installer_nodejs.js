@@ -866,9 +866,78 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
 
         if (isMcAddon) {
             log('INFO', `Processing .mcaddon file: ${originalFilename}`);
-            const manifestEntries = zipEntries.filter(entry => entry.entryName.toLowerCase().endsWith('manifest.json') && !entry.isDirectory);
+
+            let manifestEntries = zipEntries.filter(entry => entry.entryName.toLowerCase().replace(/\\/g, '/').endsWith('manifest.json') && !entry.isDirectory);
+
+            // If no manifests found, check if it contains .mcpack files
+            if (manifestEntries.length === 0) {
+                const mcpackEntries = zipEntries.filter(entry => entry.entryName.toLowerCase().endsWith('.mcpack') && !entry.isDirectory);
+                if (mcpackEntries.length > 0) {
+                    log('INFO', `Found ${mcpackEntries.length} .mcpack files within .mcaddon. Processing them...`);
+                    for (const mcpackEntry of mcpackEntries) {
+                        const mcpackBuffer = mcpackEntry.getData();
+                        const innerZip = new AdmZip(mcpackBuffer);
+                        const innerEntries = innerZip.getEntries();
+                        const innerManifest = innerEntries.find(e => e.entryName.toLowerCase().replace(/\\/g, '/').endsWith('manifest.json') && !e.isDirectory);
+
+                        if (innerManifest) {
+                            const manifestData = JSON.parse(innerZip.readAsText(innerManifest));
+                            if (manifestData.header && manifestData.header.uuid && manifestData.header.version && manifestData.header.name) {
+                                // Extract inner pack
+                                const packId = manifestData.header.uuid;
+                                const packVersion = manifestData.header.version;
+                                const packName = manifestData.header.name;
+
+                                let packTypeModule = manifestData.modules && manifestData.modules[0] ? manifestData.modules[0].type : null;
+                                let currentPackTargetDirName;
+                                let currentWorldPackJsonFile;
+
+                                if (packTypeModule === 'data' || mcpackEntry.entryName.toLowerCase().includes('behavior')) {
+                                    currentPackTargetDirName = 'behavior_packs';
+                                    currentWorldPackJsonFile = 'world_behavior_packs.json';
+                                } else if (packTypeModule === 'resources' || mcpackEntry.entryName.toLowerCase().includes('resource')) {
+                                    currentPackTargetDirName = 'resource_packs';
+                                    currentWorldPackJsonFile = 'world_resource_packs.json';
+                                } else {
+                                    log('WARNING', `Skipping inner pack '${packName}': Could not determine pack type.`);
+                                    continue;
+                                }
+
+                                const packDirNameInFilesystem = packName.replace(/[^a-zA-Z0-9_-]/g, '_') || packId;
+                                const finalPackDirPathBase = path.join(SERVER_DIRECTORY, currentPackTargetDirName);
+                                const finalPackPath = path.join(finalPackDirPathBase, packDirNameInFilesystem);
+
+                                if (!fs.existsSync(finalPackDirPathBase)) fs.mkdirSync(finalPackDirPathBase, { recursive: true });
+                                if (fs.existsSync(finalPackPath)) await removeDir(finalPackPath);
+                                fs.mkdirSync(finalPackPath, { recursive: true });
+
+                                innerEntries.forEach(innerEntry => {
+                                    if (innerEntry.isDirectory) return;
+                                    const relPath = innerEntry.entryName;
+                                    const targetFilePath = path.join(finalPackPath, relPath);
+                                    const targetFileDir = path.dirname(targetFilePath);
+                                    if (!fs.existsSync(targetFileDir)) fs.mkdirSync(targetFileDir, { recursive: true });
+                                    fs.writeFileSync(targetFilePath, innerEntry.getData());
+                                });
+
+                                log('INFO', `Extracted inner pack '${packName}' to ${finalPackPath}`);
+                                if (await updateWorldPackJson(worldPath, currentWorldPackJsonFile, packId, packVersion)) {
+                                    messages.push(`Applied inner pack '${packName}'.`);
+                                    packsProcessedCount++;
+                                } else {
+                                    overallSuccess = false;
+                                }
+                            }
+                        }
+                    }
+                    if (packsProcessedCount > 0) {
+                        return { success: overallSuccess, message: `.mcaddon processing complete (nested .mcpack). ${packsProcessedCount} pack(s) processed. Details: ${messages.join(" ")} Restart server if needed.` };
+                    }
+                }
+            }
 
             if (manifestEntries.length === 0) {
+                log('WARNING', `No manifest.json found in .mcaddon. ZIP Entries: ${zipEntries.map(e => e.entryName).join(', ')}`);
                 return { success: false, message: 'No valid packs found within the .mcaddon file.' };
             }
 
@@ -958,10 +1027,6 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
                             relativePathInPack = entryName.substring(pack.prefix.length);
                         }
                     } else {
-                        // Pack is at root. In .mcaddon, if multiple packs exist and one is at root,
-                        // it usually means all files in the zip belong to it, or it's a weird structure.
-                        // However, usually .mcaddon files have packs in subdirectories.
-                        // If a pack is at root, we extract everything.
                         shouldExtract = true;
                         relativePathInPack = entryName;
                     }
@@ -1031,7 +1096,7 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
                 fs.mkdirSync(finalPackDirPathBase, { recursive: true });
             }
 
-            const manifestEntry = zipEntries.find(entry => entry.entryName.toLowerCase().endsWith('manifest.json') && !entry.isDirectory);
+            const manifestEntry = zipEntries.find(entry => entry.entryName.toLowerCase().replace(/\\/g, '/').endsWith('manifest.json') && !entry.isDirectory);
             if (!manifestEntry) {
                 return { success: false, message: 'manifest.json not found in the uploaded .mcpack.' };
             }
