@@ -91,6 +91,7 @@ Using Node Version Manager (`nvm`) is recommended:
     ```json
     {
       "serverName": "Default Minecraft Server",
+      "uiPort": 3000,
       "serverPortIPv4": 19132,
       "serverPortIPv6": 19133,
       "serverDirectory": "./server_data/default_server",
@@ -105,6 +106,7 @@ Using Node Version Manager (`nvm`) is recommended:
     ```
 
     *   `serverName`: A friendly name for your server (displayed in the UI).
+    *   `uiPort`: The port the web interface will listen on (default: 3000).
     *   `serverPortIPv4`: The IPv4 port for the Minecraft server (must match `server-port` in `server.properties`).
     *   `serverPortIPv6`: The IPv6 port for the Minecraft server (must match `server-portv6` in `server.properties`).
     *   `serverDirectory`: Path to your Minecraft server files.
@@ -123,6 +125,7 @@ Using Node Version Manager (`nvm`) is recommended:
 
     Supported overrides:
     *   `--serverName <name>`
+    *   `--uiPort <port>`
     *   `--serverPortIPv4 <port>`
     *   `--serverPortIPv6 <port>`
     *   `--serverDirectory <path>`
@@ -243,12 +246,10 @@ Each instance of this application manages a *single* Minecraft Bedrock server. I
     *   Example:
         ```bash
         # Terminal 1 (for server 1 on UI port 3000)
-        # (Modify app.js to use PORT 3000 or ensure it's default)
-        node app.js --serverName "Server One" --serverDirectory ./server1_data --serverPortIPv4 19132 --serverPortIPv6 19133
+        node app.js --serverName "Server One" --uiPort 3000 --serverDirectory ./server1_data --serverPortIPv4 19132 --serverPortIPv6 19133
 
         # Terminal 2 (for server 2 on UI port 3001)
-        # (Modify app.js to use PORT 3001 for this run, or use PM2 with port args)
-        node app.js --serverName "Server Two" --serverDirectory ./server2_data --serverPortIPv4 19134 --serverPortIPv6 19135
+        node app.js --serverName "Server Two" --uiPort 3001 --serverDirectory ./server2_data --serverPortIPv4 19134 --serverPortIPv6 19135
         ```
     *   Managing the different web UI ports for each manager instance is key. Using a process manager like PM2 can help manage multiple Node.js processes with different environment variables or arguments.
 

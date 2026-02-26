@@ -106,6 +106,22 @@ export function init(effectiveConfigFromRead) {
             }
         }
     }
+
+    // Try to recover PID
+    if (SERVER_DIRECTORY) {
+        const pidFile = pathJoin(SERVER_DIRECTORY, 'server.pid');
+        if (fs.existsSync(pidFile)) {
+            try {
+                const savedPID = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
+                if (!isNaN(savedPID)) {
+                    serverPID = savedPID;
+                    log('INFO', `Recovered server PID ${serverPID} from server.pid`);
+                }
+            } catch (err) {
+                log('WARNING', `Failed to read server.pid: ${err.message}`);
+            }
+        }
+    }
 }
 
 export async function getLatestVersion() {
@@ -227,12 +243,16 @@ export function extractFiles(zipPath, extractPath) {
             // 2. Set permissions for specific executable files (e.g., a script named 'script.sh')
             const executableFilePath = path.join(extractPath, getServerExeName());
 
-            try {
-                // Set permissions to 755 (owner can read/write/execute, others can read/execute)
-                fs.chmodSync(executableFilePath, 0o755);
-                console.log(`Permissions set to 755 for ${executableFilePath}`);
-            } catch (err) {
-                console.error(`Failed to set permissions for ${executableFilePath}:`, err);
+            if (fs.existsSync(executableFilePath)) {
+                try {
+                    // Set permissions to 755 (owner can read/write/execute, others can read/execute)
+                    fs.chmodSync(executableFilePath, 0o755);
+                    log('INFO', `Permissions set to 755 for ${executableFilePath}`);
+                } catch (err) {
+                    log('ERROR', `Failed to set permissions for ${executableFilePath}: ${err.message}`);
+                }
+            } else {
+                log('WARNING', `Executable not found after extraction at ${executableFilePath}. Skipping chmod.`);
             }
 
             resolve();
@@ -332,17 +352,8 @@ export async function backupServer() {
 }
 
 export async function copyDir(src, dest) {
-    fs.mkdirSync(dest, { recursive: true });
-    const entries = fs.readdirSync(src, { withFileTypes: true });
-    for (const entry of entries) {
-        const srcPath = pathJoin(src, entry.name);
-        const destPath = pathJoin(dest, entry.name);
-        if (entry.isDirectory()) {
-            await copyDir(srcPath, destPath);
-        } else {
-            fs.copyFileSync(srcPath, destPath);
-        }
-    }
+    log('DEBUG', `Copying directory from ${src} to ${dest}`);
+    fs.cpSync(src, dest, { recursive: true });
 }
 
 export async function copyExistingData(backupDir, newInstallDir) {
@@ -393,6 +404,12 @@ export async function stopServer() {
         log('ERROR', `Error stopping server with PID ${serverPID} (process might not exist): ${error.message}`);
     } finally {
         serverPID = null;
+        if (SERVER_DIRECTORY) {
+            const pidFile = pathJoin(SERVER_DIRECTORY, 'server.pid');
+            if (fs.existsSync(pidFile)) {
+                try { fs.unlinkSync(pidFile); } catch (err) { log('ERROR', `Failed to remove server.pid: ${err.message}`); }
+            }
+        }
     }
 }
 
@@ -422,6 +439,13 @@ export async function startServer() {
         if (serverProcess.pid) {
             serverPID = serverProcess.pid;
             log('INFO', `Server process started with PID: ${serverPID}.`);
+            if (SERVER_DIRECTORY) {
+                try {
+                    fs.writeFileSync(pathJoin(SERVER_DIRECTORY, 'server.pid'), serverPID.toString(), 'utf8');
+                } catch (err) {
+                    log('ERROR', `Failed to write server.pid: ${err.message}`);
+                }
+            }
         } else {
             log('ERROR', `Server process started but PID was not obtained.`);
         }
@@ -518,38 +542,13 @@ export async function checkAndInstall() {
 }
 
 /**
- * Removes a directory recursively. Cross-platform compatible.
- * @param {string} dirPath The path to the directory to remove.
- * @returns {Promise<void>} A promise that resolves when the directory is removed.
- */
-function removeDir(dirPath) {
-    return new Promise((resolve, reject) => {
-        if (!fs.existsSync(dirPath)) {
-            resolve(); // Resolve if the directory does not exist
-            return;
-        }
-
-        const platform = os.platform();
-        if (platform === 'win32') {
-            // Use Windows command to remove directory recursively and quietly
-            childProcessExec(`rmdir /s /q "${dirPath}"`, (error, stdout, stderr) => {
-                if (error) {
-                    reject(new Error(`Failed to remove directory ${dirPath}: ${error.message} ${stderr}`));
-                } else {
-                    resolve();
-                }
-            });
-        } else {
-            // Use Linux command to remove directory recursively and forcefully
-            childProcessExec(`rm -rf "${dirPath}"`, (error, stdout, stderr) => {
-                if (error) {
-                    reject(new Error(`Failed to remove directory ${dirPath}: ${error.message} ${stderr}`));
-                } else {
-                    resolve();
-                }
-            });
-        }
-    });
+ * Removes a directory recursively. Cross-platform compatible.
+ * @param {string} dirPath The path to the directory to remove.
+ * @returns {Promise<void>} A promise that resolves when the directory is removed.
+ */
+async function removeDir(dirPath) {
+    log('DEBUG', `Removing directory: ${dirPath}`);
+    fs.rmSync(dirPath, { recursive: true, force: true });
 }
 
 
@@ -657,6 +656,12 @@ export async function isProcessRunning() {
         } else {
             log('ERROR', `Error checking process PID ${serverPID}: ${error.message} (Code: ${error.code})`);
         }
+        if (SERVER_DIRECTORY) {
+            const pidFile = pathJoin(SERVER_DIRECTORY, 'server.pid');
+            if (fs.existsSync(pidFile)) {
+                try { fs.unlinkSync(pidFile); } catch (err) { log('ERROR', `Failed to remove server.pid: ${err.message}`); }
+            }
+        }
         serverPID = null;
         return false;
     }
@@ -703,7 +708,7 @@ export async function sendWebhookNotification(message) {
 export async function readGlobalConfig() {
     const configPath = pathJoin(__dirnameESM, GLOBAL_CONFIG_FILE);
     let effectiveConfig = {
-        serverName: "Default Minecraft Server", serverPortIPv4: 19132, serverPortIPv6: 19133,
+        serverName: "Default Minecraft Server", uiPort: 3000, serverPortIPv4: 19132, serverPortIPv6: 19133,
         serverDirectory: "./server_data/default_server", tempDirectory: "./server_data/temp/default_server",
         backupDirectory: "./server_data/backup/default_server", worldName: "Bedrock level",
         autoStart: true, autoUpdateEnabled: false, autoUpdateIntervalMinutes: 60, logLevel: "INFO",
@@ -734,6 +739,7 @@ export async function readGlobalConfig() {
         let valueConsumed = (value !== undefined && !value.startsWith('--'));
         switch (arg) {
             case '--serverName': if(valueConsumed) effectiveConfig.serverName = value; break;
+            case '--uiPort': if(valueConsumed) effectiveConfig.uiPort = parseInt(value, 10); break;
             case '--serverPortIPv4': if(valueConsumed) effectiveConfig.serverPortIPv4 = parseInt(value, 10); break;
             case '--serverPortIPv6': if(valueConsumed) effectiveConfig.serverPortIPv6 = parseInt(value, 10); break;
             case '--serverDirectory': if(valueConsumed) effectiveConfig.serverDirectory = value; break;
