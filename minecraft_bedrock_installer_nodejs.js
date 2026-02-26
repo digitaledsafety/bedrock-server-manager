@@ -24,6 +24,7 @@ let BACKUP_DIRECTORY;
 let serverPID = null;
 
 const LAST_VERSION_FILE = 'last_version.txt';
+const SERVER_PID_FILE = 'server.pid';
 const WEBHOOK_URL = process.env.MC_UPDATE_WEBHOOK;
 const CONFIG_FILES = ['server.properties', 'permissions.json', 'whitelist.json'];
 const WORLD_DIRECTORIES = ['worlds'];
@@ -105,6 +106,40 @@ export function init(effectiveConfigFromRead) {
                 log('ERROR', `Failed to create directory ${dir}: ${e.message}.`);
             }
         }
+    }
+    loadPersistedPID();
+}
+
+function savePersistedPID(pid) {
+    try {
+        const pidPath = pathJoin(__dirnameESM, SERVER_PID_FILE);
+        if (pid) {
+            fs.writeFileSync(pidPath, pid.toString(), 'utf8');
+            log('DEBUG', `Persisted server PID ${pid} to ${pidPath}`);
+        } else {
+            if (fs.existsSync(pidPath)) {
+                fs.unlinkSync(pidPath);
+                log('DEBUG', `Removed persisted PID file ${pidPath}`);
+            }
+        }
+    } catch (error) {
+        log('ERROR', `Failed to manage PID file: ${error.message}`);
+    }
+}
+
+function loadPersistedPID() {
+    try {
+        const pidPath = pathJoin(__dirnameESM, SERVER_PID_FILE);
+        if (fs.existsSync(pidPath)) {
+            const pidStr = fs.readFileSync(pidPath, 'utf8').trim();
+            const pid = parseInt(pidStr, 10);
+            if (!isNaN(pid)) {
+                serverPID = pid;
+                log('INFO', `Loaded persisted server PID: ${serverPID}`);
+            }
+        }
+    } catch (error) {
+        log('ERROR', `Failed to load persisted PID: ${error.message}`);
     }
 }
 
@@ -230,9 +265,9 @@ export function extractFiles(zipPath, extractPath) {
             try {
                 // Set permissions to 755 (owner can read/write/execute, others can read/execute)
                 fs.chmodSync(executableFilePath, 0o755);
-                console.log(`Permissions set to 755 for ${executableFilePath}`);
+                log('INFO', `Permissions set to 755 for ${executableFilePath}`);
             } catch (err) {
-                console.error(`Failed to set permissions for ${executableFilePath}:`, err);
+                log('ERROR', `Failed to set permissions for ${executableFilePath}: ${err.message}`);
             }
 
             resolve();
@@ -393,6 +428,7 @@ export async function stopServer() {
         log('ERROR', `Error stopping server with PID ${serverPID} (process might not exist): ${error.message}`);
     } finally {
         serverPID = null;
+        savePersistedPID(null);
     }
 }
 
@@ -421,6 +457,7 @@ export async function startServer() {
         });
         if (serverProcess.pid) {
             serverPID = serverProcess.pid;
+            savePersistedPID(serverPID);
             log('INFO', `Server process started with PID: ${serverPID}.`);
         } else {
             log('ERROR', `Server process started but PID was not obtained.`);
@@ -428,11 +465,17 @@ export async function startServer() {
         serverProcess.unref();
         serverProcess.on('error', (err) => {
             log('ERROR', `Server process error: ${err.message}`);
-            if (serverPID === serverProcess.pid) serverPID = null;
+            if (serverPID === serverProcess.pid) {
+                serverPID = null;
+                savePersistedPID(null);
+            }
         });
         serverProcess.on('exit', (code, signal) => {
             log('INFO', `Server process PID ${serverProcess.pid} exited with code ${code} and signal ${signal}`);
-            if (serverPID === serverProcess.pid) serverPID = null;
+            if (serverPID === serverProcess.pid) {
+                serverPID = null;
+                savePersistedPID(null);
+            }
         });
     } catch (error) {
         log('ERROR', `Error starting server: ${error.message}`);
@@ -492,7 +535,13 @@ export async function checkAndInstall() {
             log('INFO', `Removed existing server directory ${SERVER_DIRECTORY}`);
         }
         log('INFO', `Moving new server files from ${tempInstallPath} to ${SERVER_DIRECTORY}`);
-        fs.renameSync(tempInstallPath, SERVER_DIRECTORY);
+        try {
+            fs.renameSync(tempInstallPath, SERVER_DIRECTORY);
+        } catch (renameError) {
+            log('WARNING', `Failed to rename ${tempInstallPath} to ${SERVER_DIRECTORY}: ${renameError.message}. Falling back to copy and remove.`);
+            await copyDir(tempInstallPath, SERVER_DIRECTORY);
+            await removeDir(tempInstallPath);
+        }
         log('INFO', 'Successfully moved new server files to SERVER_DIRECTORY.');
         if (backupDir) {
             await copyExistingData(backupDir, SERVER_DIRECTORY);
@@ -518,38 +567,21 @@ export async function checkAndInstall() {
 }
 
 /**
- * Removes a directory recursively. Cross-platform compatible.
- * @param {string} dirPath The path to the directory to remove.
- * @returns {Promise<void>} A promise that resolves when the directory is removed.
- */
-function removeDir(dirPath) {
-    return new Promise((resolve, reject) => {
-        if (!fs.existsSync(dirPath)) {
-            resolve(); // Resolve if the directory does not exist
-            return;
-        }
-
-        const platform = os.platform();
-        if (platform === 'win32') {
-            // Use Windows command to remove directory recursively and quietly
-            childProcessExec(`rmdir /s /q "${dirPath}"`, (error, stdout, stderr) => {
-                if (error) {
-                    reject(new Error(`Failed to remove directory ${dirPath}: ${error.message} ${stderr}`));
-                } else {
-                    resolve();
-                }
-            });
-        } else {
-            // Use Linux command to remove directory recursively and forcefully
-            childProcessExec(`rm -rf "${dirPath}"`, (error, stdout, stderr) => {
-                if (error) {
-                    reject(new Error(`Failed to remove directory ${dirPath}: ${error.message} ${stderr}`));
-                } else {
-                    resolve();
-                }
-            });
-        }
-    });
+ * Removes a directory recursively. Cross-platform compatible.
+ * @param {string} dirPath The path to the directory to remove.
+ * @returns {Promise<void>} A promise that resolves when the directory is removed.
+ */
+async function removeDir(dirPath) {
+    if (!fs.existsSync(dirPath)) {
+        return;
+    }
+    try {
+        await fs.promises.rm(dirPath, { recursive: true, force: true });
+        log('INFO', `Successfully removed directory: ${dirPath}`);
+    } catch (error) {
+        log('ERROR', `Failed to remove directory ${dirPath}: ${error.message}`);
+        throw error;
+    }
 }
 
 
@@ -703,11 +735,21 @@ export async function sendWebhookNotification(message) {
 export async function readGlobalConfig() {
     const configPath = pathJoin(__dirnameESM, GLOBAL_CONFIG_FILE);
     let effectiveConfig = {
-        serverName: "Default Minecraft Server", serverPortIPv4: 19132, serverPortIPv6: 19133,
-        serverDirectory: "./server_data/default_server", tempDirectory: "./server_data/temp/default_server",
-        backupDirectory: "./server_data/backup/default_server", worldName: "Bedrock level",
-        autoStart: true, autoUpdateEnabled: false, autoUpdateIntervalMinutes: 60, logLevel: "INFO",
-        minecraftUser: "minecraft", minecraftGroup: "minecraft", serverType: "bedrock"
+        serverName: "Default Minecraft Server",
+        uiPort: 3000,
+        serverPortIPv4: 19132,
+        serverPortIPv6: 19133,
+        serverDirectory: "./server_data/default_server",
+        tempDirectory: "./server_data/temp/default_server",
+        backupDirectory: "./server_data/backup/default_server",
+        worldName: "Bedrock level",
+        autoStart: true,
+        autoUpdateEnabled: false,
+        autoUpdateIntervalMinutes: 60,
+        logLevel: "INFO",
+        minecraftUser: "minecraft",
+        minecraftGroup: "minecraft",
+        serverType: "bedrock"
     };
     setLogLevel(effectiveConfig.logLevel);
     if (fs.existsSync(configPath)) {
@@ -729,28 +771,39 @@ export async function readGlobalConfig() {
     }
     const args = process.argv.slice(2);
     log('DEBUG', `CLI arguments: ${args.join(' ')}`);
+
     for (let i = 0; i < args.length; i++) {
-        const arg = args[i]; const value = args[i+1];
-        let valueConsumed = (value !== undefined && !value.startsWith('--'));
+        const arg = args[i];
+        const nextArg = args[i + 1];
+        const valueConsumed = (nextArg !== undefined && !nextArg.startsWith('--'));
+
+        const setString = (key) => { if (valueConsumed) { effectiveConfig[key] = nextArg; return true; } return false; };
+        const setInt = (key) => { if (valueConsumed) { effectiveConfig[key] = parseInt(nextArg, 10); return true; } return false; };
+        const setBool = (key, val) => { effectiveConfig[key] = val; return false; };
+
+        let consumed = false;
         switch (arg) {
-            case '--serverName': if(valueConsumed) effectiveConfig.serverName = value; break;
-            case '--serverPortIPv4': if(valueConsumed) effectiveConfig.serverPortIPv4 = parseInt(value, 10); break;
-            case '--serverPortIPv6': if(valueConsumed) effectiveConfig.serverPortIPv6 = parseInt(value, 10); break;
-            case '--serverDirectory': if(valueConsumed) effectiveConfig.serverDirectory = value; break;
-            case '--tempDirectory': if(valueConsumed) effectiveConfig.tempDirectory = value; break;
-            case '--backupDirectory': if(valueConsumed) effectiveConfig.backupDirectory = value; break;
-            case '--worldName': if(valueConsumed) effectiveConfig.worldName = value; break;
-            case '--autoStart': effectiveConfig.autoStart = (valueConsumed ? (value === 'true') : true); break;
-            case '--autoUpdateEnabled': effectiveConfig.autoUpdateEnabled = (valueConsumed ? (value === 'true') : true); break;
-            case '--logLevel': if(valueConsumed) effectiveConfig.logLevel = value.toUpperCase(); break;
-            default: valueConsumed = false;
+            case '--serverName': consumed = setString('serverName'); break;
+            case '--uiPort': consumed = setInt('uiPort'); break;
+            case '--serverPortIPv4': consumed = setInt('serverPortIPv4'); break;
+            case '--serverPortIPv6': consumed = setInt('serverPortIPv6'); break;
+            case '--serverDirectory': consumed = setString('serverDirectory'); break;
+            case '--tempDirectory': consumed = setString('tempDirectory'); break;
+            case '--backupDirectory': consumed = setString('backupDirectory'); break;
+            case '--worldName': consumed = setString('worldName'); break;
+            case '--autoStart': consumed = (valueConsumed ? setBool('autoStart', nextArg === 'true') : setBool('autoStart', true)); break;
+            case '--no-autoStart': setBool('autoStart', false); break;
+            case '--autoUpdateEnabled': consumed = (valueConsumed ? setBool('autoUpdateEnabled', nextArg === 'true') : setBool('autoUpdateEnabled', true)); break;
+            case '--no-autoUpdateEnabled': setBool('autoUpdateEnabled', false); break;
+            case '--logLevel': consumed = setString('logLevel'); if (consumed) effectiveConfig.logLevel = effectiveConfig.logLevel.toUpperCase(); break;
         }
-        if (valueConsumed) { log('DEBUG', `CLI Override: ${arg} = ${args[i+1]}`); i++; }
-        else if (arg === '--autoStart' || arg === '--autoUpdateEnabled') {
-             const key = arg.substring(2).replace(/-([a-z])/g, g => g[1].toUpperCase());
-             effectiveConfig[key] = true; log('DEBUG', `CLI Override (boolean flag): ${arg} = true`);
-        } else if (arg === '--no-autoStart') { effectiveConfig.autoStart = false; log('DEBUG', `CLI Override (boolean flag): ${arg} = false`);
-        } else if (arg === '--no-autoUpdateEnabled') { effectiveConfig.autoUpdateEnabled = false; log('DEBUG', `CLI Override (boolean flag): ${arg} = false`); }
+
+        if (consumed) {
+            log('DEBUG', `CLI Override: ${arg} = ${nextArg}`);
+            i++;
+        } else if (arg.startsWith('--')) {
+            log('DEBUG', `CLI Override (flag or handled): ${arg} = ${effectiveConfig[arg.substring(2).replace(/-([a-z])/g, g => g[1].toUpperCase())]}`);
+        }
     }
     setLogLevel(effectiveConfig.logLevel || "INFO");
     const resolvePath = (p) => path.isAbsolute(p) ? p : path.resolve(__dirnameESM, p);
@@ -939,20 +992,24 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
                 fs.mkdirSync(finalPackPath, { recursive: true });
 
                 zipEntries.forEach(zipEntry => {
-                    if (zipEntry.entryName.startsWith(packRootInZip + '/') && !zipEntry.isDirectory) {
-                        const relativePathInPack = path.relative(packRootInZip, zipEntry.entryName);
-                        if (relativePathInPack) { // Ensure it's not the root itself if packRootInZip is ""
-                            const targetFilePath = path.join(finalPackPath, relativePathInPack);
-                            const targetFileDir = path.dirname(targetFilePath);
-                            if (!fs.existsSync(targetFileDir)) {
-                                fs.mkdirSync(targetFileDir, { recursive: true });
-                            }
-                            fs.writeFileSync(targetFilePath, zipEntry.getData());
+                    if (zipEntry.isDirectory) return;
+
+                    let relativePathInPack = null;
+                    if (packRootInZip === "." || packRootInZip === "") {
+                        if (zipEntry.entryName.indexOf('/') === -1) {
+                            relativePathInPack = zipEntry.entryName;
                         }
-                    } else if (packRootInZip === "" && zipEntry.entryName.indexOf('/') === -1 && !zipEntry.isDirectory) {
-                        // Handle case where manifest is at the root of zip, and files are at root too
-                         const targetFilePath = path.join(finalPackPath, zipEntry.entryName);
-                         fs.writeFileSync(targetFilePath, zipEntry.getData());
+                    } else if (zipEntry.entryName.startsWith(packRootInZip + "/")) {
+                        relativePathInPack = zipEntry.entryName.substring(packRootInZip.length + 1);
+                    }
+
+                    if (relativePathInPack) {
+                        const targetFilePath = path.join(finalPackPath, relativePathInPack);
+                        const targetFileDir = path.dirname(targetFilePath);
+                        if (!fs.existsSync(targetFileDir)) {
+                            fs.mkdirSync(targetFileDir, { recursive: true });
+                        }
+                        fs.writeFileSync(targetFilePath, zipEntry.getData());
                     }
                 });
                 log('INFO', `Extracted pack '${packName}' to ${finalPackPath}`);
@@ -1027,25 +1084,24 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
             fs.mkdirSync(finalPackPath, { recursive: true });
 
             zipEntries.forEach(zipEntry => {
-                 if (zipEntry.entryName.startsWith(packRootInZip) && !zipEntry.isDirectory) {
-                    // Make sure path.relative doesn't return an empty string if packRootInZip is the entry itself (e.g. "manifest.json")
-                    // or if packRootInZip is "." and entryName is "manifest.json"
-                    let relativePathInPack = path.relative(packRootInZip, zipEntry.entryName);
-                    if (packRootInZip === "." && zipEntry.entryName.indexOf('/') === -1) relativePathInPack = zipEntry.entryName;
+                if (zipEntry.isDirectory) return;
 
+                let relativePathInPack = null;
+                if (packRootInZip === "." || packRootInZip === "") {
+                    relativePathInPack = zipEntry.entryName;
+                } else if (zipEntry.entryName.startsWith(packRootInZip + "/")) {
+                    relativePathInPack = zipEntry.entryName.substring(packRootInZip.length + 1);
+                } else if (zipEntry.entryName === packRootInZip) {
+                    relativePathInPack = path.basename(zipEntry.entryName);
+                }
 
-                    if(relativePathInPack){
-                        const targetFilePath = path.join(finalPackPath, relativePathInPack);
-                        const targetFileDir = path.dirname(targetFilePath);
-                        if (!fs.existsSync(targetFileDir)) {
-                            fs.mkdirSync(targetFileDir, { recursive: true });
-                        }
-                        fs.writeFileSync(targetFilePath, zipEntry.getData());
-                    } else if (manifestEntry.entryName === zipEntry.entryName && packRootInZip === path.dirname(manifestEntry.entryName)) {
-                        // if packRootInZip is the directory of manifest, and this is the manifest, place it at root of finalPackPath
-                        const targetFilePath = path.join(finalPackPath, path.basename(zipEntry.entryName));
-                         fs.writeFileSync(targetFilePath, zipEntry.getData());
+                if (relativePathInPack) {
+                    const targetFilePath = path.join(finalPackPath, relativePathInPack);
+                    const targetFileDir = path.dirname(targetFilePath);
+                    if (!fs.existsSync(targetFileDir)) {
+                        fs.mkdirSync(targetFileDir, { recursive: true });
                     }
+                    fs.writeFileSync(targetFilePath, zipEntry.getData());
                 }
             });
             log('INFO', `Extracted .mcpack '${packName}' to ${finalPackPath}`);

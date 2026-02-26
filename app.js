@@ -343,7 +343,7 @@ const start = async () => {
         }
         await backend.startAutoUpdateScheduler();
 
-        const port = initialConfig.uiPort ?? PORT;
+        const port = initialConfig.uiPort || PORT;
 
         // This check prevents the server from starting during tests
         if (process.env.NODE_ENV !== 'test') {
