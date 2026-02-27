@@ -140,6 +140,20 @@ app.post('/api/update', async (req, res) => {
     }
 });
 
+app.post('/api/backup', async (req, res) => {
+    try {
+        const backupDir = await backend.backupServer();
+        if (backupDir) {
+            res.json({ success: true, message: `Server backed up to: ${backupDir}` });
+        } else {
+            res.status(400).json({ success: false, message: 'Backup failed or server directory not found.' });
+        }
+    } catch (error) {
+        backend.log('ERROR', `Failed to create backup: ${error.message}`);
+        res.status(500).json({ error: 'Failed to create backup' });
+    }
+});
+
 app.get('/api/properties', async (req, res) => {
     try {
         const properties = await backend.readServerProperties();
@@ -306,6 +320,16 @@ app.post('/api/upload-pack', upload.single('packFile'), async (req, res) => {
         return res.status(400).json({ success: false, message: error.message }); // error.message from fileFilter
     }
     next();
+});
+
+app.get('/api/logs', async (req, res) => {
+    try {
+        const logs = await backend.readLogs();
+        res.json({ success: true, logs });
+    } catch (error) {
+        backend.log('ERROR', `Error getting logs: ${error.message}`);
+        res.status(500).json({ error: 'Failed to get logs' });
+    }
 });
 
 
