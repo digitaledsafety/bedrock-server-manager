@@ -32,6 +32,8 @@ describe('Minecraft Bedrock Installer Backend', () => {
   // Before each test, reset the mocks
   beforeEach(() => {
     jest.clearAllMocks();
+    // Default mock for existsSync to false so we don't accidentally try to load non-existent files
+    fs.existsSync.mockReturnValue(false);
   });
 
   describe('readServerProperties', () => {
@@ -68,13 +70,31 @@ gamemode=survival
     });
 
     it('should handle empty files gracefully', async () => {
-        fs.existsSync.mockReturnValue(true);
+        fs.existsSync.mockImplementation((path) => path.includes('server.properties'));
         fs.promises.readFile.mockResolvedValue('');
         backend.init({ serverDirectory: '/test/server' });
 
         const properties = await backend.readServerProperties();
 
         expect(properties).toEqual({});
+    });
+  });
+
+  describe('PID Persistence', () => {
+    it('should load persisted PID on init', async () => {
+      fs.existsSync.mockImplementation((path) => path.includes('server.pid'));
+      fs.readFileSync.mockReturnValue('12345');
+
+      const processKillSpy = jest.spyOn(process, 'kill').mockImplementation(() => true);
+
+      backend.init({ serverDirectory: '/test/server' });
+
+      const isRunning = await backend.isProcessRunning();
+
+      expect(processKillSpy).toHaveBeenCalledWith(12345, 0);
+      expect(isRunning).toBe(true);
+
+      processKillSpy.mockRestore();
     });
   });
 
@@ -116,6 +136,20 @@ gamemode=survival
 
         expect(config.serverName).toBe("CLI Server Name");
         expect(config.autoUpdateEnabled).toBe(true);
+
+        process.argv = [];
+    });
+
+    it('should override uiPort with command line arguments', async () => {
+        const mockConfig = { uiPort: 3000 };
+        fs.existsSync.mockReturnValue(true);
+        fs.readFileSync.mockReturnValue(JSON.stringify(mockConfig));
+
+        process.argv = ['node', 'script.js', '--uiPort', '4000'];
+
+        const config = await backend.readGlobalConfig();
+
+        expect(config.uiPort).toBe(4000);
 
         process.argv = [];
     });
