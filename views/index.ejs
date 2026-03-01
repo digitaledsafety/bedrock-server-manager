@@ -31,7 +31,11 @@
 
         <div class="section">
             <div id="messageBox" class="message-box" role="alert" style="display: none;"></div>
-            <h2>Server Status</h2>
+            <h2>Server Logs</h2>
+            <pre id="logViewer" style="background-color: #1e1e1e; color: #d4d4d4; padding: 10px; height: 200px; overflow-y: scroll; font-family: monospace; border-radius: 4px; font-size: 0.8rem;"></pre>
+        </div>
+
+        <div class="section">
             <p>Current Status: <span id="serverStatus" class="status-indicator status-<%= serverStatus %>"><%= serverStatus.toUpperCase() %></span></p>
             <% if (config.serverType === 'java') { %>
                 <p>Java server support is coming soon!</p>
@@ -82,7 +86,7 @@
                     <p>No worlds found. Start the server to generate a default world.</p>
                 <% } %>
             </div>
-            <p>To activate a world, click 'Activate' next to its name. This will update the 'level-name' property. Remember to click "Save Properties" to apply the change.</p>
+            <p>To activate a world, click 'Activate' next to its name. This will update the 'level-name' property and <strong>restart the server</strong> to apply the change.</p>
         </div>
 
         <div class="section">

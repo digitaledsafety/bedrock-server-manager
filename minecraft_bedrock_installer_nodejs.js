@@ -24,6 +24,7 @@ let BACKUP_DIRECTORY;
 let serverPID = null;
 
 const LAST_VERSION_FILE = 'last_version.txt';
+const PID_FILE = 'server.pid';
 const WEBHOOK_URL = process.env.MC_UPDATE_WEBHOOK;
 const CONFIG_FILES = ['server.properties', 'permissions.json', 'whitelist.json'];
 const WORLD_DIRECTORIES = ['worlds'];
@@ -382,29 +383,74 @@ export async function copyExistingData(backupDir, newInstallDir) {
 
 export async function stopServer() {
     if (!serverPID) {
-        log('INFO', `Server process PID not found. Server may already be stopped.`);
-        return;
+        // Try reading from file if memory PID is missing
+        const storedPid = getStoredPID();
+        if (storedPid) {
+            serverPID = storedPid;
+        } else {
+            log('INFO', `Server process PID not found. Server may already be stopped.`);
+            return;
+        }
     }
-    try {
-        log('INFO', `Attempting to stop Minecraft server process with PID: ${serverPID}.`);
+    try {
+        log('INFO', `Attempting to stop Minecraft server process with PID: ${serverPID}.`);
         process.kill(serverPID, 'SIGTERM');
         log('INFO', `SIGTERM signal sent to PID: ${serverPID}.`);
-    } catch (error) {
-        log('ERROR', `Error stopping server with PID ${serverPID} (process might not exist): ${error.message}`);
-    } finally {
+    } catch (error) {
+        log('ERROR', `Error stopping server with PID ${serverPID} (process might not exist): ${error.message}`);
+    } finally {
         serverPID = null;
+        removePIDFile();
+    }
+}
+
+function storePID(pid) {
+    try {
+        fs.writeFileSync(pathJoin(__dirnameESM, PID_FILE), pid.toString());
+        log('DEBUG', `Stored server PID ${pid} to ${PID_FILE}`);
+    } catch (error) {
+        log('ERROR', `Error storing PID to file: ${error.message}`);
+    }
+}
+
+function getStoredPID() {
+    try {
+        const pidFilePath = pathJoin(__dirnameESM, PID_FILE);
+        if (fs.existsSync(pidFilePath)) {
+            const pidStr = fs.readFileSync(pidFilePath, 'utf8').trim();
+            const pid = parseInt(pidStr, 10);
+            if (!isNaN(pid)) {
+                return pid;
+            }
+        }
+    } catch (error) {
+        log('ERROR', `Error reading PID from file: ${error.message}`);
+    }
+    return null;
+}
+
+function removePIDFile() {
+    try {
+        const pidFilePath = pathJoin(__dirnameESM, PID_FILE);
+        if (fs.existsSync(pidFilePath)) {
+            fs.unlinkSync(pidFilePath);
+            log('DEBUG', `Removed PID file ${PID_FILE}`);
+        }
+    } catch (error) {
+        log('ERROR', `Error removing PID file: ${error.message}`);
     }
 }
 
 export async function startServer() {
-    if (serverPID) {
-        log('INFO', `Server process already has a PID: ${serverPID}. Check if it's running.`);
+    if (serverPID || getStoredPID()) {
+        log('INFO', `Server process already has a PID. Check if it's running.`);
         if (await isProcessRunning()) {
             log('INFO', `Server is already running with PID ${serverPID}.`);
             return;
         } else {
-            log('INFO', `Stale PID ${serverPID} found. Clearing.`);
+            log('INFO', `Stale PID found. Clearing.`);
             serverPID = null;
+            removePIDFile();
         }
     }
     try {
@@ -421,19 +467,26 @@ export async function startServer() {
         });
         if (serverProcess.pid) {
             serverPID = serverProcess.pid;
+            storePID(serverPID);
             log('INFO', `Server process started with PID: ${serverPID}.`);
         } else {
             log('ERROR', `Server process started but PID was not obtained.`);
         }
         serverProcess.unref();
-        serverProcess.on('error', (err) => {
-            log('ERROR', `Server process error: ${err.message}`);
-            if (serverPID === serverProcess.pid) serverPID = null;
-        });
-        serverProcess.on('exit', (code, signal) => {
-            log('INFO', `Server process PID ${serverProcess.pid} exited with code ${code} and signal ${signal}`);
-            if (serverPID === serverProcess.pid) serverPID = null;
-        });
+        serverProcess.on('error', (err) => {
+            log('ERROR', `Server process error: ${err.message}`);
+            if (serverPID === serverProcess.pid) {
+                serverPID = null;
+                removePIDFile();
+            }
+        });
+        serverProcess.on('exit', (code, signal) => {
+            log('INFO', `Server process PID ${serverProcess.pid} exited with code ${code} and signal ${signal}`);
+            if (serverPID === serverProcess.pid) {
+                serverPID = null;
+                removePIDFile();
+            }
+        });
     } catch (error) {
         log('ERROR', `Error starting server: ${error.message}`);
         if (serverPID) serverPID = null;
@@ -518,38 +571,20 @@ export async function checkAndInstall() {
 }
 
 /**
- * Removes a directory recursively. Cross-platform compatible.
- * @param {string} dirPath The path to the directory to remove.
- * @returns {Promise<void>} A promise that resolves when the directory is removed.
- */
-function removeDir(dirPath) {
-    return new Promise((resolve, reject) => {
-        if (!fs.existsSync(dirPath)) {
-            resolve(); // Resolve if the directory does not exist
-            return;
-        }
-
-        const platform = os.platform();
-        if (platform === 'win32') {
-            // Use Windows command to remove directory recursively and quietly
-            childProcessExec(`rmdir /s /q "${dirPath}"`, (error, stdout, stderr) => {
-                if (error) {
-                    reject(new Error(`Failed to remove directory ${dirPath}: ${error.message} ${stderr}`));
-                } else {
-                    resolve();
-                }
-            });
-        } else {
-            // Use Linux command to remove directory recursively and forcefully
-            childProcessExec(`rm -rf "${dirPath}"`, (error, stdout, stderr) => {
-                if (error) {
-                    reject(new Error(`Failed to remove directory ${dirPath}: ${error.message} ${stderr}`));
-                } else {
-                    resolve();
-                }
-            });
-        }
-    });
+ * Removes a directory recursively. Cross-platform compatible.
+ * @param {string} dirPath The path to the directory to remove.
+ * @returns {Promise<void>} A promise that resolves when the directory is removed.
+ */
+async function removeDir(dirPath) {
+    if (!fs.existsSync(dirPath)) {
+        return;
+    }
+    try {
+        await fs.promises.rm(dirPath, { recursive: true, force: true });
+    } catch (error) {
+        log('ERROR', `Failed to remove directory ${dirPath}: ${error.message}`);
+        throw error;
+    }
 }
 
 
@@ -644,22 +679,31 @@ export async function restartServer() {
 
 export async function isProcessRunning() {
     if (!serverPID) {
+        serverPID = getStoredPID();
+    }
+
+    if (!serverPID) {
         log('DEBUG', `No PID found for server. Assuming not running.`);
         return false;
     }
-    try {
+
+    try {
         process.kill(serverPID, 0);
         log('DEBUG', `Process with PID ${serverPID} is running.`);
-        return true;
-    } catch (error) {
+        return true;
+    } catch (error) {
         if (error.code === 'ESRCH') {
             log('INFO', `Process with PID ${serverPID} not found (ESRCH).`);
+        } else if (error.code === 'EPERM') {
+            log('INFO', `Process with PID ${serverPID} found but no permission to signal it. Assuming it's running.`);
+            return true;
         } else {
             log('ERROR', `Error checking process PID ${serverPID}: ${error.message} (Code: ${error.code})`);
         }
         serverPID = null;
-        return false;
-    }
+        removePIDFile();
+        return false;
+    }
 }
 
 export async function sendWebhookNotification(message) {
@@ -700,6 +744,17 @@ export async function sendWebhookNotification(message) {
     });
 }
 
+/**
+ * Validates a world name for basic format and potential path traversal characters.
+ * @param {string} worldName - The world name to validate.
+ * @returns {boolean} True if valid, false otherwise.
+ */
+export function isValidWorldName(worldName) {
+    if (!worldName) return false;
+    const worldNameRegex = /^[a-zA-Z0-9_ -]+$/;
+    return !worldName.includes('.') && !worldName.includes('/') && !worldName.includes('\\') && worldNameRegex.test(worldName);
+}
+
 export async function readGlobalConfig() {
     const configPath = pathJoin(__dirnameESM, GLOBAL_CONFIG_FILE);
     let effectiveConfig = {
@@ -707,7 +762,7 @@ export async function readGlobalConfig() {
         serverDirectory: "./server_data/default_server", tempDirectory: "./server_data/temp/default_server",
         backupDirectory: "./server_data/backup/default_server", worldName: "Bedrock level",
         autoStart: true, autoUpdateEnabled: false, autoUpdateIntervalMinutes: 60, logLevel: "INFO",
-        minecraftUser: "minecraft", minecraftGroup: "minecraft", serverType: "bedrock"
+        minecraftUser: "minecraft", minecraftGroup: "minecraft", serverType: "bedrock", uiPort: 3000
     };
     setLogLevel(effectiveConfig.logLevel);
     if (fs.existsSync(configPath)) {

@@ -60,8 +60,7 @@ const validateWorldName = (req, res, next) => {
     if (!worldName) {
         return res.status(400).json({ error: 'World name is required.' });
     }
-    const worldNameRegex = /^[a-zA-Z0-9_ -]+$/;
-    if (worldName.includes('.') || worldName.includes('/') || worldName.includes('\\') || !worldNameRegex.test(worldName)) {
+    if (!backend.isValidWorldName(worldName)) {
         backend.log('ERROR', `Invalid worldName format or characters: ${worldName}`);
         return res.status(400).json({ error: 'Invalid worldName format. Avoid ., /, \\ and ensure it matches allowed pattern.' });
     }
@@ -196,6 +195,35 @@ app.get('/api/config', async (req, res) => {
     }
 });
 
+app.get('/api/logs', async (req, res) => {
+    try {
+        const logFilePath = pathJoin(__dirnameESM, 'mc_installer.log');
+        if (!fs.existsSync(logFilePath)) {
+            return res.json({ success: true, logs: 'Log file not found.' });
+        }
+
+        const stats = await fs.promises.stat(logFilePath);
+        const bufferSize = 16 * 1024; // Read last 16KB
+        const start = Math.max(0, stats.size - bufferSize);
+        const length = stats.size - start;
+
+        const buffer = Buffer.alloc(length);
+        const fileHandle = await fs.promises.open(logFilePath, 'r');
+        try {
+            await fileHandle.read(buffer, 0, length, start);
+            const logContent = buffer.toString('utf8');
+            const lines = logContent.split('\n');
+            const lastLines = lines.slice(-100).join('\n');
+            res.json({ success: true, logs: lastLines });
+        } finally {
+            await fileHandle.close();
+        }
+    } catch (error) {
+        backend.log('ERROR', `Error reading log file: ${error.message}`);
+        res.status(500).json({ error: 'Failed to read logs' });
+    }
+});
+
 app.post('/api/config', async (req, res) => {
     try {
         const newSettings = req.body;
@@ -250,8 +278,7 @@ app.post('/api/upload-pack', upload.single('packFile'), async (req, res) => {
     }
 
     // Validate worldName
-    const worldNameRegex = /^[a-zA-Z0-9_ -]+$/; // Basic format check
-    if (worldName.includes('.') || worldName.includes('/') || worldName.includes('\\') || !worldNameRegex.test(worldName)) {
+    if (!backend.isValidWorldName(worldName)) {
         backend.log('ERROR', `Invalid worldName format or characters for pack upload: ${worldName}`);
         fs.unlink(packFile.path, (err) => {
             if (err) backend.log('WARNING', `Failed to delete orphaned upload ${packFile.path}: ${err.message}`);

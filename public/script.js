@@ -7,7 +7,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const updateButton = document.getElementById('updateButton');
     const propertiesForm = document.getElementById('propertiesForm');
     const levelNameInput = document.getElementById('level-name'); // Get the level-name input
-    const consoleOutput = document.getElementById('consoleOutput'); // Get the console textarea
 
     // Auto-Update specific elements
     const autoUpdateConfigForm = document.getElementById('autoUpdateConfigForm');
@@ -20,6 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const packTypeSelect = document.getElementById('packType');
     const packWorldNameSelect = document.getElementById('packWorldName');
     const uploadPackButton = document.getElementById('uploadPackButton');
+    const logViewer = document.getElementById('logViewer');
 
 
     // --- Utility Functions ---
@@ -254,20 +254,40 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function handleActivateWorldClick(event) {
+    async function handleActivateWorldClick(event) {
         const worldName = event.target.dataset.worldName;
-        if (levelNameInput) {
-            levelNameInput.value = worldName; // This updates the text input
-            showMessage(`'level-name' property updated to '${worldName}'. Remember to click "Save Properties".`, 'success');
+        if (!confirm(`Are you sure you want to activate world '${worldName}'? This will update server properties and restart the server.`)) {
+            return;
+        }
 
-            // Update active state in UI
-            document.querySelectorAll('.world-item').forEach(item => {
-                item.classList.remove('active');
+        try {
+            showMessage(`Activating world '${worldName}'...`);
+            const response = await fetch('/api/activate-world', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ worldName })
             });
-            event.target.closest('.world-item').classList.add('active');
-        } else {
-            console.error('level-name input not found.');
-            showMessage('Could not find level-name input to update.', 'error');
+            const data = await response.json();
+            if (response.ok) {
+                showMessage(data.message || `World '${worldName}' activated.`, 'success');
+                // Update active state in UI
+                document.querySelectorAll('.world-item').forEach(item => {
+                    item.classList.remove('active');
+                });
+                event.target.closest('.world-item').classList.add('active');
+                if (levelNameInput) {
+                    levelNameInput.value = worldName;
+                }
+                // Fetch status to reflect restart
+                setTimeout(fetchServerStatus, 2000);
+            } else {
+                showMessage(data.error || `Failed to activate world '${worldName}'.`, 'error');
+            }
+        } catch (error) {
+            console.error('Error activating world:', error);
+            showMessage('An error occurred while activating the world.', 'error');
         }
     }
 
@@ -285,6 +305,22 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error('Error loading auto-update config:', error);
             showMessage('Failed to load auto-update configuration.', 'error');
+        }
+    }
+
+    async function fetchLogs() {
+        try {
+            const response = await fetch('/api/logs');
+            const data = await response.json();
+            if (data.success && logViewer) {
+                const isScrolledToBottom = logViewer.scrollHeight - logViewer.clientHeight <= logViewer.scrollTop + 1;
+                logViewer.textContent = data.logs;
+                if (isScrolledToBottom) {
+                    logViewer.scrollTop = logViewer.scrollHeight;
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching logs:', error);
         }
     }
 
@@ -341,5 +377,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Refresh status and worlds periodically
     setInterval(fetchServerStatus, 10000); // Every 10 seconds
     setInterval(loadWorlds, 30000); // Every 30 seconds
+    setInterval(fetchLogs, 5000); // Every 5 seconds
+
+    fetchLogs(); // Initial fetch
 
 });
