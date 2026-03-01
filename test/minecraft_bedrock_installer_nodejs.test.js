@@ -4,10 +4,12 @@ import { jest } from '@jest/globals';
 jest.unstable_mockModule('fs', () => ({
   promises: {
     readFile: jest.fn(),
+    rm: jest.fn(),
   },
   existsSync: jest.fn(),
   readFileSync: jest.fn(),
   writeFileSync: jest.fn(),
+  unlinkSync: jest.fn(),
   createWriteStream: jest.fn(() => ({ write: jest.fn() })),
   mkdirSync: jest.fn(), // Added mock for mkdirSync
 }));
@@ -118,6 +120,22 @@ gamemode=survival
         expect(config.autoUpdateEnabled).toBe(true);
 
         process.argv = [];
+    });
+  });
+
+  describe('isValidWorldName', () => {
+    it('should return true for valid world names', () => {
+      expect(backend.isValidWorldName('MyWorld')).toBe(true);
+      expect(backend.isValidWorldName('My World')).toBe(true);
+      expect(backend.isValidWorldName('My-World_123')).toBe(true);
+    });
+
+    it('should return false for invalid world names', () => {
+      expect(backend.isValidWorldName('')).toBe(false);
+      expect(backend.isValidWorldName('World.1')).toBe(false);
+      expect(backend.isValidWorldName('World/2')).toBe(false);
+      expect(backend.isValidWorldName('World\\3')).toBe(false);
+      expect(backend.isValidWorldName('World!')).toBe(false);
     });
   });
 });
