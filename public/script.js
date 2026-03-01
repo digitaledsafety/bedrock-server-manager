@@ -18,6 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const uploadPackForm = document.getElementById('uploadPackForm');
     const packFileInput = document.getElementById('packFile');
     const packTypeSelect = document.getElementById('packType');
+    const packTypeGroup = document.getElementById('packTypeGroup');
     const packWorldNameSelect = document.getElementById('packWorldName');
     const uploadPackButton = document.getElementById('uploadPackButton');
 
@@ -53,29 +54,43 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Pack Management Functions ---
+    function handlePackFileChange() {
+        if (packFileInput.files && packFileInput.files.length > 0) {
+            const fileName = packFileInput.files[0].name.toLowerCase();
+            if (fileName.endsWith('.mcaddon')) {
+                packTypeGroup.style.display = 'none';
+            } else {
+                packTypeGroup.style.display = 'block';
+            }
+        }
+    }
+
     async function handleUploadPack(event) {
         event.preventDefault();
         if (!packFileInput.files || packFileInput.files.length === 0) {
-            showMessage('Please select a .mcpack file to upload.', 'error');
+            showMessage('Please select a .mcpack or .mcaddon file to upload.', 'error');
             return;
         }
 
         const packFile = packFileInput.files[0];
         const packType = packTypeSelect.value;
         const worldName = packWorldNameSelect.value;
+        const isMcAddon = packFile.name.toLowerCase().endsWith('.mcaddon');
 
         if (!worldName) {
             showMessage('Please select a target world for the pack.', 'error');
             return;
         }
-        if (!packType) {
+        if (!isMcAddon && !packType) {
             showMessage('Please select a pack type.', 'error');
             return;
         }
 
         const formData = new FormData();
         formData.append('packFile', packFile);
-        formData.append('packType', packType);
+        if (!isMcAddon) {
+            formData.append('packType', packType);
+        }
         formData.append('worldName', worldName);
 
         uploadPackButton.disabled = true;
@@ -329,7 +344,10 @@ document.addEventListener('DOMContentLoaded', () => {
     updateButton.addEventListener('click', () => sendCommand('update'));
     if (propertiesForm) propertiesForm.addEventListener('submit', saveServerProperties);
     if (autoUpdateConfigForm) autoUpdateConfigForm.addEventListener('submit', saveAutoUpdateConfig);
-    if (uploadPackForm) uploadPackForm.addEventListener('submit', handleUploadPack);
+    if (uploadPackForm) {
+        uploadPackForm.addEventListener('submit', handleUploadPack);
+        packFileInput.addEventListener('change', handlePackFileChange);
+    }
 
 
     // Initial load
