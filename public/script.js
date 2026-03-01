@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const stopButton = document.getElementById('stopButton');
     const restartButton = document.getElementById('restartButton');
     const updateButton = document.getElementById('updateButton');
+    const backupButton = document.getElementById('backupButton');
     const propertiesForm = document.getElementById('propertiesForm');
     const levelNameInput = document.getElementById('level-name'); // Get the level-name input
     const consoleOutput = document.getElementById('consoleOutput'); // Get the console textarea
@@ -39,16 +40,19 @@ document.addEventListener('DOMContentLoaded', () => {
             stopButton.disabled = false;
             restartButton.disabled = false;
             updateButton.disabled = false;
+            if (backupButton) backupButton.disabled = false;
         } else if (status === 'stopped') {
             startButton.disabled = false;
             stopButton.disabled = true;
             restartButton.disabled = true;
             updateButton.disabled = false; // Allow update even if server is stopped
+            if (backupButton) backupButton.disabled = false;
         } else { // unknown status
             startButton.disabled = false; // Allow starting if unknown, as it might be stopped
             stopButton.disabled = true;
             restartButton.disabled = true;
             updateButton.disabled = true; // Disable update if status is unknown
+            if (backupButton) backupButton.disabled = true;
         }
     }
 
@@ -129,6 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
             stopButton.disabled = true;
             restartButton.disabled = true;
             updateButton.disabled = true;
+            if (backupButton) backupButton.disabled = true;
 
             const response = await fetch(`/api/${command}`, { method: 'POST' });
             const data = await response.json();
@@ -254,20 +259,35 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function handleActivateWorldClick(event) {
+    async function handleActivateWorldClick(event) {
         const worldName = event.target.dataset.worldName;
-        if (levelNameInput) {
-            levelNameInput.value = worldName; // This updates the text input
-            showMessage(`'level-name' property updated to '${worldName}'. Remember to click "Save Properties".`, 'success');
+        if (!confirm(`Are you sure you want to activate the world '${worldName}'? This will restart the server.`)) {
+            return;
+        }
 
-            // Update active state in UI
-            document.querySelectorAll('.world-item').forEach(item => {
-                item.classList.remove('active');
+        try {
+            showMessage(`Activating world '${worldName}'...`, 'success');
+            const response = await fetch('/api/activate-world', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ worldName })
             });
-            event.target.closest('.world-item').classList.add('active');
-        } else {
-            console.error('level-name input not found.');
-            showMessage('Could not find level-name input to update.', 'error');
+            const data = await response.json();
+            if (response.ok) {
+                showMessage(data.message || `World '${worldName}' activated.`, 'success');
+                // Refresh UI
+                if (levelNameInput) levelNameInput.value = worldName;
+                document.querySelectorAll('.world-item').forEach(item => {
+                    item.classList.remove('active');
+                });
+                event.target.closest('.world-item').classList.add('active');
+                setTimeout(fetchServerStatus, 5000);
+            } else {
+                showMessage(data.error || 'Failed to activate world.', 'error');
+            }
+        } catch (error) {
+            console.error('Error activating world:', error);
+            showMessage('An error occurred while activating the world.', 'error');
         }
     }
 
@@ -327,9 +347,31 @@ document.addEventListener('DOMContentLoaded', () => {
     stopButton.addEventListener('click', () => sendCommand('stop'));
     restartButton.addEventListener('click', () => sendCommand('restart'));
     updateButton.addEventListener('click', () => sendCommand('update'));
+    if (backupButton) backupButton.addEventListener('click', () => sendCommand('backup'));
     if (propertiesForm) propertiesForm.addEventListener('submit', saveServerProperties);
     if (autoUpdateConfigForm) autoUpdateConfigForm.addEventListener('submit', saveAutoUpdateConfig);
     if (uploadPackForm) uploadPackForm.addEventListener('submit', handleUploadPack);
+
+    const logOutput = document.getElementById('logOutput');
+    const refreshLogsButton = document.getElementById('refreshLogsButton');
+
+    async function fetchLogs() {
+        try {
+            const response = await fetch('/api/logs');
+            const data = await response.json();
+            if (data.success) {
+                logOutput.textContent = data.logs;
+                logOutput.scrollTop = logOutput.scrollHeight; // Auto-scroll to bottom
+            } else {
+                logOutput.textContent = 'Failed to load logs: ' + data.error;
+            }
+        } catch (error) {
+            console.error('Error fetching logs:', error);
+            logOutput.textContent = 'An error occurred while fetching logs.';
+        }
+    }
+
+    if (refreshLogsButton) refreshLogsButton.addEventListener('click', fetchLogs);
 
 
     // Initial load
@@ -337,6 +379,10 @@ document.addEventListener('DOMContentLoaded', () => {
     //loadServerProperties();
     //loadWorlds();
     loadAutoUpdateConfig(); // New: Load auto-update config on page load
+    if (logOutput) {
+        fetchLogs(); // Initial load of logs
+        setInterval(fetchLogs, 5000); // Every 5 seconds
+    }
 
     // Refresh status and worlds periodically
     setInterval(fetchServerStatus, 10000); // Every 10 seconds

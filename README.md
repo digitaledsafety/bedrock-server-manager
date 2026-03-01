@@ -39,9 +39,7 @@ This application provides a web-based interface to manage a single Minecraft Bed
 
 *   **Node.js and npm:** The application runs on Node.js. `npm` (Node Package Manager) is included with Node.js.
 *   **Minecraft Bedrock Dedicated Server Software:** You should have the server software from Mojang. The manager can download it for you if it's not present in the configured server directory during the first update check.
-*   **System Utilities:**
-    *   **Linux:** `unzip` is required for extracting server files. Install via `sudo apt-get install unzip` (Debian/Ubuntu) or `sudo yum install unzip` (CentOS/RHEL).
-    *   **Windows:** PowerShell (typically version 5.1+) is required for server extraction. This is usually available by default on modern Windows systems.
+*   **System Utilities:** The application uses internal Node.js libraries for file extraction, so no external utilities like `unzip` are required.
 
 ---
 
@@ -108,6 +106,7 @@ Using Node Version Manager (`nvm`) is recommended:
     *   `serverName`: A friendly name for your server (displayed in the UI).
     *   `serverPortIPv4`: The IPv4 port for the Minecraft server (must match `server-port` in `server.properties`).
     *   `serverPortIPv6`: The IPv6 port for the Minecraft server (must match `server-portv6` in `server.properties`).
+    *   `uiPort`: The port the web management interface listens on (default: 3000).
     *   `serverDirectory`: Path to your Minecraft server files.
         *   If relative (e.g., starts with `./` or `../`), it's resolved relative to the application's root directory.
         *   If absolute, it's used as is.
@@ -126,6 +125,7 @@ Using Node Version Manager (`nvm`) is recommended:
     *   `--serverName <name>`
     *   `--serverPortIPv4 <port>`
     *   `--serverPortIPv6 <port>`
+    *   `--uiPort <port>`
     *   `--serverDirectory <path>`
     *   `--tempDirectory <path>`
     *   `--backupDirectory <path>`

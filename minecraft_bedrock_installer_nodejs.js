@@ -23,6 +23,7 @@ let TEMP_DIRECTORY;
 let BACKUP_DIRECTORY;
 let serverPID = null;
 
+const PID_FILE = 'server.pid';
 const LAST_VERSION_FILE = 'last_version.txt';
 const WEBHOOK_URL = process.env.MC_UPDATE_WEBHOOK;
 const CONFIG_FILES = ['server.properties', 'permissions.json', 'whitelist.json'];
@@ -87,6 +88,21 @@ export function getServerExeName() {
 
 export function init(effectiveConfigFromRead) {
     config = effectiveConfigFromRead;
+
+    // Try to load existing PID
+    try {
+        const pidFilePath = pathJoin(__dirnameESM, PID_FILE);
+        if (fs.existsSync(pidFilePath)) {
+            const storedPid = parseInt(fs.readFileSync(pidFilePath, 'utf8').trim(), 10);
+            if (!isNaN(storedPid)) {
+                serverPID = storedPid;
+                log('INFO', `Recovered server PID from file: ${serverPID}`);
+            }
+        }
+    } catch (err) {
+        log('ERROR', `Failed to read PID file: ${err.message}`);
+    }
+
     setLogLevel(config.logLevel || "INFO");
     log('INFO', `Initializing with configuration: ${JSON.stringify(config, null, 2)}`);
     SERVER_DIRECTORY = config.serverDirectory;
@@ -332,17 +348,8 @@ export async function backupServer() {
 }
 
 export async function copyDir(src, dest) {
-    fs.mkdirSync(dest, { recursive: true });
-    const entries = fs.readdirSync(src, { withFileTypes: true });
-    for (const entry of entries) {
-        const srcPath = pathJoin(src, entry.name);
-        const destPath = pathJoin(dest, entry.name);
-        if (entry.isDirectory()) {
-            await copyDir(srcPath, destPath);
-        } else {
-            fs.copyFileSync(srcPath, destPath);
-        }
-    }
+    log('DEBUG', `Copying directory from ${src} to ${dest}`);
+    await fs.promises.cp(src, dest, { recursive: true });
 }
 
 export async function copyExistingData(backupDir, newInstallDir) {
@@ -385,14 +392,37 @@ export async function stopServer() {
         log('INFO', `Server process PID not found. Server may already be stopped.`);
         return;
     }
-    try {
-        log('INFO', `Attempting to stop Minecraft server process with PID: ${serverPID}.`);
+    try {
+        log('INFO', `Attempting to stop Minecraft server process with PID: ${serverPID}.`);
         process.kill(serverPID, 'SIGTERM');
         log('INFO', `SIGTERM signal sent to PID: ${serverPID}.`);
-    } catch (error) {
-        log('ERROR', `Error stopping server with PID ${serverPID} (process might not exist): ${error.message}`);
-    } finally {
+
+        // Wait a bit and check if it stopped
+        let attempts = 0;
+        while (attempts < 5) {
+            if (!(await isProcessRunning())) break;
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            attempts++;
+        }
+
+        if (await isProcessRunning()) {
+            log('WARNING', `Server PID ${serverPID} still running after SIGTERM. Sending SIGKILL.`);
+            process.kill(serverPID, 'SIGKILL');
+        }
+
+    } catch (error) {
+        log('ERROR', `Error stopping server with PID ${serverPID} (process might not exist): ${error.message}`);
+    } finally {
         serverPID = null;
+        try {
+            const pidFilePath = pathJoin(__dirnameESM, PID_FILE);
+            if (fs.existsSync(pidFilePath)) {
+                fs.unlinkSync(pidFilePath);
+                log('INFO', `Cleared PID file.`);
+            }
+        } catch (err) {
+            log('ERROR', `Failed to delete PID file: ${err.message}`);
+        }
     }
 }
 
@@ -422,6 +452,11 @@ export async function startServer() {
         if (serverProcess.pid) {
             serverPID = serverProcess.pid;
             log('INFO', `Server process started with PID: ${serverPID}.`);
+            try {
+                fs.writeFileSync(pathJoin(__dirnameESM, PID_FILE), serverPID.toString(), 'utf8');
+            } catch (err) {
+                log('ERROR', `Failed to write PID file: ${err.message}`);
+            }
         } else {
             log('ERROR', `Server process started but PID was not obtained.`);
         }
@@ -430,10 +465,21 @@ export async function startServer() {
             log('ERROR', `Server process error: ${err.message}`);
             if (serverPID === serverProcess.pid) serverPID = null;
         });
-        serverProcess.on('exit', (code, signal) => {
-            log('INFO', `Server process PID ${serverProcess.pid} exited with code ${code} and signal ${signal}`);
-            if (serverPID === serverProcess.pid) serverPID = null;
-        });
+        serverProcess.on('exit', (code, signal) => {
+            log('INFO', `Server process PID ${serverProcess.pid} exited with code ${code} and signal ${signal}`);
+            if (serverPID === serverProcess.pid) {
+                serverPID = null;
+                try {
+                    const pidFilePath = pathJoin(__dirnameESM, PID_FILE);
+                    if (fs.existsSync(pidFilePath)) {
+                        fs.unlinkSync(pidFilePath);
+                        log('INFO', `Cleared PID file on process exit.`);
+                    }
+                } catch (err) {
+                    log('ERROR', `Failed to delete PID file on exit: ${err.message}`);
+                }
+            }
+        });
     } catch (error) {
         log('ERROR', `Error starting server: ${error.message}`);
         if (serverPID) serverPID = null;
@@ -518,38 +564,13 @@ export async function checkAndInstall() {
 }
 
 /**
- * Removes a directory recursively. Cross-platform compatible.
- * @param {string} dirPath The path to the directory to remove.
- * @returns {Promise<void>} A promise that resolves when the directory is removed.
- */
-function removeDir(dirPath) {
-    return new Promise((resolve, reject) => {
-        if (!fs.existsSync(dirPath)) {
-            resolve(); // Resolve if the directory does not exist
-            return;
-        }
-
-        const platform = os.platform();
-        if (platform === 'win32') {
-            // Use Windows command to remove directory recursively and quietly
-            childProcessExec(`rmdir /s /q "${dirPath}"`, (error, stdout, stderr) => {
-                if (error) {
-                    reject(new Error(`Failed to remove directory ${dirPath}: ${error.message} ${stderr}`));
-                } else {
-                    resolve();
-                }
-            });
-        } else {
-            // Use Linux command to remove directory recursively and forcefully
-            childProcessExec(`rm -rf "${dirPath}"`, (error, stdout, stderr) => {
-                if (error) {
-                    reject(new Error(`Failed to remove directory ${dirPath}: ${error.message} ${stderr}`));
-                } else {
-                    resolve();
-                }
-            });
-        }
-    });
+ * Removes a directory recursively. Cross-platform compatible.
+ * @param {string} dirPath The path to the directory to remove.
+ * @returns {Promise<void>} A promise that resolves when the directory is removed.
+ */
+async function removeDir(dirPath) {
+    log('DEBUG', `Removing directory: ${dirPath}`);
+    await fs.promises.rm(dirPath, { recursive: true, force: true });
 }
 
 
@@ -561,13 +582,17 @@ export async function readServerProperties() {
     }
     const data = await fs.promises.readFile(configPath, 'utf8');
     const properties = {};
-    data.split('\n').forEach(line => {
-        const trimmedLine = line.trim();
-        if (trimmedLine && !trimmedLine.startsWith('#')) {
-            const [key, value] = trimmedLine.split('=').map(s => s.trim());
-            if (key) { properties[key] = value || ''; }
-        }
-    });
+    data.split('\n').forEach(line => {
+        const trimmedLine = line.trim();
+        if (trimmedLine && !trimmedLine.startsWith('#')) {
+            const separatorIndex = trimmedLine.indexOf('=');
+            if (separatorIndex !== -1) {
+                const key = trimmedLine.substring(0, separatorIndex).trim();
+                const value = trimmedLine.substring(separatorIndex + 1).trim();
+                if (key) { properties[key] = value; }
+            }
+        }
+    });
     log('INFO', `Read server.properties from ${configPath}`);
     return properties;
 }
@@ -1095,5 +1120,21 @@ export async function startAutoUpdateScheduler() {
         }, intervalMs);
     } else {
         log('INFO', 'Auto-update is disabled or interval is invalid. Scheduler not started.');
+    }
+}
+
+export async function readLogs() {
+    const logPath = pathJoin(__dirnameESM, 'mc_installer.log');
+    if (!fs.existsSync(logPath)) {
+        return 'No logs found.';
+    }
+    try {
+        const data = await fs.promises.readFile(logPath, 'utf8');
+        const lines = data.split('\n');
+        const lastLines = lines.slice(-51).join('\n');
+        return lastLines;
+    } catch (error) {
+        log('ERROR', `Error reading logs: ${error.message}`);
+        return `Error reading logs: ${error.message}`;
     }
 }
