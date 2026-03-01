@@ -973,11 +973,42 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
             return { success: overallSuccess, message: `.mcaddon processing complete. ${packsProcessedCount} pack(s) processed. Details: ${messages.join(" ")} Restart server if needed.` };
 
         } else { // Handle as .mcpack
-            log('INFO', `Processing .mcpack file: ${originalFilename} with requested type: ${requestedPackType}`);
+            log('INFO', `Processing .mcpack file: ${originalFilename} with requested type: ${requestedPackType || 'Auto-detect'}`);
+
+            const manifestEntry = zipEntries.find(entry => entry.entryName.endsWith('manifest.json') && !entry.isDirectory);
+            if (!manifestEntry) {
+                return { success: false, message: 'manifest.json not found in the uploaded .mcpack.' };
+            }
+            const packRootInZip = path.dirname(manifestEntry.entryName);
+            let manifestData;
+            try {
+                manifestData = JSON.parse(zip.readAsText(manifestEntry));
+            } catch (e) {
+                return { success: false, message: `Failed to parse manifest.json in the uploaded .mcpack: ${e.message}` };
+            }
+
+            if (!manifestData.header || !manifestData.header.uuid || !manifestData.header.version || !manifestData.header.name) {
+                return { success: false, message: 'Invalid manifest.json: missing header, uuid, version, or name.' };
+            }
+
+            let packType = requestedPackType;
+            if (!packType) {
+                // Auto-detect pack type
+                const moduleType = manifestData.modules && manifestData.modules[0] ? manifestData.modules[0].type : null;
+                if (moduleType === 'data') {
+                    packType = 'behavior';
+                } else if (moduleType === 'resources') {
+                    packType = 'resource';
+                } else {
+                    return { success: false, message: 'Could not auto-detect pack type from manifest. Please specify manually.' };
+                }
+                log('INFO', `Auto-detected pack type: ${packType}`);
+            }
+
             let targetPackDirName;
             let worldPackJsonFile;
 
-            switch (requestedPackType) {
+            switch (packType) {
                 case 'behavior':
                     targetPackDirName = 'behavior_packs';
                     worldPackJsonFile = 'world_behavior_packs.json';
@@ -1001,17 +1032,6 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
             const finalPackDirPathBase = path.join(SERVER_DIRECTORY, targetPackDirName);
             if (!fs.existsSync(finalPackDirPathBase)) {
                 fs.mkdirSync(finalPackDirPathBase, { recursive: true });
-            }
-
-            const manifestEntry = zipEntries.find(entry => entry.entryName.endsWith('manifest.json') && !entry.isDirectory);
-            if (!manifestEntry) {
-                return { success: false, message: 'manifest.json not found in the uploaded .mcpack.' };
-            }
-            const packRootInZip = path.dirname(manifestEntry.entryName);
-            const manifestData = JSON.parse(zip.readAsText(manifestEntry));
-
-            if (!manifestData.header || !manifestData.header.uuid || !manifestData.header.version || !manifestData.header.name) {
-                return { success: false, message: 'Invalid manifest.json: missing header, uuid, version, or name.' };
             }
             const packId = manifestData.header.uuid;
             const packVersion = manifestData.header.version;

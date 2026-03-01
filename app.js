@@ -226,13 +226,8 @@ app.post('/api/upload-pack', upload.single('packFile'), async (req, res) => {
     if (!packFile) {
         return res.status(400).json({ success: false, message: 'No pack file uploaded.' });
     }
-    if (!packType) {
-        // Clean up uploaded file if other parameters are missing
-        fs.unlink(packFile.path, (err) => {
-            if (err) backend.log('WARNING', `Failed to delete orphaned upload ${packFile.path}: ${err.message}`);
-        });
-        return res.status(400).json({ success: false, message: 'Pack type is required.' });
-    }
+
+    // packType is now optional due to auto-detection in the backend
     if (!worldName) {
         fs.unlink(packFile.path, (err) => {
             if (err) backend.log('WARNING', `Failed to delete orphaned upload ${packFile.path}: ${err.message}`);
@@ -240,13 +235,15 @@ app.post('/api/upload-pack', upload.single('packFile'), async (req, res) => {
         return res.status(400).json({ success: false, message: 'World name is required.' });
     }
 
-    // Validate packType
-    const validPackTypes = ['behavior', 'resource', 'dev_behavior', 'dev_resource'];
-    if (!validPackTypes.includes(packType)) {
-        fs.unlink(packFile.path, (err) => {
-            if (err) backend.log('WARNING', `Failed to delete orphaned upload ${packFile.path}: ${err.message}`);
-        });
-        return res.status(400).json({ success: false, message: 'Invalid pack type specified.' });
+    // Validate packType if provided
+    if (packType) {
+        const validPackTypes = ['behavior', 'resource', 'dev_behavior', 'dev_resource'];
+        if (!validPackTypes.includes(packType)) {
+            fs.unlink(packFile.path, (err) => {
+                if (err) backend.log('WARNING', `Failed to delete orphaned upload ${packFile.path}: ${err.message}`);
+            });
+            return res.status(400).json({ success: false, message: 'Invalid pack type specified.' });
+        }
     }
 
     // Validate worldName
