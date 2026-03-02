@@ -24,6 +24,7 @@ let BACKUP_DIRECTORY;
 let serverPID = null;
 
 const LAST_VERSION_FILE = 'last_version.txt';
+const PID_FILE = 'server.pid';
 const WEBHOOK_URL = process.env.MC_UPDATE_WEBHOOK;
 const CONFIG_FILES = ['server.properties', 'permissions.json', 'whitelist.json'];
 const WORLD_DIRECTORIES = ['worlds'];
@@ -45,12 +46,12 @@ function setLogLevel(levelName) {
         // or if we are increasing verbosity to INFO from something more restrictive.
         if (LOG_LEVELS.INFO >= currentLogLevel && (LOG_LEVELS.INFO >= oldLogLevel || currentLogLevel <= oldLogLevel) ) {
             const initialLogMessage = `${new Date().toISOString()} [INFO] Log level set to ${levelNameToUse}\n`;
-            console.log(initialLogMessage);
+            process.stdout.write(initialLogMessage);
             logStream.write(initialLogMessage);
         }
     } else {
         const warningMessage = `${new Date().toISOString()} [WARNING] Invalid log level: ${levelName}. Defaulting to INFO.\n`;
-        console.warn(warningMessage);
+        process.stdout.write(warningMessage);
         logStream.write(warningMessage);
         currentLogLevel = LOG_LEVELS.INFO;
     }
@@ -59,13 +60,12 @@ function setLogLevel(levelName) {
 export function log(level, message) {
     const messageLevel = LOG_LEVELS[level.toUpperCase()];
     if (messageLevel === undefined) {
-        console.warn(`Invalid log level used in log() call: ${level}`);
         return;
     }
     if (messageLevel >= currentLogLevel) {
         const timestamp = new Date().toISOString();
         const logMessage = `${timestamp} [${level.toUpperCase()}] ${message}\n`;
-        console.log(logMessage);
+        process.stdout.write(logMessage);
         logStream.write(logMessage);
     }
 }
@@ -104,6 +104,30 @@ export function init(effectiveConfigFromRead) {
             } catch (e) {
                 log('ERROR', `Failed to create directory ${dir}: ${e.message}.`);
             }
+        }
+    }
+
+    // Try to recover existing server PID
+    const pidFilePath = pathJoin(__dirnameESM, PID_FILE);
+    if (fs.existsSync(pidFilePath)) {
+        try {
+            const pidContent = fs.readFileSync(pidFilePath, 'utf8');
+            const storedPid = pidContent ? parseInt(pidContent.trim(), 10) : NaN;
+            if (!isNaN(storedPid)) {
+                log('INFO', `Attempting to recover server PID from ${PID_FILE}: ${storedPid}`);
+                serverPID = storedPid;
+                // Verify if it's actually running
+                try {
+                    process.kill(serverPID, 0);
+                    log('INFO', `Server process with PID ${serverPID} is still running.`);
+                } catch (e) {
+                    log('INFO', `Server process with PID ${serverPID} is not running. Clearing stale PID file.`);
+                    serverPID = null;
+                    fs.unlinkSync(pidFilePath);
+                }
+            }
+        } catch (error) {
+            log('ERROR', `Error reading PID file: ${error.message}`);
         }
     }
 }
@@ -230,9 +254,9 @@ export function extractFiles(zipPath, extractPath) {
             try {
                 // Set permissions to 755 (owner can read/write/execute, others can read/execute)
                 fs.chmodSync(executableFilePath, 0o755);
-                console.log(`Permissions set to 755 for ${executableFilePath}`);
+                log('INFO', `Permissions set to 755 for ${executableFilePath}`);
             } catch (err) {
-                console.error(`Failed to set permissions for ${executableFilePath}:`, err);
+                log('ERROR', `Failed to set permissions for ${executableFilePath}: ${err.message}`);
             }
 
             resolve();
@@ -389,6 +413,10 @@ export async function stopServer() {
         log('INFO', `Attempting to stop Minecraft server process with PID: ${serverPID}.`);
         process.kill(serverPID, 'SIGTERM');
         log('INFO', `SIGTERM signal sent to PID: ${serverPID}.`);
+        const pidFilePath = pathJoin(__dirnameESM, PID_FILE);
+        if (fs.existsSync(pidFilePath)) {
+            fs.unlinkSync(pidFilePath);
+        }
     } catch (error) {
         log('ERROR', `Error stopping server with PID ${serverPID} (process might not exist): ${error.message}`);
     } finally {
@@ -422,6 +450,11 @@ export async function startServer() {
         if (serverProcess.pid) {
             serverPID = serverProcess.pid;
             log('INFO', `Server process started with PID: ${serverPID}.`);
+            try {
+                fs.writeFileSync(pathJoin(__dirnameESM, PID_FILE), serverPID.toString(), 'utf8');
+            } catch (pidError) {
+                log('ERROR', `Failed to write PID to file: ${pidError.message}`);
+            }
         } else {
             log('ERROR', `Server process started but PID was not obtained.`);
         }
@@ -492,7 +525,17 @@ export async function checkAndInstall() {
             log('INFO', `Removed existing server directory ${SERVER_DIRECTORY}`);
         }
         log('INFO', `Moving new server files from ${tempInstallPath} to ${SERVER_DIRECTORY}`);
-        fs.renameSync(tempInstallPath, SERVER_DIRECTORY);
+        try {
+            fs.renameSync(tempInstallPath, SERVER_DIRECTORY);
+        } catch (renameError) {
+            if (renameError.code === 'EXDEV') {
+                log('WARNING', `Cross-device move detected (EXDEV). Falling back to copy-and-delete for ${tempInstallPath} -> ${SERVER_DIRECTORY}`);
+                await copyDir(tempInstallPath, SERVER_DIRECTORY);
+                await removeDir(tempInstallPath);
+            } else {
+                throw renameError;
+            }
+        }
         log('INFO', 'Successfully moved new server files to SERVER_DIRECTORY.');
         if (backupDir) {
             await copyExistingData(backupDir, SERVER_DIRECTORY);
@@ -518,38 +561,20 @@ export async function checkAndInstall() {
 }
 
 /**
- * Removes a directory recursively. Cross-platform compatible.
- * @param {string} dirPath The path to the directory to remove.
- * @returns {Promise<void>} A promise that resolves when the directory is removed.
- */
-function removeDir(dirPath) {
-    return new Promise((resolve, reject) => {
-        if (!fs.existsSync(dirPath)) {
-            resolve(); // Resolve if the directory does not exist
-            return;
-        }
-
-        const platform = os.platform();
-        if (platform === 'win32') {
-            // Use Windows command to remove directory recursively and quietly
-            childProcessExec(`rmdir /s /q "${dirPath}"`, (error, stdout, stderr) => {
-                if (error) {
-                    reject(new Error(`Failed to remove directory ${dirPath}: ${error.message} ${stderr}`));
-                } else {
-                    resolve();
-                }
-            });
-        } else {
-            // Use Linux command to remove directory recursively and forcefully
-            childProcessExec(`rm -rf "${dirPath}"`, (error, stdout, stderr) => {
-                if (error) {
-                    reject(new Error(`Failed to remove directory ${dirPath}: ${error.message} ${stderr}`));
-                } else {
-                    resolve();
-                }
-            });
-        }
-    });
+ * Removes a directory recursively using native fs.rmSync.
+ * @param {string} dirPath The path to the directory to remove.
+ */
+async function removeDir(dirPath) {
+    if (!fs.existsSync(dirPath)) {
+        return;
+    }
+    try {
+        fs.rmSync(dirPath, { recursive: true, force: true });
+        log('DEBUG', `Removed directory: ${dirPath}`);
+    } catch (error) {
+        log('ERROR', `Failed to remove directory ${dirPath}: ${error.message}`);
+        throw error;
+    }
 }
 
 
@@ -658,6 +683,10 @@ export async function isProcessRunning() {
             log('ERROR', `Error checking process PID ${serverPID}: ${error.message} (Code: ${error.code})`);
         }
         serverPID = null;
+        const pidFilePath = pathJoin(__dirnameESM, PID_FILE);
+        if (fs.existsSync(pidFilePath)) {
+            try { fs.unlinkSync(pidFilePath); } catch (e) { log('ERROR', `Failed to delete stale PID file: ${e.message}`); }
+        }
         return false;
     }
 }
@@ -703,7 +732,7 @@ export async function sendWebhookNotification(message) {
 export async function readGlobalConfig() {
     const configPath = pathJoin(__dirnameESM, GLOBAL_CONFIG_FILE);
     let effectiveConfig = {
-        serverName: "Default Minecraft Server", serverPortIPv4: 19132, serverPortIPv6: 19133,
+        serverName: "Default Minecraft Server", uiPort: 3000, serverPortIPv4: 19132, serverPortIPv6: 19133,
         serverDirectory: "./server_data/default_server", tempDirectory: "./server_data/temp/default_server",
         backupDirectory: "./server_data/backup/default_server", worldName: "Bedrock level",
         autoStart: true, autoUpdateEnabled: false, autoUpdateIntervalMinutes: 60, logLevel: "INFO",
@@ -734,6 +763,7 @@ export async function readGlobalConfig() {
         let valueConsumed = (value !== undefined && !value.startsWith('--'));
         switch (arg) {
             case '--serverName': if(valueConsumed) effectiveConfig.serverName = value; break;
+            case '--uiPort': if(valueConsumed) effectiveConfig.uiPort = parseInt(value, 10); break;
             case '--serverPortIPv4': if(valueConsumed) effectiveConfig.serverPortIPv4 = parseInt(value, 10); break;
             case '--serverPortIPv6': if(valueConsumed) effectiveConfig.serverPortIPv6 = parseInt(value, 10); break;
             case '--serverDirectory': if(valueConsumed) effectiveConfig.serverDirectory = value; break;
@@ -1080,14 +1110,16 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
 
     } catch (error) {
         log('ERROR', `Error processing pack upload for ${originalFilename}: ${error.message} ${error.stack}`);
+        return { success: false, message: `Error processing pack: ${error.message}` };
+    } finally {
         try {
             if (fs.existsSync(tempFilePath)) {
                 fs.unlinkSync(tempFilePath);
+                log('DEBUG', `Deleted temporary upload file: ${tempFilePath}`);
             }
         } catch (unlinkError) {
-            log('WARNING', `Could not delete temporary file ${tempFilePath} after error: ${unlinkError.message}`);
+            log('WARNING', `Could not delete temporary file ${tempFilePath}: ${unlinkError.message}`);
         }
-        return { success: false, message: `Error processing pack: ${error.message}` };
     }
 }
 
