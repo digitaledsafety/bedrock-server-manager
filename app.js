@@ -206,6 +206,9 @@ app.post('/api/config', async (req, res) => {
         if (newSettings.autoUpdateIntervalMinutes !== undefined) {
             currentFullConfig.autoUpdateIntervalMinutes = parseInt(newSettings.autoUpdateIntervalMinutes, 10);
         }
+        if (newSettings.uiPort !== undefined) {
+            currentFullConfig.uiPort = parseInt(newSettings.uiPort, 10);
+        }
         if (newSettings.logLevel !== undefined) {
             currentFullConfig.logLevel = newSettings.logLevel.toUpperCase();
         }
