@@ -346,7 +346,7 @@ const start = async () => {
         if (process.env.NODE_ENV !== 'test') {
             app.listen(port, () => {
                 backend.log('INFO', `Express frontend server listening on port ${port}`);
-                console.log(`Open your browser to http://localhost:${port}`);
+                backend.log('INFO', `Open your browser to http://localhost:${port}`);
             });
         }
     } catch (error) {

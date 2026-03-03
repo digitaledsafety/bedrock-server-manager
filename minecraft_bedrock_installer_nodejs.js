@@ -24,6 +24,7 @@ let BACKUP_DIRECTORY;
 let serverPID = null;
 
 const LAST_VERSION_FILE = 'last_version.txt';
+const PID_FILE = 'server.pid';
 const WEBHOOK_URL = process.env.MC_UPDATE_WEBHOOK;
 const CONFIG_FILES = ['server.properties', 'permissions.json', 'whitelist.json'];
 const WORLD_DIRECTORIES = ['worlds'];
@@ -104,6 +105,20 @@ export function init(effectiveConfigFromRead) {
             } catch (e) {
                 log('ERROR', `Failed to create directory ${dir}: ${e.message}.`);
             }
+        }
+    }
+
+    // Load existing PID if present
+    const pidFilePath = pathJoin(__dirnameESM, PID_FILE);
+    if (fs.existsSync(pidFilePath)) {
+        try {
+            const storedPID = parseInt(fs.readFileSync(pidFilePath, 'utf8').trim(), 10);
+            if (!isNaN(storedPID)) {
+                serverPID = storedPID;
+                log('INFO', `Loaded existing server PID from ${PID_FILE}: ${serverPID}`);
+            }
+        } catch (error) {
+            log('ERROR', `Failed to read ${PID_FILE}: ${error.message}`);
         }
     }
 }
@@ -230,9 +245,9 @@ export function extractFiles(zipPath, extractPath) {
             try {
                 // Set permissions to 755 (owner can read/write/execute, others can read/execute)
                 fs.chmodSync(executableFilePath, 0o755);
-                console.log(`Permissions set to 755 for ${executableFilePath}`);
+                log('INFO', `Permissions set to 755 for ${executableFilePath}`);
             } catch (err) {
-                console.error(`Failed to set permissions for ${executableFilePath}:`, err);
+                log('ERROR', `Failed to set permissions for ${executableFilePath}: ${err.message}`);
             }
 
             resolve();
@@ -393,6 +408,15 @@ export async function stopServer() {
         log('ERROR', `Error stopping server with PID ${serverPID} (process might not exist): ${error.message}`);
     } finally {
         serverPID = null;
+        try {
+            const pidFilePath = pathJoin(__dirnameESM, PID_FILE);
+            if (fs.existsSync(pidFilePath)) {
+                fs.unlinkSync(pidFilePath);
+                log('DEBUG', `Deleted ${PID_FILE} after stopping server.`);
+            }
+        } catch (unlinkError) {
+            log('ERROR', `Failed to delete ${PID_FILE}: ${unlinkError.message}`);
+        }
     }
 }
 
@@ -422,6 +446,12 @@ export async function startServer() {
         if (serverProcess.pid) {
             serverPID = serverProcess.pid;
             log('INFO', `Server process started with PID: ${serverPID}.`);
+            try {
+                fs.writeFileSync(pathJoin(__dirnameESM, PID_FILE), serverPID.toString(), 'utf8');
+                log('DEBUG', `Saved PID to ${PID_FILE}`);
+            } catch (pidWriteError) {
+                log('ERROR', `Failed to write ${PID_FILE}: ${pidWriteError.message}`);
+            }
         } else {
             log('ERROR', `Server process started but PID was not obtained.`);
         }
@@ -492,7 +522,17 @@ export async function checkAndInstall() {
             log('INFO', `Removed existing server directory ${SERVER_DIRECTORY}`);
         }
         log('INFO', `Moving new server files from ${tempInstallPath} to ${SERVER_DIRECTORY}`);
-        fs.renameSync(tempInstallPath, SERVER_DIRECTORY);
+        try {
+            fs.renameSync(tempInstallPath, SERVER_DIRECTORY);
+        } catch (renameError) {
+            if (renameError.code === 'EXDEV') {
+                log('WARNING', `Cross-partition move detected. Falling back to copy and remove strategy.`);
+                await copyDir(tempInstallPath, SERVER_DIRECTORY);
+                await removeDir(tempInstallPath);
+            } else {
+                throw renameError;
+            }
+        }
         log('INFO', 'Successfully moved new server files to SERVER_DIRECTORY.');
         if (backupDir) {
             await copyExistingData(backupDir, SERVER_DIRECTORY);
@@ -518,38 +558,21 @@ export async function checkAndInstall() {
 }
 
 /**
- * Removes a directory recursively. Cross-platform compatible.
- * @param {string} dirPath The path to the directory to remove.
- * @returns {Promise<void>} A promise that resolves when the directory is removed.
- */
-function removeDir(dirPath) {
-    return new Promise((resolve, reject) => {
-        if (!fs.existsSync(dirPath)) {
-            resolve(); // Resolve if the directory does not exist
-            return;
-        }
-
-        const platform = os.platform();
-        if (platform === 'win32') {
-            // Use Windows command to remove directory recursively and quietly
-            childProcessExec(`rmdir /s /q "${dirPath}"`, (error, stdout, stderr) => {
-                if (error) {
-                    reject(new Error(`Failed to remove directory ${dirPath}: ${error.message} ${stderr}`));
-                } else {
-                    resolve();
-                }
-            });
-        } else {
-            // Use Linux command to remove directory recursively and forcefully
-            childProcessExec(`rm -rf "${dirPath}"`, (error, stdout, stderr) => {
-                if (error) {
-                    reject(new Error(`Failed to remove directory ${dirPath}: ${error.message} ${stderr}`));
-                } else {
-                    resolve();
-                }
-            });
-        }
-    });
+ * Removes a directory recursively using native Node.js methods.
+ * @param {string} dirPath The path to the directory to remove.
+ * @returns {Promise<void>} A promise that resolves when the directory is removed.
+ */
+async function removeDir(dirPath) {
+    if (!fs.existsSync(dirPath)) {
+        return;
+    }
+    try {
+        fs.rmSync(dirPath, { recursive: true, force: true });
+        log('DEBUG', `Removed directory: ${dirPath}`);
+    } catch (error) {
+        log('ERROR', `Failed to remove directory ${dirPath}: ${error.message}`);
+        throw error;
+    }
 }
 
 
@@ -658,6 +681,15 @@ export async function isProcessRunning() {
             log('ERROR', `Error checking process PID ${serverPID}: ${error.message} (Code: ${error.code})`);
         }
         serverPID = null;
+        try {
+            const pidFilePath = pathJoin(__dirnameESM, PID_FILE);
+            if (fs.existsSync(pidFilePath)) {
+                fs.unlinkSync(pidFilePath);
+                log('DEBUG', `Deleted stale ${PID_FILE}.`);
+            }
+        } catch (unlinkError) {
+            log('ERROR', `Failed to delete stale ${PID_FILE}: ${unlinkError.message}`);
+        }
         return false;
     }
 }
@@ -1080,14 +1112,16 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
 
     } catch (error) {
         log('ERROR', `Error processing pack upload for ${originalFilename}: ${error.message} ${error.stack}`);
+        return { success: false, message: `Error processing pack: ${error.message}` };
+    } finally {
         try {
             if (fs.existsSync(tempFilePath)) {
                 fs.unlinkSync(tempFilePath);
+                log('DEBUG', `Deleted temporary upload file: ${tempFilePath}`);
             }
         } catch (unlinkError) {
-            log('WARNING', `Could not delete temporary file ${tempFilePath} after error: ${unlinkError.message}`);
+            log('WARNING', `Could not delete temporary file ${tempFilePath}: ${unlinkError.message}`);
         }
-        return { success: false, message: `Error processing pack: ${error.message}` };
     }
 }
 

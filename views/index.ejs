@@ -31,6 +31,7 @@
 
         <div class="section">
             <div id="messageBox" class="message-box" role="alert" style="display: none;"></div>
+            <div id="consoleOutput" style="display: none;"></div>
             <h2>Server Status</h2>
             <p>Current Status: <span id="serverStatus" class="status-indicator status-<%= serverStatus %>"><%= serverStatus.toUpperCase() %></span></p>
             <% if (config.serverType === 'java') { %>
@@ -82,7 +83,7 @@
                     <p>No worlds found. Start the server to generate a default world.</p>
                 <% } %>
             </div>
-            <p>To activate a world, click 'Activate' next to its name. This will update the 'level-name' property. Remember to click "Save Properties" to apply the change.</p>
+            <p>To activate a world, click 'Activate' next to its name. This will update the 'level-name' property and restart the server automatically.</p>
         </div>
 
         <div class="section">
