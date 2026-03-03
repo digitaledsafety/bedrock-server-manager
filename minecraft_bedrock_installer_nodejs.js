@@ -24,6 +24,7 @@ let BACKUP_DIRECTORY;
 let serverPID = null;
 
 const LAST_VERSION_FILE = 'last_version.txt';
+const PID_FILE = 'server.pid';
 const WEBHOOK_URL = process.env.MC_UPDATE_WEBHOOK;
 const CONFIG_FILES = ['server.properties', 'permissions.json', 'whitelist.json'];
 const WORLD_DIRECTORIES = ['worlds'];
@@ -104,6 +105,21 @@ export function init(effectiveConfigFromRead) {
             } catch (e) {
                 log('ERROR', `Failed to create directory ${dir}: ${e.message}.`);
             }
+        }
+    }
+
+    // Load persisted PID
+    const pidFilePath = pathJoin(__dirnameESM, PID_FILE);
+    if (fs.existsSync(pidFilePath)) {
+        try {
+            const pidString = fs.readFileSync(pidFilePath, 'utf8').trim();
+            const pid = parseInt(pidString, 10);
+            if (!isNaN(pid)) {
+                serverPID = pid;
+                log('INFO', `Loaded persisted server PID: ${serverPID}`);
+            }
+        } catch (error) {
+            log('ERROR', `Failed to read PID file: ${error.message}`);
         }
     }
 }
@@ -385,14 +401,48 @@ export async function stopServer() {
         log('INFO', `Server process PID not found. Server may already be stopped.`);
         return;
     }
+    const pidToStop = serverPID;
     try {
-        log('INFO', `Attempting to stop Minecraft server process with PID: ${serverPID}.`);
-        process.kill(serverPID, 'SIGTERM');
-        log('INFO', `SIGTERM signal sent to PID: ${serverPID}.`);
+        log('INFO', `Attempting to stop Minecraft server process with PID: ${pidToStop}.`);
+        process.kill(pidToStop, 'SIGTERM');
+        log('INFO', `SIGTERM signal sent to PID: ${pidToStop}.`);
+
+        // Polling loop to wait for the process to exit
+        let attempts = 0;
+        const maxAttempts = 30; // 30 seconds max
+        while (attempts < maxAttempts) {
+            try {
+                process.kill(pidToStop, 0); // Check if process still exists
+            } catch (error) {
+                if (error.code === 'ESRCH') {
+                    log('INFO', `Server process with PID ${pidToStop} has stopped.`);
+                    break;
+                }
+            }
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            attempts++;
+            if (attempts % 5 === 0) {
+                log('INFO', `Waiting for server process ${pidToStop} to exit... (${attempts}/${maxAttempts})`);
+            }
+        }
+
+        if (attempts >= maxAttempts) {
+             log('WARNING', `Server process ${pidToStop} did not exit after ${maxAttempts} seconds. Proceeding anyway.`);
+        }
+
     } catch (error) {
-        log('ERROR', `Error stopping server with PID ${serverPID} (process might not exist): ${error.message}`);
+        log('ERROR', `Error stopping server with PID ${pidToStop} (process might not exist): ${error.message}`);
     } finally {
         serverPID = null;
+        const pidFilePath = pathJoin(__dirnameESM, PID_FILE);
+        if (fs.existsSync(pidFilePath)) {
+            try {
+                fs.unlinkSync(pidFilePath);
+                log('DEBUG', `Deleted PID file: ${pidFilePath}`);
+            } catch (error) {
+                log('WARNING', `Failed to delete PID file: ${error.message}`);
+            }
+        }
     }
 }
 
@@ -422,21 +472,44 @@ export async function startServer() {
         if (serverProcess.pid) {
             serverPID = serverProcess.pid;
             log('INFO', `Server process started with PID: ${serverPID}.`);
+            try {
+                fs.writeFileSync(pathJoin(__dirnameESM, PID_FILE), serverPID.toString(), 'utf8');
+            } catch (error) {
+                log('ERROR', `Failed to persist PID to file: ${error.message}`);
+            }
         } else {
             log('ERROR', `Server process started but PID was not obtained.`);
         }
         serverProcess.unref();
         serverProcess.on('error', (err) => {
             log('ERROR', `Server process error: ${err.message}`);
-            if (serverPID === serverProcess.pid) serverPID = null;
+            if (serverPID === serverProcess.pid) {
+                serverPID = null;
+                const pidFilePath = pathJoin(__dirnameESM, PID_FILE);
+                if (fs.existsSync(pidFilePath)) {
+                    try { fs.unlinkSync(pidFilePath); } catch (e) {}
+                }
+            }
         });
         serverProcess.on('exit', (code, signal) => {
             log('INFO', `Server process PID ${serverProcess.pid} exited with code ${code} and signal ${signal}`);
-            if (serverPID === serverProcess.pid) serverPID = null;
+            if (serverPID === serverProcess.pid) {
+                serverPID = null;
+                const pidFilePath = pathJoin(__dirnameESM, PID_FILE);
+                if (fs.existsSync(pidFilePath)) {
+                    try { fs.unlinkSync(pidFilePath); } catch (e) {}
+                }
+            }
         });
     } catch (error) {
         log('ERROR', `Error starting server: ${error.message}`);
-        if (serverPID) serverPID = null;
+        if (serverPID) {
+            serverPID = null;
+            const pidFilePath = pathJoin(__dirnameESM, PID_FILE);
+            if (fs.existsSync(pidFilePath)) {
+                try { fs.unlinkSync(pidFilePath); } catch (e) {}
+            }
+        }
         throw error;
     }
 }
@@ -564,8 +637,12 @@ export async function readServerProperties() {
     data.split('\n').forEach(line => {
         const trimmedLine = line.trim();
         if (trimmedLine && !trimmedLine.startsWith('#')) {
-            const [key, value] = trimmedLine.split('=').map(s => s.trim());
-            if (key) { properties[key] = value || ''; }
+            const firstEqualIndex = trimmedLine.indexOf('=');
+            if (firstEqualIndex !== -1) {
+                const key = trimmedLine.substring(0, firstEqualIndex).trim();
+                const value = trimmedLine.substring(firstEqualIndex + 1).trim();
+                if (key) { properties[key] = value; }
+            }
         }
     });
     log('INFO', `Read server.properties from ${configPath}`);
@@ -637,7 +714,7 @@ export async function activateWorld(worldName) {
 export async function restartServer() {
     log('INFO', `Restarting Minecraft server.`);
     await stopServer();
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    // No longer need a fixed 3s delay because stopServer waits for termination
     await startServer();
     log('INFO', 'Minecraft server restart command executed.');
 }
@@ -939,20 +1016,22 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
                 fs.mkdirSync(finalPackPath, { recursive: true });
 
                 zipEntries.forEach(zipEntry => {
-                    if (zipEntry.entryName.startsWith(packRootInZip + '/') && !zipEntry.isDirectory) {
-                        const relativePathInPack = path.relative(packRootInZip, zipEntry.entryName);
-                        if (relativePathInPack) { // Ensure it's not the root itself if packRootInZip is ""
-                            const targetFilePath = path.join(finalPackPath, relativePathInPack);
-                            const targetFileDir = path.dirname(targetFilePath);
-                            if (!fs.existsSync(targetFileDir)) {
-                                fs.mkdirSync(targetFileDir, { recursive: true });
-                            }
-                            fs.writeFileSync(targetFilePath, zipEntry.getData());
+                    if (zipEntry.isDirectory) return;
+
+                    let relativePathInPack = null;
+                    if (packRootInZip === "." || packRootInZip === "") {
+                        relativePathInPack = zipEntry.entryName;
+                    } else if (zipEntry.entryName.startsWith(packRootInZip + '/')) {
+                        relativePathInPack = path.relative(packRootInZip, zipEntry.entryName);
+                    }
+
+                    if (relativePathInPack) {
+                        const targetFilePath = path.join(finalPackPath, relativePathInPack);
+                        const targetFileDir = path.dirname(targetFilePath);
+                        if (!fs.existsSync(targetFileDir)) {
+                            fs.mkdirSync(targetFileDir, { recursive: true });
                         }
-                    } else if (packRootInZip === "" && zipEntry.entryName.indexOf('/') === -1 && !zipEntry.isDirectory) {
-                        // Handle case where manifest is at the root of zip, and files are at root too
-                         const targetFilePath = path.join(finalPackPath, zipEntry.entryName);
-                         fs.writeFileSync(targetFilePath, zipEntry.getData());
+                        fs.writeFileSync(targetFilePath, zipEntry.getData());
                     }
                 });
                 log('INFO', `Extracted pack '${packName}' to ${finalPackPath}`);
@@ -1047,25 +1126,25 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
             fs.mkdirSync(finalPackPath, { recursive: true });
 
             zipEntries.forEach(zipEntry => {
-                 if (zipEntry.entryName.startsWith(packRootInZip) && !zipEntry.isDirectory) {
-                    // Make sure path.relative doesn't return an empty string if packRootInZip is the entry itself (e.g. "manifest.json")
-                    // or if packRootInZip is "." and entryName is "manifest.json"
-                    let relativePathInPack = path.relative(packRootInZip, zipEntry.entryName);
-                    if (packRootInZip === "." && zipEntry.entryName.indexOf('/') === -1) relativePathInPack = zipEntry.entryName;
+                if (zipEntry.isDirectory) return;
 
+                let relativePathInPack = null;
+                if (packRootInZip === "." || packRootInZip === "") {
+                    relativePathInPack = zipEntry.entryName;
+                } else if (zipEntry.entryName.startsWith(packRootInZip + '/')) {
+                    relativePathInPack = path.relative(packRootInZip, zipEntry.entryName);
+                } else if (zipEntry.entryName === packRootInZip) {
+                    // Handle case where packRootInZip is the file itself (shouldn't really happen with dirname, but for safety)
+                    relativePathInPack = path.basename(zipEntry.entryName);
+                }
 
-                    if(relativePathInPack){
-                        const targetFilePath = path.join(finalPackPath, relativePathInPack);
-                        const targetFileDir = path.dirname(targetFilePath);
-                        if (!fs.existsSync(targetFileDir)) {
-                            fs.mkdirSync(targetFileDir, { recursive: true });
-                        }
-                        fs.writeFileSync(targetFilePath, zipEntry.getData());
-                    } else if (manifestEntry.entryName === zipEntry.entryName && packRootInZip === path.dirname(manifestEntry.entryName)) {
-                        // if packRootInZip is the directory of manifest, and this is the manifest, place it at root of finalPackPath
-                        const targetFilePath = path.join(finalPackPath, path.basename(zipEntry.entryName));
-                         fs.writeFileSync(targetFilePath, zipEntry.getData());
+                if (relativePathInPack) {
+                    const targetFilePath = path.join(finalPackPath, relativePathInPack);
+                    const targetFileDir = path.dirname(targetFilePath);
+                    if (!fs.existsSync(targetFileDir)) {
+                        fs.mkdirSync(targetFileDir, { recursive: true });
                     }
+                    fs.writeFileSync(targetFilePath, zipEntry.getData());
                 }
             });
             log('INFO', `Extracted .mcpack '${packName}' to ${finalPackPath}`);
