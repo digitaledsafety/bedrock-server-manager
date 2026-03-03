@@ -167,7 +167,12 @@ export async function getLatestVersion() {
             res.on('end', () => {
                 try {
                     const jsonResponse = JSON.parse(data);
-                    const targetDownloadType = platform === 'win32' ? 'serverBedrockWindows' : 'serverBedrockLinux';
+                    let targetDownloadType;
+                    if (serverType === 'bedrock_server_preview') {
+                        targetDownloadType = platform === 'win32' ? 'serverBedrockPreviewWindows' : 'serverBedrockPreviewLinux';
+                    } else {
+                        targetDownloadType = platform === 'win32' ? 'serverBedrockWindows' : 'serverBedrockLinux';
+                    }
                     let foundLink = null;
                     if (jsonResponse && jsonResponse.result && jsonResponse.result.links) {
                         foundLink = jsonResponse.result.links.find(link => link.downloadType === targetDownloadType);
