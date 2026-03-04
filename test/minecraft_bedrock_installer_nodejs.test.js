@@ -41,6 +41,7 @@ describe('Minecraft Bedrock Installer Backend', () => {
 server-name=My Test Server
 level-seed=12345
 gamemode=survival
+extra-param=value=with=equals
 `;
       fs.existsSync.mockReturnValue(true);
       fs.promises.readFile.mockResolvedValue(mockProperties);
@@ -55,6 +56,7 @@ gamemode=survival
         'server-name': 'My Test Server',
         'level-seed': '12345',
         'gamemode': 'survival',
+        'extra-param': 'value=with=equals'
       });
     });
 

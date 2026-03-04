@@ -130,6 +130,20 @@ app.post('/api/restart', async (req, res) => {
     }
 });
 
+app.post('/api/backup', async (req, res) => {
+    try {
+        const backupPath = await backend.backupServer();
+        if (backupPath) {
+            res.json({ success: true, message: `Backup created at: ${backupPath}` });
+        } else {
+            res.status(500).json({ error: 'Failed to create backup.' });
+        }
+    } catch (error) {
+        backend.log('ERROR', `Failed to create manual backup: ${error.message}`);
+        res.status(500).json({ error: 'Failed to create backup' });
+    }
+});
+
 app.post('/api/update', async (req, res) => {
     try {
         const result = await backend.checkAndInstall();
@@ -193,6 +207,36 @@ app.get('/api/config', async (req, res) => {
     } catch (error) {
         backend.log('ERROR', `Error getting application config: ${error.message}`);
         res.status(500).json({ error: 'Failed to get application config' });
+    }
+});
+
+app.get('/api/logs', async (req, res) => {
+    try {
+        const logFilePath = pathJoin(__dirnameESM, 'mc_installer.log');
+        if (!fs.existsSync(logFilePath)) {
+            return res.json({ success: true, logs: 'Log file not found.' });
+        }
+
+        const MAX_LINES = 50;
+        const stats = await fs.promises.stat(logFilePath);
+        const fileSize = stats.size;
+        // Read at most last 16KB, should be enough for 50 lines
+        const bufferSize = Math.min(fileSize, 16384);
+        const buffer = Buffer.alloc(bufferSize);
+        const fileHandle = await fs.promises.open(logFilePath, 'r');
+
+        try {
+            await fileHandle.read(buffer, 0, bufferSize, fileSize - bufferSize);
+            const content = buffer.toString('utf8');
+            const lines = content.split('\n');
+            const lastLines = lines.slice(-(MAX_LINES + 1)).join('\n');
+            res.json({ success: true, logs: lastLines });
+        } finally {
+            await fileHandle.close();
+        }
+    } catch (error) {
+        backend.log('ERROR', `Error reading logs: ${error.message}`);
+        res.status(500).json({ error: 'Failed to read logs' });
     }
 });
 
@@ -340,7 +384,7 @@ const start = async () => {
         }
         await backend.startAutoUpdateScheduler();
 
-        const port = initialConfig.uiPort ?? PORT;
+        const port = initialConfig.uiPort || PORT;
 
         // This check prevents the server from starting during tests
         if (process.env.NODE_ENV !== 'test') {
