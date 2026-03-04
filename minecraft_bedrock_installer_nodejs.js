@@ -897,8 +897,15 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
                 return { success: false, message: 'No valid packs found within the .mcaddon file.' };
             }
 
+            // Pre-calculate all pack roots in this .mcaddon
+            const allPackRoots = manifestEntries.map(entry => {
+                let root = path.dirname(entry.entryName);
+                return root === '.' ? '' : root;
+            });
+
             for (const manifestEntry of manifestEntries) {
-                const packRootInZip = path.dirname(manifestEntry.entryName);
+                let packRootInZip = path.dirname(manifestEntry.entryName);
+                if (packRootInZip === '.') packRootInZip = '';
                 const manifestData = JSON.parse(zip.readAsText(manifestEntry));
 
                 if (!manifestData.header || !manifestData.header.uuid || !manifestData.header.version || !manifestData.header.name) {
@@ -944,20 +951,40 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
                 fs.mkdirSync(finalPackPath, { recursive: true });
 
                 zipEntries.forEach(zipEntry => {
-                    if (zipEntry.entryName.startsWith(packRootInZip + '/') && !zipEntry.isDirectory) {
-                        const relativePathInPack = path.relative(packRootInZip, zipEntry.entryName);
-                        if (relativePathInPack) { // Ensure it's not the root itself if packRootInZip is ""
-                            const targetFilePath = path.join(finalPackPath, relativePathInPack);
-                            const targetFileDir = path.dirname(targetFilePath);
-                            if (!fs.existsSync(targetFileDir)) {
-                                fs.mkdirSync(targetFileDir, { recursive: true });
-                            }
-                            fs.writeFileSync(targetFilePath, zipEntry.getData());
+                    if (zipEntry.isDirectory) return;
+
+                    let isEntryInPack = false;
+                    let relativePathInPack = '';
+
+                    if (packRootInZip === '') {
+                        // If this pack is at the root, it owns all files EXCEPT those that belong to other packs
+                        // (which are in subdirectories identified as pack roots).
+                        const entryName = zipEntry.entryName;
+                        const belongsToOtherPack = allPackRoots.some(otherRoot => {
+                            if (otherRoot === '') return false; // Don't compare with self
+                            return entryName.startsWith(otherRoot + '/');
+                        });
+
+                        if (!belongsToOtherPack) {
+                            isEntryInPack = true;
+                            relativePathInPack = entryName;
                         }
-                    } else if (packRootInZip === "" && zipEntry.entryName.indexOf('/') === -1 && !zipEntry.isDirectory) {
-                        // Handle case where manifest is at the root of zip, and files are at root too
-                         const targetFilePath = path.join(finalPackPath, zipEntry.entryName);
-                         fs.writeFileSync(targetFilePath, zipEntry.getData());
+                    } else {
+                        // If this pack is in a subdirectory, it owns everything under that prefix
+                        const prefix = packRootInZip + '/';
+                        if (zipEntry.entryName.startsWith(prefix)) {
+                            isEntryInPack = true;
+                            relativePathInPack = path.relative(packRootInZip, zipEntry.entryName);
+                        }
+                    }
+
+                    if (isEntryInPack && relativePathInPack) {
+                        const targetFilePath = path.join(finalPackPath, relativePathInPack);
+                        const targetFileDir = path.dirname(targetFilePath);
+                        if (!fs.existsSync(targetFileDir)) {
+                            fs.mkdirSync(targetFileDir, { recursive: true });
+                        }
+                        fs.writeFileSync(targetFilePath, zipEntry.getData());
                     }
                 });
                 log('INFO', `Extracted pack '${packName}' to ${finalPackPath}`);
@@ -984,7 +1011,8 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
             if (!manifestEntry) {
                 return { success: false, message: 'manifest.json not found in the uploaded .mcpack.' };
             }
-            const packRootInZip = path.dirname(manifestEntry.entryName);
+            let packRootInZip = path.dirname(manifestEntry.entryName);
+            if (packRootInZip === '.') packRootInZip = '';
             let manifestData;
             try {
                 manifestData = JSON.parse(zip.readAsText(manifestEntry));
@@ -1052,25 +1080,29 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
             fs.mkdirSync(finalPackPath, { recursive: true });
 
             zipEntries.forEach(zipEntry => {
-                 if (zipEntry.entryName.startsWith(packRootInZip) && !zipEntry.isDirectory) {
-                    // Make sure path.relative doesn't return an empty string if packRootInZip is the entry itself (e.g. "manifest.json")
-                    // or if packRootInZip is "." and entryName is "manifest.json"
-                    let relativePathInPack = path.relative(packRootInZip, zipEntry.entryName);
-                    if (packRootInZip === "." && zipEntry.entryName.indexOf('/') === -1) relativePathInPack = zipEntry.entryName;
+                if (zipEntry.isDirectory) return;
 
+                let isEntryInPack = false;
+                let relativePathInPack = '';
 
-                    if(relativePathInPack){
-                        const targetFilePath = path.join(finalPackPath, relativePathInPack);
-                        const targetFileDir = path.dirname(targetFilePath);
-                        if (!fs.existsSync(targetFileDir)) {
-                            fs.mkdirSync(targetFileDir, { recursive: true });
-                        }
-                        fs.writeFileSync(targetFilePath, zipEntry.getData());
-                    } else if (manifestEntry.entryName === zipEntry.entryName && packRootInZip === path.dirname(manifestEntry.entryName)) {
-                        // if packRootInZip is the directory of manifest, and this is the manifest, place it at root of finalPackPath
-                        const targetFilePath = path.join(finalPackPath, path.basename(zipEntry.entryName));
-                         fs.writeFileSync(targetFilePath, zipEntry.getData());
+                if (packRootInZip === '') {
+                    isEntryInPack = true;
+                    relativePathInPack = zipEntry.entryName;
+                } else {
+                    const prefix = packRootInZip + '/';
+                    if (zipEntry.entryName.startsWith(prefix)) {
+                        isEntryInPack = true;
+                        relativePathInPack = path.relative(packRootInZip, zipEntry.entryName);
                     }
+                }
+
+                if (isEntryInPack && relativePathInPack) {
+                    const targetFilePath = path.join(finalPackPath, relativePathInPack);
+                    const targetFileDir = path.dirname(targetFilePath);
+                    if (!fs.existsSync(targetFileDir)) {
+                        fs.mkdirSync(targetFileDir, { recursive: true });
+                    }
+                    fs.writeFileSync(targetFilePath, zipEntry.getData());
                 }
             });
             log('INFO', `Extracted .mcpack '${packName}' to ${finalPackPath}`);
