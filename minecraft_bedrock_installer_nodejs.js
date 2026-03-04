@@ -28,6 +28,7 @@ const WEBHOOK_URL = process.env.MC_UPDATE_WEBHOOK;
 const CONFIG_FILES = ['server.properties', 'permissions.json', 'whitelist.json'];
 const WORLD_DIRECTORIES = ['worlds'];
 const GLOBAL_CONFIG_FILE = 'config.json';
+const PID_FILE = 'server.pid';
 
 let autoUpdateIntervalId = null;
 
@@ -323,7 +324,11 @@ export async function backupServer() {
     try {
         await copyDir(SERVER_DIRECTORY, backupDir);
         if (os.platform() !== 'win32') {
-            await changeOwnership(backupDir, config.minecraftUser, config.minecraftGroup);
+            try {
+                await changeOwnership(backupDir, config.minecraftUser, config.minecraftGroup);
+            } catch (chownError) {
+                log('WARNING', `Failed to change ownership for backup ${backupDir}: ${chownError.message}. Continuing anyway.`);
+            }
         }
         log('INFO', `Backup complete in ${backupDir}`);
         return backupDir;
@@ -387,13 +392,50 @@ export async function copyExistingData(backupDir, newInstallDir) {
 
 export async function stopServer() {
     if (!serverPID) {
+        const pidFilePath = pathJoin(__dirnameESM, PID_FILE);
+        if (fs.existsSync(pidFilePath)) {
+            try {
+                serverPID = parseInt(fs.readFileSync(pidFilePath, 'utf8').trim(), 10);
+                log('INFO', `Retrieved PID ${serverPID} from ${PID_FILE}.`);
+            } catch (error) {
+                log('ERROR', `Failed to read PID from ${PID_FILE}: ${error.message}`);
+            }
+        }
+    }
+
+    if (!serverPID) {
         log('INFO', `Server process PID not found. Server may already be stopped.`);
         return;
     }
+    const pidToKill = serverPID;
     try {
-        log('INFO', `Attempting to stop Minecraft server process with PID: ${serverPID}.`);
-        process.kill(serverPID, 'SIGTERM');
-        log('INFO', `SIGTERM signal sent to PID: ${serverPID}.`);
+        log('INFO', `Attempting to stop Minecraft server process with PID: ${pidToKill}.`);
+        process.kill(pidToKill, 'SIGTERM');
+        log('INFO', `SIGTERM signal sent to PID: ${pidToKill}.`);
+
+        // Polling loop for termination
+        let isStillRunning = true;
+        for (let i = 0; i < 30; i++) {
+            try {
+                process.kill(pidToKill, 0);
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            } catch (e) {
+                isStillRunning = false;
+                break;
+            }
+        }
+
+        if (isStillRunning) {
+            log('WARNING', `Server process with PID ${pidToKill} did not stop after 30 seconds.`);
+        } else {
+            log('INFO', `Server process with PID ${pidToKill} has stopped.`);
+            const pidFilePath = pathJoin(__dirnameESM, PID_FILE);
+            if (fs.existsSync(pidFilePath)) {
+                fs.unlinkSync(pidFilePath);
+                log('INFO', `Removed ${PID_FILE}.`);
+            }
+        }
+
     } catch (error) {
         log('ERROR', `Error stopping server with PID ${serverPID} (process might not exist): ${error.message}`);
     } finally {
@@ -427,6 +469,12 @@ export async function startServer() {
         if (serverProcess.pid) {
             serverPID = serverProcess.pid;
             log('INFO', `Server process started with PID: ${serverPID}.`);
+            try {
+                fs.writeFileSync(pathJoin(__dirnameESM, PID_FILE), serverPID.toString());
+                log('INFO', `Saved PID to ${PID_FILE}.`);
+            } catch (error) {
+                log('ERROR', `Failed to save PID to ${PID_FILE}: ${error.message}`);
+            }
         } else {
             log('ERROR', `Server process started but PID was not obtained.`);
         }
@@ -567,12 +615,16 @@ export async function readServerProperties() {
     const data = await fs.promises.readFile(configPath, 'utf8');
     const properties = {};
     data.split('\n').forEach(line => {
-        const trimmedLine = line.trim();
-        if (trimmedLine && !trimmedLine.startsWith('#')) {
-            const [key, value] = trimmedLine.split('=').map(s => s.trim());
-            if (key) { properties[key] = value || ''; }
-        }
-    });
+        const trimmedLine = line.trim();
+        if (trimmedLine && !trimmedLine.startsWith('#')) {
+            const firstEqualsIndex = trimmedLine.indexOf('=');
+            if (firstEqualsIndex !== -1) {
+                const key = trimmedLine.substring(0, firstEqualsIndex).trim();
+                const value = trimmedLine.substring(firstEqualsIndex + 1).trim();
+                if (key) { properties[key] = value; }
+            }
+        }
+    });
     log('INFO', `Read server.properties from ${configPath}`);
     return properties;
 }
@@ -649,6 +701,18 @@ export async function restartServer() {
 
 export async function isProcessRunning() {
     if (!serverPID) {
+        const pidFilePath = pathJoin(__dirnameESM, PID_FILE);
+        if (fs.existsSync(pidFilePath)) {
+            try {
+                serverPID = parseInt(fs.readFileSync(pidFilePath, 'utf8').trim(), 10);
+                log('INFO', `Retrieved PID ${serverPID} from ${PID_FILE} during status check.`);
+            } catch (error) {
+                log('ERROR', `Failed to read PID from ${PID_FILE}: ${error.message}`);
+            }
+        }
+    }
+
+    if (!serverPID) {
         log('DEBUG', `No PID found for server. Assuming not running.`);
         return false;
     }
@@ -708,7 +772,7 @@ export async function sendWebhookNotification(message) {
 export async function readGlobalConfig() {
     const configPath = pathJoin(__dirnameESM, GLOBAL_CONFIG_FILE);
     let effectiveConfig = {
-        serverName: "Default Minecraft Server", serverPortIPv4: 19132, serverPortIPv6: 19133,
+        serverName: "Default Minecraft Server", serverPortIPv4: 19132, serverPortIPv6: 19133, uiPort: 3000,
         serverDirectory: "./server_data/default_server", tempDirectory: "./server_data/temp/default_server",
         backupDirectory: "./server_data/backup/default_server", worldName: "Bedrock level",
         autoStart: true, autoUpdateEnabled: false, autoUpdateIntervalMinutes: 60, logLevel: "INFO",
@@ -745,6 +809,7 @@ export async function readGlobalConfig() {
             case '--tempDirectory': if(valueConsumed) effectiveConfig.tempDirectory = value; break;
             case '--backupDirectory': if(valueConsumed) effectiveConfig.backupDirectory = value; break;
             case '--worldName': if(valueConsumed) effectiveConfig.worldName = value; break;
+            case '--uiPort': if(valueConsumed) effectiveConfig.uiPort = parseInt(value, 10); break;
             case '--autoStart': effectiveConfig.autoStart = (valueConsumed ? (value === 'true') : true); break;
             case '--autoUpdateEnabled': effectiveConfig.autoUpdateEnabled = (valueConsumed ? (value === 'true') : true); break;
             case '--logLevel': if(valueConsumed) effectiveConfig.logLevel = value.toUpperCase(); break;

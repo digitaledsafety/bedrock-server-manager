@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const stopButton = document.getElementById('stopButton');
     const restartButton = document.getElementById('restartButton');
     const updateButton = document.getElementById('updateButton');
+    const backupButton = document.getElementById('backupButton');
     const propertiesForm = document.getElementById('propertiesForm');
     const levelNameInput = document.getElementById('level-name'); // Get the level-name input
     const consoleOutput = document.getElementById('consoleOutput'); // Get the console textarea
@@ -21,6 +22,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const packTypeGroup = document.getElementById('packTypeGroup');
     const packWorldNameSelect = document.getElementById('packWorldName');
     const uploadPackButton = document.getElementById('uploadPackButton');
+    const logOutput = document.getElementById('logOutput');
+    const refreshLogsButton = document.getElementById('refreshLogsButton');
 
 
     // --- Utility Functions ---
@@ -40,16 +43,19 @@ document.addEventListener('DOMContentLoaded', () => {
             stopButton.disabled = false;
             restartButton.disabled = false;
             updateButton.disabled = false;
+            if (backupButton) backupButton.disabled = false;
         } else if (status === 'stopped') {
             startButton.disabled = false;
             stopButton.disabled = true;
             restartButton.disabled = true;
             updateButton.disabled = false; // Allow update even if server is stopped
+            if (backupButton) backupButton.disabled = false;
         } else { // unknown status
             startButton.disabled = false; // Allow starting if unknown, as it might be stopped
             stopButton.disabled = true;
             restartButton.disabled = true;
             updateButton.disabled = true; // Disable update if status is unknown
+            if (backupButton) backupButton.disabled = true;
         }
     }
 
@@ -144,6 +150,7 @@ document.addEventListener('DOMContentLoaded', () => {
             stopButton.disabled = true;
             restartButton.disabled = true;
             updateButton.disabled = true;
+            if (backupButton) backupButton.disabled = true;
 
             const response = await fetch(`/api/${command}`, { method: 'POST' });
             const data = await response.json();
@@ -287,6 +294,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Auto-Update Configuration Functions ---
+    async function fetchLogs() {
+        try {
+            const response = await fetch('/api/logs');
+            const data = await response.json();
+            if (data.success) {
+                logOutput.textContent = data.logs;
+                logOutput.scrollTop = logOutput.scrollHeight;
+            } else {
+                console.error('Failed to fetch logs:', data.error);
+            }
+        } catch (error) {
+            console.error('Error fetching logs:', error);
+        }
+    }
+
     async function loadAutoUpdateConfig() {
         try {
             const response = await fetch('/api/config');
@@ -342,8 +364,10 @@ document.addEventListener('DOMContentLoaded', () => {
     stopButton.addEventListener('click', () => sendCommand('stop'));
     restartButton.addEventListener('click', () => sendCommand('restart'));
     updateButton.addEventListener('click', () => sendCommand('update'));
+    if (backupButton) backupButton.addEventListener('click', () => sendCommand('backup'));
     if (propertiesForm) propertiesForm.addEventListener('submit', saveServerProperties);
     if (autoUpdateConfigForm) autoUpdateConfigForm.addEventListener('submit', saveAutoUpdateConfig);
+    if (refreshLogsButton) refreshLogsButton.addEventListener('click', fetchLogs);
     if (uploadPackForm) {
         uploadPackForm.addEventListener('submit', handleUploadPack);
         packFileInput.addEventListener('change', handlePackFileChange);
@@ -355,9 +379,11 @@ document.addEventListener('DOMContentLoaded', () => {
     //loadServerProperties();
     //loadWorlds();
     loadAutoUpdateConfig(); // New: Load auto-update config on page load
+    fetchLogs();
 
     // Refresh status and worlds periodically
     setInterval(fetchServerStatus, 10000); // Every 10 seconds
     setInterval(loadWorlds, 30000); // Every 30 seconds
+    setInterval(fetchLogs, 15000); // Every 15 seconds
 
 });
