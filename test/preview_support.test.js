@@ -48,7 +48,7 @@ describe('Preview Server Support', () => {
 
   it('should correctly select the preview download URL for Windows', async () => {
     os.platform.mockReturnValue('win32');
-    backend.init({ serverType: 'bedrock_server_preview', logLevel: 'DEBUG' });
+    backend.init({ serverType: 'bedrock_preview', logLevel: 'DEBUG' });
 
     const mockApiResponse = {
       result: {
@@ -83,7 +83,7 @@ describe('Preview Server Support', () => {
 
   it('should correctly select the preview download URL for Linux', async () => {
     os.platform.mockReturnValue('linux');
-    backend.init({ serverType: 'bedrock_server_preview', logLevel: 'DEBUG' });
+    backend.init({ serverType: 'bedrock_preview', logLevel: 'DEBUG' });
 
     const mockApiResponse = {
       result: {
