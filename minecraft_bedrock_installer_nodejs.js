@@ -168,7 +168,7 @@ export async function getLatestVersion() {
                 try {
                     const jsonResponse = JSON.parse(data);
                     let targetDownloadType;
-                    if (serverType === 'bedrock_preview') {
+            if (serverType === 'bedrock_preview' || serverType === 'bedrock_server_preview') {
                         targetDownloadType = platform === 'win32' ? 'serverBedrockPreviewWindows' : 'serverBedrockPreviewLinux';
                     } else {
                         targetDownloadType = platform === 'win32' ? 'serverBedrockWindows' : 'serverBedrockLinux';
@@ -559,22 +559,26 @@ function removeDir(dirPath) {
 
 
 export async function readServerProperties() {
-    const configPath = pathJoin(SERVER_DIRECTORY, 'server.properties');
-    if (!SERVER_DIRECTORY || !fs.existsSync(configPath)) { // Check SERVER_DIRECTORY is defined
-        log('WARNING', `server.properties not found at ${configPath} (or server directory not set). Returning empty config.`);
-        return {};
-    }
-    const data = await fs.promises.readFile(configPath, 'utf8');
-    const properties = {};
-    data.split('\n').forEach(line => {
-        const trimmedLine = line.trim();
-        if (trimmedLine && !trimmedLine.startsWith('#')) {
-            const [key, value] = trimmedLine.split('=').map(s => s.trim());
-            if (key) { properties[key] = value || ''; }
-        }
-    });
-    log('INFO', `Read server.properties from ${configPath}`);
-    return properties;
+    const configPath = pathJoin(SERVER_DIRECTORY, 'server.properties');
+    if (!SERVER_DIRECTORY || !fs.existsSync(configPath)) { // Check SERVER_DIRECTORY is defined
+        log('WARNING', `server.properties not found at ${configPath} (or server directory not set). Returning empty config.`);
+        return {};
+    }
+    const data = await fs.promises.readFile(configPath, 'utf8');
+    const properties = {};
+    data.split(/\r?\n/).forEach(line => {
+        const trimmedLine = line.trim();
+        if (trimmedLine && !trimmedLine.startsWith('#')) {
+            const index = trimmedLine.indexOf('=');
+            if (index > -1) {
+                const key = trimmedLine.substring(0, index).trim();
+                const value = trimmedLine.substring(index + 1).trim();
+                if (key) { properties[key] = value; }
+            }
+        }
+    });
+    log('INFO', `Read server.properties from ${configPath}`);
+    return properties;
 }
 
 export async function writeServerProperties(propertiesToWrite) {
@@ -582,15 +586,43 @@ export async function writeServerProperties(propertiesToWrite) {
         log('ERROR', 'SERVER_DIRECTORY not set. Cannot write server.properties.');
         throw new Error('Server directory not configured.');
     }
-    const configPath = pathJoin(SERVER_DIRECTORY, 'server.properties');
-    let content = '';
-    for (const key in propertiesToWrite) {
-        if (Object.hasOwnProperty.call(propertiesToWrite, key)) {
-            content += `${key}=${propertiesToWrite[key]}\n`;
-        }
-    }
-    await fs.promises.writeFile(configPath, content, 'utf8');
-    log('INFO', `Wrote server.properties to ${configPath}`);
+    const configPath = pathJoin(SERVER_DIRECTORY, 'server.properties');
+
+    let existingContent = '';
+    if (fs.existsSync(configPath)) {
+        existingContent = await fs.promises.readFile(configPath, 'utf8');
+    }
+
+    const lines = existingContent.split(/\r?\n/);
+    const updatedProperties = { ...propertiesToWrite };
+    const newLines = [];
+    const processedKeys = new Set();
+
+    for (const line of lines) {
+        const trimmedLine = line.trim();
+        if (trimmedLine && !trimmedLine.startsWith('#')) {
+            const index = trimmedLine.indexOf('=');
+            if (index > -1) {
+                const key = trimmedLine.substring(0, index).trim();
+                if (key && updatedProperties.hasOwnProperty(key)) {
+                    newLines.push(`${key}=${updatedProperties[key]}`);
+                    processedKeys.add(key);
+                    continue;
+                }
+            }
+        }
+        newLines.push(line);
+    }
+
+    // Add any remaining new properties
+    for (const key in updatedProperties) {
+        if (Object.hasOwnProperty.call(updatedProperties, key) && !processedKeys.has(key)) {
+            newLines.push(`${key}=${updatedProperties[key]}`);
+        }
+    }
+
+    await fs.promises.writeFile(configPath, newLines.join('\n'), 'utf8');
+    log('INFO', `Wrote server.properties to ${configPath}`);
 }
 
 export async function listWorlds() {
