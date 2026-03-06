@@ -321,7 +321,7 @@ export async function backupServer() {
     fs.mkdirSync(backupDir, { recursive: true });
     log('INFO', `Creating backup in ${backupDir}`);
     try {
-        await copyDir(SERVER_DIRECTORY, backupDir);
+        fs.cpSync(SERVER_DIRECTORY, backupDir, { recursive: true });
         if (os.platform() !== 'win32') {
             await changeOwnership(backupDir, config.minecraftUser, config.minecraftGroup);
         }
@@ -330,24 +330,15 @@ export async function backupServer() {
     } catch (error) {
         log('ERROR', `Error during backup: ${error}`);
         if (fs.existsSync(backupDir)) {
-            await removeDir(backupDir);
+            fs.rmSync(backupDir, { recursive: true, force: true });
         }
         throw error;
     }
 }
 
 export async function copyDir(src, dest) {
-    fs.mkdirSync(dest, { recursive: true });
-    const entries = fs.readdirSync(src, { withFileTypes: true });
-    for (const entry of entries) {
-        const srcPath = pathJoin(src, entry.name);
-        const destPath = pathJoin(dest, entry.name);
-        if (entry.isDirectory()) {
-            await copyDir(srcPath, destPath);
-        } else {
-            fs.copyFileSync(srcPath, destPath);
-        }
-    }
+    log('DEBUG', `Using fs.cpSync for copyDir from ${src} to ${dest}`);
+    fs.cpSync(src, dest, { recursive: true });
 }
 
 export async function copyExistingData(backupDir, newInstallDir) {
@@ -366,7 +357,7 @@ export async function copyExistingData(backupDir, newInstallDir) {
         const destPath = pathJoin(newInstallDir, dirName);
         if (fs.existsSync(srcPath)) {
             log('INFO', `Copying directory: ${dirName}`);
-            await copyDir(srcPath, destPath);
+            fs.cpSync(srcPath, destPath, { recursive: true });
         } else {
             log('INFO', `Backup directory not found (this is okay if not used): ${srcPath}`);
         }
@@ -386,18 +377,64 @@ export async function copyExistingData(backupDir, newInstallDir) {
 }
 
 export async function stopServer() {
+    if (!serverPID && SERVER_DIRECTORY) {
+        const pidFile = pathJoin(SERVER_DIRECTORY, 'server.pid');
+        if (fs.existsSync(pidFile)) {
+            try {
+                const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
+                if (!isNaN(pid)) {
+                    serverPID = pid;
+                    log('INFO', `Recovered server PID from file for stopping: ${serverPID}`);
+                }
+            } catch (error) {
+                log('ERROR', `Failed to read PID file for stopping: ${error.message}`);
+            }
+        }
+    }
+
     if (!serverPID) {
         log('INFO', `Server process PID not found. Server may already be stopped.`);
         return;
     }
+
+    const pidToKill = serverPID;
     try {
-        log('INFO', `Attempting to stop Minecraft server process with PID: ${serverPID}.`);
-        process.kill(serverPID, 'SIGTERM');
-        log('INFO', `SIGTERM signal sent to PID: ${serverPID}.`);
+        log('INFO', `Attempting to stop Minecraft server process with PID: ${pidToKill}.`);
+        process.kill(pidToKill, 'SIGTERM');
+        log('INFO', `SIGTERM signal sent to PID: ${pidToKill}.`);
+
+        // Wait for process to exit
+        let isRunning = true;
+        for (let i = 0; i < 50; i++) { // 5 seconds total
+            try {
+                process.kill(pidToKill, 0);
+                await new Promise(resolve => setTimeout(resolve, 100));
+            } catch (e) {
+                isRunning = false;
+                break;
+            }
+        }
+
+        if (isRunning) {
+            log('WARNING', `Server process ${pidToKill} did not exit after 5 seconds. Sending SIGKILL.`);
+            try {
+                process.kill(pidToKill, 'SIGKILL');
+            } catch (e) {
+                log('ERROR', `Failed to send SIGKILL to PID ${pidToKill}: ${e.message}`);
+            }
+        }
+
+        const pidFile = pathJoin(SERVER_DIRECTORY, 'server.pid');
+        if (fs.existsSync(pidFile)) {
+            fs.unlinkSync(pidFile);
+        }
+        log('INFO', `Server process ${pidToKill} stopped.`);
     } catch (error) {
-        log('ERROR', `Error stopping server with PID ${serverPID} (process might not exist): ${error.message}`);
+        log('ERROR', `Error stopping server with PID ${pidToKill} (process might not exist): ${error.message}`);
     } finally {
-        serverPID = null;
+        if (serverPID === pidToKill) {
+            serverPID = null;
+        }
     }
 }
 
@@ -427,6 +464,11 @@ export async function startServer() {
         if (serverProcess.pid) {
             serverPID = serverProcess.pid;
             log('INFO', `Server process started with PID: ${serverPID}.`);
+            try {
+                fs.writeFileSync(pathJoin(SERVER_DIRECTORY, 'server.pid'), serverPID.toString(), 'utf8');
+            } catch (error) {
+                log('ERROR', `Failed to write PID file: ${error.message}`);
+            }
         } else {
             log('ERROR', `Server process started but PID was not obtained.`);
         }
@@ -493,7 +535,7 @@ export async function checkAndInstall() {
 
         if (SERVER_DIRECTORY && fs.existsSync(SERVER_DIRECTORY)) { // Check if SERVER_DIRECTORY is defined
             log('INFO', `Removing existing server directory: ${SERVER_DIRECTORY}`);
-            await removeDir(SERVER_DIRECTORY);
+            fs.rmSync(SERVER_DIRECTORY, { recursive: true, force: true });
             log('INFO', `Removed existing server directory ${SERVER_DIRECTORY}`);
         }
         log('INFO', `Moving new server files from ${tempInstallPath} to ${SERVER_DIRECTORY}`);
@@ -525,36 +567,10 @@ export async function checkAndInstall() {
 /**
  * Removes a directory recursively. Cross-platform compatible.
  * @param {string} dirPath The path to the directory to remove.
- * @returns {Promise<void>} A promise that resolves when the directory is removed.
  */
 function removeDir(dirPath) {
-    return new Promise((resolve, reject) => {
-        if (!fs.existsSync(dirPath)) {
-            resolve(); // Resolve if the directory does not exist
-            return;
-        }
-
-        const platform = os.platform();
-        if (platform === 'win32') {
-            // Use Windows command to remove directory recursively and quietly
-            childProcessExec(`rmdir /s /q "${dirPath}"`, (error, stdout, stderr) => {
-                if (error) {
-                    reject(new Error(`Failed to remove directory ${dirPath}: ${error.message} ${stderr}`));
-                } else {
-                    resolve();
-                }
-            });
-        } else {
-            // Use Linux command to remove directory recursively and forcefully
-            childProcessExec(`rm -rf "${dirPath}"`, (error, stdout, stderr) => {
-                if (error) {
-                    reject(new Error(`Failed to remove directory ${dirPath}: ${error.message} ${stderr}`));
-                } else {
-                    resolve();
-                }
-            });
-        }
-    });
+    log('DEBUG', `Using fs.rmSync for removeDir: ${dirPath}`);
+    fs.rmSync(dirPath, { recursive: true, force: true });
 }
 
 
@@ -648,6 +664,22 @@ export async function restartServer() {
 }
 
 export async function isProcessRunning() {
+    if (!serverPID && SERVER_DIRECTORY) {
+        const pidFile = pathJoin(SERVER_DIRECTORY, 'server.pid');
+        if (fs.existsSync(pidFile)) {
+            try {
+                const pidString = fs.readFileSync(pidFile, 'utf8').trim();
+                const pid = parseInt(pidString, 10);
+                if (!isNaN(pid)) {
+                    serverPID = pid;
+                    log('INFO', `Recovered server PID from file: ${serverPID}`);
+                }
+            } catch (error) {
+                log('ERROR', `Failed to read PID file: ${error.message}`);
+            }
+        }
+    }
+
     if (!serverPID) {
         log('DEBUG', `No PID found for server. Assuming not running.`);
         return false;
@@ -659,6 +691,15 @@ export async function isProcessRunning() {
     } catch (error) {
         if (error.code === 'ESRCH') {
             log('INFO', `Process with PID ${serverPID} not found (ESRCH).`);
+            const pidFile = pathJoin(SERVER_DIRECTORY, 'server.pid');
+            if (fs.existsSync(pidFile)) {
+                try {
+                    fs.unlinkSync(pidFile);
+                    log('INFO', `Removed stale PID file: ${pidFile}`);
+                } catch (unlinkError) {
+                    log('ERROR', `Failed to remove stale PID file: ${unlinkError.message}`);
+                }
+            }
         } else {
             log('ERROR', `Error checking process PID ${serverPID}: ${error.message} (Code: ${error.code})`);
         }
@@ -745,6 +786,7 @@ export async function readGlobalConfig() {
             case '--tempDirectory': if(valueConsumed) effectiveConfig.tempDirectory = value; break;
             case '--backupDirectory': if(valueConsumed) effectiveConfig.backupDirectory = value; break;
             case '--worldName': if(valueConsumed) effectiveConfig.worldName = value; break;
+            case '--uiPort': if(valueConsumed) effectiveConfig.uiPort = parseInt(value, 10); break;
             case '--autoStart': effectiveConfig.autoStart = (valueConsumed ? (value === 'true') : true); break;
             case '--autoUpdateEnabled': effectiveConfig.autoUpdateEnabled = (valueConsumed ? (value === 'true') : true); break;
             case '--logLevel': if(valueConsumed) effectiveConfig.logLevel = value.toUpperCase(); break;
@@ -946,7 +988,7 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
                 }
                 if (fs.existsSync(finalPackPath)) {
                     log('INFO', `Removing existing directory for pack '${packName}': ${finalPackPath}`);
-                    await removeDir(finalPackPath);
+                    fs.rmSync(finalPackPath, { recursive: true, force: true });
                 }
                 fs.mkdirSync(finalPackPath, { recursive: true });
 
@@ -996,7 +1038,7 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
                 } else {
                     messages.push(`Failed to apply pack '${packName}' to world JSON.`);
                     overallSuccess = false;
-                    await removeDir(finalPackPath); // Clean up extracted pack
+                    fs.rmSync(finalPackPath, { recursive: true, force: true }); // Clean up extracted pack
                 }
             }
             if (packsProcessedCount === 0 && !overallSuccess) {
@@ -1075,7 +1117,7 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
 
             if (fs.existsSync(finalPackPath)) {
                 log('INFO', `Removing existing directory for pack '${packName}': ${finalPackPath}`);
-                await removeDir(finalPackPath);
+                fs.rmSync(finalPackPath, { recursive: true, force: true });
             }
             fs.mkdirSync(finalPackPath, { recursive: true });
 
@@ -1109,7 +1151,7 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
 
             const updateSuccess = await updateWorldPackJson(worldPath, worldPackJsonFile, packId, packVersion);
             if (!updateSuccess) {
-                await removeDir(finalPackPath);
+                fs.rmSync(finalPackPath, { recursive: true, force: true });
                 return { success: false, message: `Failed to update ${worldPackJsonFile} for .mcpack '${packName}'.` };
             }
             return { success: true, message: `Pack '${packName}' uploaded and applied to ${worldName}. Restart server if needed.` };
