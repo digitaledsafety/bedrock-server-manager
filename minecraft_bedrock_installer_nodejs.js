@@ -70,6 +70,21 @@ export function log(level, message) {
     }
 }
 
+/**
+ * Validates a world name to prevent path traversal and ensure it follows a safe pattern.
+ * @param {string} worldName - The name of the world to validate.
+ * @returns {boolean} True if the world name is valid, false otherwise.
+ */
+export function isValidWorldName(worldName) {
+    if (!worldName || typeof worldName !== 'string') return false;
+    const worldNameRegex = /^[a-zA-Z0-9_ -]+$/;
+    // Prevent path traversal and check against allowed characters
+    if (worldName.includes('.') || worldName.includes('/') || worldName.includes('\\') || !worldNameRegex.test(worldName)) {
+        return false;
+    }
+    return true;
+}
+
 export function getServerExeName() {
     const platform = os.platform();
     const serverType = config.serverType || 'bedrock';
@@ -632,6 +647,10 @@ export async function activateWorld(worldName) {
         log('ERROR', 'SERVER_DIRECTORY not set. Cannot activate world.');
         return false;
     }
+    if (!isValidWorldName(worldName)) {
+        log('ERROR', `Invalid worldName format: ${worldName}`);
+        return false;
+    }
     const worldsPath = pathJoin(SERVER_DIRECTORY, 'worlds');
     const targetWorldPath = pathJoin(worldsPath, worldName);
     if (!fs.existsSync(targetWorldPath)) {
@@ -912,6 +931,9 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
     if (!worldName) {
         return { success: false, message: 'World name is required.' };
     }
+    if (!isValidWorldName(worldName)) {
+        return { success: false, message: 'Invalid world name format.' };
+    }
 
     const worldPath = path.join(SERVER_DIRECTORY, 'worlds', worldName);
     if (!fs.existsSync(worldPath)) {
@@ -1022,6 +1044,15 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
 
                     if (isEntryInPack && relativePathInPack) {
                         const targetFilePath = path.join(finalPackPath, relativePathInPack);
+
+                        // Security: Check for Zip Slip vulnerability
+                        const resolvedTargetFilePath = path.resolve(targetFilePath);
+                        const resolvedFinalPackPath = path.resolve(finalPackPath);
+                        if (!resolvedTargetFilePath.startsWith(resolvedFinalPackPath)) {
+                            log('WARNING', `Zip Slip attempt detected in .mcaddon: ${zipEntry.entryName}`);
+                            return; // Skip this entry
+                        }
+
                         const targetFileDir = path.dirname(targetFilePath);
                         if (!fs.existsSync(targetFileDir)) {
                             fs.mkdirSync(targetFileDir, { recursive: true });
@@ -1140,6 +1171,15 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
 
                 if (isEntryInPack && relativePathInPack) {
                     const targetFilePath = path.join(finalPackPath, relativePathInPack);
+
+                    // Security: Check for Zip Slip vulnerability
+                    const resolvedTargetFilePath = path.resolve(targetFilePath);
+                    const resolvedFinalPackPath = path.resolve(finalPackPath);
+                    if (!resolvedTargetFilePath.startsWith(resolvedFinalPackPath)) {
+                        log('WARNING', `Zip Slip attempt detected in .mcpack: ${zipEntry.entryName}`);
+                        return; // Skip this entry
+                    }
+
                     const targetFileDir = path.dirname(targetFilePath);
                     if (!fs.existsSync(targetFileDir)) {
                         fs.mkdirSync(targetFileDir, { recursive: true });

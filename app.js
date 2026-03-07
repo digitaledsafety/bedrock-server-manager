@@ -60,8 +60,7 @@ const validateWorldName = (req, res, next) => {
     if (!worldName) {
         return res.status(400).json({ error: 'World name is required.' });
     }
-    const worldNameRegex = /^[a-zA-Z0-9_ -]+$/;
-    if (worldName.includes('.') || worldName.includes('/') || worldName.includes('\\') || !worldNameRegex.test(worldName)) {
+    if (!backend.isValidWorldName(worldName)) {
         backend.log('ERROR', `Invalid worldName format or characters: ${worldName}`);
         return res.status(400).json({ error: 'Invalid worldName format. Avoid ., /, \\ and ensure it matches allowed pattern.' });
     }
@@ -247,8 +246,7 @@ app.post('/api/upload-pack', upload.single('packFile'), async (req, res) => {
     }
 
     // Validate worldName
-    const worldNameRegex = /^[a-zA-Z0-9_ -]+$/; // Basic format check
-    if (worldName.includes('.') || worldName.includes('/') || worldName.includes('\\') || !worldNameRegex.test(worldName)) {
+    if (!backend.isValidWorldName(worldName)) {
         backend.log('ERROR', `Invalid worldName format or characters for pack upload: ${worldName}`);
         fs.unlink(packFile.path, (err) => {
             if (err) backend.log('WARNING', `Failed to delete orphaned upload ${packFile.path}: ${err.message}`);

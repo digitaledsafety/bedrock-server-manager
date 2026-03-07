@@ -269,20 +269,34 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function handleActivateWorldClick(event) {
+    async function handleActivateWorldClick(event) {
         const worldName = event.target.dataset.worldName;
-        if (levelNameInput) {
-            levelNameInput.value = worldName; // This updates the text input
-            showMessage(`'level-name' property updated to '${worldName}'. Remember to click "Save Properties".`, 'success');
-
-            // Update active state in UI
-            document.querySelectorAll('.world-item').forEach(item => {
-                item.classList.remove('active');
+        try {
+            showMessage(`Activating world '${worldName}'...`);
+            const response = await fetch('/api/activate-world', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ worldName })
             });
-            event.target.closest('.world-item').classList.add('active');
-        } else {
-            console.error('level-name input not found.');
-            showMessage('Could not find level-name input to update.', 'error');
+            const data = await response.json();
+            if (response.ok) {
+                showMessage(data.message || `World '${worldName}' activated.`, 'success');
+                // Update active state in UI
+                document.querySelectorAll('.world-item').forEach(item => {
+                    item.classList.remove('active');
+                });
+                event.target.closest('.world-item').classList.add('active');
+
+                // Fetch status because activation restarts the server
+                setTimeout(fetchServerStatus, 2000);
+            } else {
+                showMessage(data.error || `Failed to activate world '${worldName}'.`, 'error');
+            }
+        } catch (error) {
+            console.error('Error activating world:', error);
+            showMessage('Failed to activate world.', 'error');
         }
     }
 
