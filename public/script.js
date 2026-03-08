@@ -7,7 +7,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const updateButton = document.getElementById('updateButton');
     const propertiesForm = document.getElementById('propertiesForm');
     const levelNameInput = document.getElementById('level-name'); // Get the level-name input
-    const consoleOutput = document.getElementById('consoleOutput'); // Get the console textarea
 
     // Auto-Update specific elements
     const autoUpdateConfigForm = document.getElementById('autoUpdateConfigForm');

@@ -391,19 +391,33 @@ export async function copyExistingData(backupDir, newInstallDir) {
     log('INFO', 'Finished copying existing data.');
 }
 
-export async function stopServer() {
-    if (!serverPID && SERVER_DIRECTORY) {
+/**
+ * Attempts to recover the server PID from the server.pid file.
+ * @returns {number|null} The recovered PID or null if not found or invalid.
+ */
+function recoverPID() {
+    if (SERVER_DIRECTORY) {
         const pidFile = pathJoin(SERVER_DIRECTORY, 'server.pid');
         if (fs.existsSync(pidFile)) {
             try {
-                const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
+                const pidString = fs.readFileSync(pidFile, 'utf8').trim();
+                const pid = parseInt(pidString, 10);
                 if (!isNaN(pid)) {
-                    serverPID = pid;
-                    log('INFO', `Recovered server PID from file for stopping: ${serverPID}`);
+                    return pid;
                 }
             } catch (error) {
-                log('ERROR', `Failed to read PID file for stopping: ${error.message}`);
+                log('ERROR', `Failed to read PID file: ${error.message}`);
             }
+        }
+    }
+    return null;
+}
+
+export async function stopServer() {
+    if (!serverPID) {
+        serverPID = recoverPID();
+        if (serverPID) {
+            log('INFO', `Recovered server PID from file for stopping: ${serverPID}`);
         }
     }
 
@@ -474,7 +488,7 @@ export async function startServer() {
         const serverProcess = spawn(serverExePath, [], {
             cwd: SERVER_DIRECTORY,
             stdio: 'inherit',
-            detached: false
+            detached: true
         });
         if (serverProcess.pid) {
             serverPID = serverProcess.pid;
@@ -554,7 +568,17 @@ export async function checkAndInstall() {
             log('INFO', `Removed existing server directory ${SERVER_DIRECTORY}`);
         }
         log('INFO', `Moving new server files from ${tempInstallPath} to ${SERVER_DIRECTORY}`);
-        fs.renameSync(tempInstallPath, SERVER_DIRECTORY);
+        try {
+            fs.renameSync(tempInstallPath, SERVER_DIRECTORY);
+        } catch (renameError) {
+            if (renameError.code === 'EXDEV') {
+                log('INFO', 'Cross-device link detected, falling back to copy and delete.');
+                fs.cpSync(tempInstallPath, SERVER_DIRECTORY, { recursive: true });
+                fs.rmSync(tempInstallPath, { recursive: true, force: true });
+            } else {
+                throw renameError;
+            }
+        }
         log('INFO', 'Successfully moved new server files to SERVER_DIRECTORY.');
         if (backupDir) {
             await copyExistingData(backupDir, SERVER_DIRECTORY);
@@ -683,19 +707,10 @@ export async function restartServer() {
 }
 
 export async function isProcessRunning() {
-    if (!serverPID && SERVER_DIRECTORY) {
-        const pidFile = pathJoin(SERVER_DIRECTORY, 'server.pid');
-        if (fs.existsSync(pidFile)) {
-            try {
-                const pidString = fs.readFileSync(pidFile, 'utf8').trim();
-                const pid = parseInt(pidString, 10);
-                if (!isNaN(pid)) {
-                    serverPID = pid;
-                    log('INFO', `Recovered server PID from file: ${serverPID}`);
-                }
-            } catch (error) {
-                log('ERROR', `Failed to read PID file: ${error.message}`);
-            }
+    if (!serverPID) {
+        serverPID = recoverPID();
+        if (serverPID) {
+            log('INFO', `Recovered server PID from file: ${serverPID}`);
         }
     }
 
@@ -769,6 +784,7 @@ export async function readGlobalConfig() {
     const configPath = pathJoin(__dirnameESM, GLOBAL_CONFIG_FILE);
     let effectiveConfig = {
         serverName: "Default Minecraft Server", serverPortIPv4: 19132, serverPortIPv6: 19133,
+        uiPort: 3000,
         serverDirectory: "./server_data/default_server", tempDirectory: "./server_data/temp/default_server",
         backupDirectory: "./server_data/backup/default_server", worldName: "Bedrock level",
         autoStart: true, autoUpdateEnabled: false, autoUpdateIntervalMinutes: 60, logLevel: "INFO",
