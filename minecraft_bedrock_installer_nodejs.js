@@ -71,6 +71,29 @@ export function log(level, message) {
 }
 
 /**
+ * Attempts to recover the Minecraft server PID from the server.pid file.
+ * @returns {number|null} The recovered PID or null if not found or invalid.
+ */
+function recoverPID() {
+    if (SERVER_DIRECTORY) {
+        const pidFile = pathJoin(SERVER_DIRECTORY, 'server.pid');
+        if (fs.existsSync(pidFile)) {
+            try {
+                const pidString = fs.readFileSync(pidFile, 'utf8').trim();
+                const pid = parseInt(pidString, 10);
+                if (!isNaN(pid)) {
+                    log('INFO', `Recovered server PID from file: ${pid}`);
+                    return pid;
+                }
+            } catch (error) {
+                log('ERROR', `Failed to read PID file: ${error.message}`);
+            }
+        }
+    }
+    return null;
+}
+
+/**
  * Validates a world name to prevent path traversal and ensure it follows a safe pattern.
  * @param {string} worldName - The name of the world to validate.
  * @returns {boolean} True if the world name is valid, false otherwise.
@@ -165,8 +188,6 @@ export async function getLatestVersion() {
             log('ERROR', error.message);
             throw error;
         }
-
-        return { latestVersion: version, downloadUrl: downloadUrl };
     }
 
     // Default to bedrock
@@ -250,9 +271,9 @@ export function extractFiles(zipPath, extractPath) {
             try {
                 // Set permissions to 755 (owner can read/write/execute, others can read/execute)
                 fs.chmodSync(executableFilePath, 0o755);
-                console.log(`Permissions set to 755 for ${executableFilePath}`);
+                log('INFO', `Permissions set to 755 for ${executableFilePath}`);
             } catch (err) {
-                console.error(`Failed to set permissions for ${executableFilePath}:`, err);
+                log('ERROR', `Failed to set permissions for ${executableFilePath}: ${err.message}`);
             }
 
             resolve();
@@ -392,19 +413,8 @@ export async function copyExistingData(backupDir, newInstallDir) {
 }
 
 export async function stopServer() {
-    if (!serverPID && SERVER_DIRECTORY) {
-        const pidFile = pathJoin(SERVER_DIRECTORY, 'server.pid');
-        if (fs.existsSync(pidFile)) {
-            try {
-                const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
-                if (!isNaN(pid)) {
-                    serverPID = pid;
-                    log('INFO', `Recovered server PID from file for stopping: ${serverPID}`);
-                }
-            } catch (error) {
-                log('ERROR', `Failed to read PID file for stopping: ${error.message}`);
-            }
-        }
+    if (!serverPID) {
+        serverPID = recoverPID();
     }
 
     if (!serverPID) {
@@ -474,7 +484,7 @@ export async function startServer() {
         const serverProcess = spawn(serverExePath, [], {
             cwd: SERVER_DIRECTORY,
             stdio: 'inherit',
-            detached: false
+            detached: true
         });
         if (serverProcess.pid) {
             serverPID = serverProcess.pid;
@@ -554,7 +564,17 @@ export async function checkAndInstall() {
             log('INFO', `Removed existing server directory ${SERVER_DIRECTORY}`);
         }
         log('INFO', `Moving new server files from ${tempInstallPath} to ${SERVER_DIRECTORY}`);
-        fs.renameSync(tempInstallPath, SERVER_DIRECTORY);
+        try {
+            fs.renameSync(tempInstallPath, SERVER_DIRECTORY);
+        } catch (renameError) {
+            if (renameError.code === 'EXDEV') {
+                log('INFO', `Cross-partition move detected (EXDEV). Falling back to copy and delete strategy.`);
+                fs.cpSync(tempInstallPath, SERVER_DIRECTORY, { recursive: true });
+                fs.rmSync(tempInstallPath, { recursive: true, force: true });
+            } else {
+                throw renameError;
+            }
+        }
         log('INFO', 'Successfully moved new server files to SERVER_DIRECTORY.');
         if (backupDir) {
             await copyExistingData(backupDir, SERVER_DIRECTORY);
@@ -683,20 +703,8 @@ export async function restartServer() {
 }
 
 export async function isProcessRunning() {
-    if (!serverPID && SERVER_DIRECTORY) {
-        const pidFile = pathJoin(SERVER_DIRECTORY, 'server.pid');
-        if (fs.existsSync(pidFile)) {
-            try {
-                const pidString = fs.readFileSync(pidFile, 'utf8').trim();
-                const pid = parseInt(pidString, 10);
-                if (!isNaN(pid)) {
-                    serverPID = pid;
-                    log('INFO', `Recovered server PID from file: ${serverPID}`);
-                }
-            } catch (error) {
-                log('ERROR', `Failed to read PID file: ${error.message}`);
-            }
-        }
+    if (!serverPID) {
+        serverPID = recoverPID();
     }
 
     if (!serverPID) {
