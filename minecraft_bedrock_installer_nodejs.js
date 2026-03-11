@@ -219,21 +219,36 @@ export async function getLatestVersion() {
 }
 
 export function downloadFile(downloadUrl, downloadPath) {
-    return new Promise((resolve, reject) => {
-        const url = new URL(downloadUrl);
-        const protocol = url.protocol === 'https:' ? https : http;
-        const file = fs.createWriteStream(downloadPath);
-        protocol.get(url, (response) => {
-            if (response.statusCode < 200 || response.statusCode >= 300) {
-                reject(new Error(`Failed to download file: ${response.statusCode} ${response.statusMessage}`));
-                return;
-            }
-            response.pipe(file);
-            file.on('finish', () => { file.close(resolve); });
-            file.on('error', (err) => { fs.unlink(downloadPath, () => reject(new Error(`Error writing to file: ${err.message}`))); });
-            response.on('error', (err) => { fs.unlink(downloadPath, () => reject(new Error(`Error during download: ${err.message}`))); });
-        });
-    });
+    return new Promise((resolve, reject) => {
+        const url = new URL(downloadUrl);
+        const protocol = url.protocol === 'https:' ? https : http;
+        const file = fs.createWriteStream(downloadPath);
+
+        const request = protocol.get(url, (response) => {
+            if (response.statusCode < 200 || response.statusCode >= 300) {
+                file.destroy();
+                fs.unlink(downloadPath, () => reject(new Error(`Failed to download file: ${response.statusCode} ${response.statusMessage}`)));
+                return;
+            }
+            response.pipe(file);
+            file.on('finish', () => {
+                file.close(resolve);
+            });
+            file.on('error', (err) => {
+                file.destroy();
+                fs.unlink(downloadPath, () => reject(new Error(`Error writing to file: ${err.message}`)));
+            });
+            response.on('error', (err) => {
+                file.destroy();
+                fs.unlink(downloadPath, () => reject(new Error(`Error during response processing: ${err.message}`)));
+            });
+        });
+
+        request.on('error', (err) => {
+            file.destroy();
+            fs.unlink(downloadPath, () => reject(new Error(`Error during download request: ${err.message}`)));
+        });
+    });
 }
 
 export function extractFiles(zipPath, extractPath) {
@@ -1047,7 +1062,7 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
 
                         // Security: Check for Zip Slip vulnerability
                         const resolvedTargetFilePath = path.resolve(targetFilePath);
-                        const resolvedFinalPackPath = path.resolve(finalPackPath);
+                        const resolvedFinalPackPath = path.resolve(finalPackPath) + path.sep;
                         if (!resolvedTargetFilePath.startsWith(resolvedFinalPackPath)) {
                             log('WARNING', `Zip Slip attempt detected in .mcaddon: ${zipEntry.entryName}`);
                             return; // Skip this entry
@@ -1174,7 +1189,7 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
 
                     // Security: Check for Zip Slip vulnerability
                     const resolvedTargetFilePath = path.resolve(targetFilePath);
-                    const resolvedFinalPackPath = path.resolve(finalPackPath);
+                    const resolvedFinalPackPath = path.resolve(finalPackPath) + path.sep;
                     if (!resolvedTargetFilePath.startsWith(resolvedFinalPackPath)) {
                         log('WARNING', `Zip Slip attempt detected in .mcpack: ${zipEntry.entryName}`);
                         return; // Skip this entry

@@ -33,6 +33,11 @@
             <div id="messageBox" class="message-box" role="alert" style="display: none;"></div>
             <h2>Server Status</h2>
             <p>Current Status: <span id="serverStatus" class="status-indicator status-<%= serverStatus %>"><%= serverStatus.toUpperCase() %></span></p>
+            <div id="logSection" style="margin-top: 10px;">
+                <label for="consoleOutput">Manager Logs (last 16KB):</label>
+                <textarea id="consoleOutput" readonly style="width: 100%; height: 200px; background-color: #1E1E1E; color: #55FF55; font-family: monospace; padding: 10px; border: 2px solid #1E1E1E; box-sizing: border-box; resize: vertical; margin-top: 5px;"></textarea>
+                <button id="refreshLogsButton" style="margin-top: 5px; font-size: 0.8rem; padding: 5px 10px;">Refresh Logs</button>
+            </div>
             <% if (config.serverType === 'java') { %>
                 <p>Java server support is coming soon!</p>
                 <div class="button-group">

@@ -198,15 +198,33 @@ app.get('/api/config', async (req, res) => {
 app.post('/api/config', async (req, res) => {
     try {
         const newSettings = req.body;
+
+        // Basic validation
+        if (newSettings.autoUpdateIntervalMinutes !== undefined) {
+            const interval = parseInt(newSettings.autoUpdateIntervalMinutes, 10);
+            if (isNaN(interval) || interval < 1) {
+                return res.status(400).json({ error: 'Update interval must be a positive integer.' });
+            }
+        }
+
         let currentFullConfig = await backend.readGlobalConfig();
         if (newSettings.autoUpdateEnabled !== undefined) {
-            currentFullConfig.autoUpdateEnabled = newSettings.autoUpdateEnabled;
+            currentFullConfig.autoUpdateEnabled = !!newSettings.autoUpdateEnabled;
         }
         if (newSettings.autoUpdateIntervalMinutes !== undefined) {
             currentFullConfig.autoUpdateIntervalMinutes = parseInt(newSettings.autoUpdateIntervalMinutes, 10);
         }
         if (newSettings.logLevel !== undefined) {
-            currentFullConfig.logLevel = newSettings.logLevel.toUpperCase();
+            if (typeof newSettings.logLevel !== 'string') {
+                return res.status(400).json({ error: 'Log level must be a string.' });
+            }
+            const validLogLevels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'FATAL'];
+            const level = newSettings.logLevel.toUpperCase();
+            if (validLogLevels.includes(level)) {
+                currentFullConfig.logLevel = level;
+            } else {
+                return res.status(400).json({ error: `Invalid log level: ${newSettings.logLevel}` });
+            }
         }
         await backend.writeGlobalConfig(currentFullConfig);
         await backend.startAutoUpdateScheduler();
@@ -301,6 +319,29 @@ app.post('/api/upload-pack', upload.single('packFile'), async (req, res) => {
         return res.status(400).json({ success: false, message: error.message }); // error.message from fileFilter
     }
     next();
+});
+
+app.get('/api/logs', async (req, res) => {
+    const logPath = pathJoin(__dirnameESM, 'mc_installer.log');
+    try {
+        if (!fs.existsSync(logPath)) {
+            return res.json({ logs: '' });
+        }
+        const stats = await fs.promises.stat(logPath);
+        const size = stats.size;
+        const bufferSize = Math.min(size, 16 * 1024); // 16KB
+        const buffer = Buffer.alloc(bufferSize);
+        const fileHandle = await fs.promises.open(logPath, 'r');
+        try {
+            await fileHandle.read(buffer, 0, bufferSize, size - bufferSize);
+            res.json({ logs: buffer.toString('utf8') });
+        } finally {
+            await fileHandle.close();
+        }
+    } catch (error) {
+        backend.log('ERROR', `Error reading logs: ${error.message}`);
+        res.status(500).json({ error: 'Failed to read logs' });
+    }
 });
 
 
