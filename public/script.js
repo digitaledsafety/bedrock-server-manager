@@ -356,6 +356,25 @@ document.addEventListener('DOMContentLoaded', () => {
     stopButton.addEventListener('click', () => sendCommand('stop'));
     restartButton.addEventListener('click', () => sendCommand('restart'));
     updateButton.addEventListener('click', () => sendCommand('update'));
+
+    const refreshLogsButton = document.getElementById('refreshLogsButton');
+    if (refreshLogsButton) {
+        refreshLogsButton.addEventListener('click', fetchLogs);
+    }
+
+    async function fetchLogs() {
+        try {
+            const response = await fetch('/api/logs');
+            const data = await response.json();
+            if (consoleOutput) {
+                consoleOutput.value = data.logs || '';
+                consoleOutput.scrollTop = consoleOutput.scrollHeight;
+            }
+        } catch (error) {
+            console.error('Error fetching logs:', error);
+        }
+    }
+
     if (propertiesForm) propertiesForm.addEventListener('submit', saveServerProperties);
     if (autoUpdateConfigForm) autoUpdateConfigForm.addEventListener('submit', saveAutoUpdateConfig);
     if (uploadPackForm) {
@@ -366,6 +385,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initial load
     fetchServerStatus(); // This will now also set initial button states
+    fetchLogs();
     //loadServerProperties();
     //loadWorlds();
     loadAutoUpdateConfig(); // New: Load auto-update config on page load
