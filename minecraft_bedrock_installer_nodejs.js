@@ -39,14 +39,13 @@ function setLogLevel(levelName) {
     const levelNameToUse = (levelName || "INFO").toUpperCase();
     const newLevel = LOG_LEVELS[levelNameToUse];
     if (newLevel !== undefined) {
-        const oldLogLevel = currentLogLevel;
-        currentLogLevel = newLevel;
-        // Log this message only if the new level allows INFO messages AND the old level also allowed it,
-        // or if we are increasing verbosity to INFO from something more restrictive.
-        if (LOG_LEVELS.INFO >= currentLogLevel && (LOG_LEVELS.INFO >= oldLogLevel || currentLogLevel <= oldLogLevel) ) {
-            const initialLogMessage = `${new Date().toISOString()} [INFO] Log level set to ${levelNameToUse}\n`;
-            console.log(initialLogMessage);
-            logStream.write(initialLogMessage);
+        if (newLevel !== currentLogLevel) {
+            const oldLogLevel = currentLogLevel;
+            currentLogLevel = newLevel;
+            const oldLevelName = Object.keys(LOG_LEVELS).find(key => LOG_LEVELS[key] === oldLogLevel);
+            const logMessage = `${new Date().toISOString()} [INFO] Log level changed from ${oldLevelName} to ${levelNameToUse}\n`;
+            console.log(logMessage);
+            logStream.write(logMessage);
         }
     } else {
         const warningMessage = `${new Date().toISOString()} [WARNING] Invalid log level: ${levelName}. Defaulting to INFO.\n`;

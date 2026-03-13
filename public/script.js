@@ -301,6 +301,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Auto-Update Configuration Functions ---
+    async function fetchLogs() {
+        try {
+            const response = await fetch('/api/logs');
+            const data = await response.json();
+            if (data.logs !== undefined) {
+                const isAtBottom = consoleOutput.scrollHeight - consoleOutput.clientHeight <= consoleOutput.scrollTop + 1;
+                consoleOutput.value = data.logs;
+                if (isAtBottom) {
+                    consoleOutput.scrollTop = consoleOutput.scrollHeight;
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching logs:', error);
+        }
+    }
+
     async function loadAutoUpdateConfig() {
         try {
             const response = await fetch('/api/config');
@@ -373,5 +389,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Refresh status and worlds periodically
     setInterval(fetchServerStatus, 10000); // Every 10 seconds
     setInterval(loadWorlds, 30000); // Every 30 seconds
+    setInterval(fetchLogs, 5000); // Every 5 seconds
+
+    fetchLogs(); // Initial fetch
 
 });
