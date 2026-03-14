@@ -250,9 +250,9 @@ export function extractFiles(zipPath, extractPath) {
             try {
                 // Set permissions to 755 (owner can read/write/execute, others can read/execute)
                 fs.chmodSync(executableFilePath, 0o755);
-                console.log(`Permissions set to 755 for ${executableFilePath}`);
+                log('INFO', `Permissions set to 755 for ${executableFilePath}`);
             } catch (err) {
-                console.error(`Failed to set permissions for ${executableFilePath}:`, err);
+                log('ERROR', `Failed to set permissions for ${executableFilePath}: ${err.message}`);
             }
 
             resolve();
@@ -391,19 +391,32 @@ export async function copyExistingData(backupDir, newInstallDir) {
     log('INFO', 'Finished copying existing data.');
 }
 
-export async function stopServer() {
-    if (!serverPID && SERVER_DIRECTORY) {
-        const pidFile = pathJoin(SERVER_DIRECTORY, 'server.pid');
-        if (fs.existsSync(pidFile)) {
-            try {
-                const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
-                if (!isNaN(pid)) {
-                    serverPID = pid;
-                    log('INFO', `Recovered server PID from file for stopping: ${serverPID}`);
-                }
-            } catch (error) {
-                log('ERROR', `Failed to read PID file for stopping: ${error.message}`);
+/**
+ * Attempts to recover the server PID from the server.pid file.
+ * @returns {number|null} The recovered PID or null if not found or invalid.
+ */
+function recoverPID() {
+    if (!SERVER_DIRECTORY) return null;
+    const pidFile = pathJoin(SERVER_DIRECTORY, 'server.pid');
+    if (fs.existsSync(pidFile)) {
+        try {
+            const pidString = fs.readFileSync(pidFile, 'utf8').trim();
+            const pid = parseInt(pidString, 10);
+            if (!isNaN(pid)) {
+                return pid;
             }
+        } catch (error) {
+            log('ERROR', `Failed to read PID file: ${error.message}`);
+        }
+    }
+    return null;
+}
+
+export async function stopServer() {
+    if (!serverPID) {
+        serverPID = recoverPID();
+        if (serverPID) {
+            log('INFO', `Recovered server PID from file for stopping: ${serverPID}`);
         }
     }
 
@@ -471,11 +484,11 @@ export async function startServer() {
             return;
         }
         log('INFO', `Starting Minecraft server from ${serverExePath}`);
-        const serverProcess = spawn(serverExePath, [], {
-            cwd: SERVER_DIRECTORY,
-            stdio: 'inherit',
-            detached: false
-        });
+        const serverProcess = spawn(serverExePath, [], {
+            cwd: SERVER_DIRECTORY,
+            stdio: 'inherit',
+            detached: true
+        });
         if (serverProcess.pid) {
             serverPID = serverProcess.pid;
             log('INFO', `Server process started with PID: ${serverPID}.`);
@@ -554,7 +567,17 @@ export async function checkAndInstall() {
             log('INFO', `Removed existing server directory ${SERVER_DIRECTORY}`);
         }
         log('INFO', `Moving new server files from ${tempInstallPath} to ${SERVER_DIRECTORY}`);
-        fs.renameSync(tempInstallPath, SERVER_DIRECTORY);
+        try {
+            fs.renameSync(tempInstallPath, SERVER_DIRECTORY);
+        } catch (renameError) {
+            if (renameError.code === 'EXDEV') {
+                log('INFO', 'Cross-partition move detected. Falling back to copy-and-delete.');
+                fs.cpSync(tempInstallPath, SERVER_DIRECTORY, { recursive: true });
+                fs.rmSync(tempInstallPath, { recursive: true, force: true });
+            } else {
+                throw renameError;
+            }
+        }
         log('INFO', 'Successfully moved new server files to SERVER_DIRECTORY.');
         if (backupDir) {
             await copyExistingData(backupDir, SERVER_DIRECTORY);
@@ -590,21 +613,25 @@ function removeDir(dirPath) {
 
 
 export async function readServerProperties() {
-    const configPath = pathJoin(SERVER_DIRECTORY, 'server.properties');
-    if (!SERVER_DIRECTORY || !fs.existsSync(configPath)) { // Check SERVER_DIRECTORY is defined
-        log('WARNING', `server.properties not found at ${configPath} (or server directory not set). Returning empty config.`);
-        return {};
-    }
-    const data = await fs.promises.readFile(configPath, 'utf8');
-    const properties = {};
-    data.split('\n').forEach(line => {
-        const trimmedLine = line.trim();
-        if (trimmedLine && !trimmedLine.startsWith('#')) {
-            const [key, value] = trimmedLine.split('=').map(s => s.trim());
-            if (key) { properties[key] = value || ''; }
-        }
-    });
-    log('INFO', `Read server.properties from ${configPath}`);
+    const configPath = pathJoin(SERVER_DIRECTORY, 'server.properties');
+    if (!SERVER_DIRECTORY || !fs.existsSync(configPath)) { // Check SERVER_DIRECTORY is defined
+        log('WARNING', `server.properties not found at ${configPath} (or server directory not set). Returning empty config.`);
+        return {};
+    }
+    const data = await fs.promises.readFile(configPath, 'utf8');
+    const properties = {};
+    data.split(/\r?\n/).forEach(line => {
+        const trimmedLine = line.trim();
+        if (trimmedLine && !trimmedLine.startsWith('#')) {
+            const separatorIndex = trimmedLine.indexOf('=');
+            if (separatorIndex !== -1) {
+                const key = trimmedLine.substring(0, separatorIndex).trim();
+                const value = trimmedLine.substring(separatorIndex + 1).trim();
+                if (key) { properties[key] = value; }
+            }
+        }
+    });
+    log('INFO', `Read server.properties from ${configPath}`);
     return properties;
 }
 
@@ -683,19 +710,10 @@ export async function restartServer() {
 }
 
 export async function isProcessRunning() {
-    if (!serverPID && SERVER_DIRECTORY) {
-        const pidFile = pathJoin(SERVER_DIRECTORY, 'server.pid');
-        if (fs.existsSync(pidFile)) {
-            try {
-                const pidString = fs.readFileSync(pidFile, 'utf8').trim();
-                const pid = parseInt(pidString, 10);
-                if (!isNaN(pid)) {
-                    serverPID = pid;
-                    log('INFO', `Recovered server PID from file: ${serverPID}`);
-                }
-            } catch (error) {
-                log('ERROR', `Failed to read PID file: ${error.message}`);
-            }
+    if (!serverPID) {
+        serverPID = recoverPID();
+        if (serverPID) {
+            log('INFO', `Recovered server PID from file: ${serverPID}`);
         }
     }
 
