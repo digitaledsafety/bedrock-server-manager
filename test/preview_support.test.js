@@ -115,4 +115,39 @@ describe('Preview Server Support', () => {
       downloadUrl: 'https://example.com/bedrock-server-1.21.0.2.zip',
     });
   });
+
+  it('should correctly select the preview download URL when serverType is bedrock_server_preview', async () => {
+    os.platform.mockReturnValue('linux');
+    backend.init({ serverType: 'bedrock_server_preview', logLevel: 'DEBUG' });
+
+    const mockApiResponse = {
+      result: {
+        links: [
+          { downloadType: 'serverBedrockLinux', downloadUrl: 'https://example.com/bedrock-server-1.20.0.1.zip' },
+          { downloadType: 'serverBedrockPreviewLinux', downloadUrl: 'https://example.com/bedrock-server-1.21.0.3.zip' },
+        ],
+      },
+    };
+
+    const mockResponse = new EventEmitter();
+    mockResponse.statusCode = 200;
+
+    https.get.mockImplementation((url, options, callback) => {
+        if (typeof options === 'function') {
+            callback = options;
+        }
+
+        callback(mockResponse);
+        mockResponse.emit('data', JSON.stringify(mockApiResponse));
+        mockResponse.emit('end');
+        return new EventEmitter();
+    });
+
+    const result = await backend.getLatestVersion();
+
+    expect(result).toEqual({
+      latestVersion: '1.21.0.3',
+      downloadUrl: 'https://example.com/bedrock-server-1.21.0.3.zip',
+    });
+  });
 });

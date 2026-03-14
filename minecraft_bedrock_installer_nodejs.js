@@ -183,7 +183,7 @@ export async function getLatestVersion() {
                 try {
                     const jsonResponse = JSON.parse(data);
                     let targetDownloadType;
-                    if (serverType === 'bedrock_preview') {
+                    if (serverType === 'bedrock_preview' || serverType === 'bedrock_server_preview') {
                         targetDownloadType = platform === 'win32' ? 'serverBedrockPreviewWindows' : 'serverBedrockPreviewLinux';
                     } else {
                         targetDownloadType = platform === 'win32' ? 'serverBedrockWindows' : 'serverBedrockLinux';
@@ -809,6 +809,7 @@ export async function readGlobalConfig() {
             case '--autoStart': effectiveConfig.autoStart = (valueConsumed ? (value === 'true') : true); break;
             case '--autoUpdateEnabled': effectiveConfig.autoUpdateEnabled = (valueConsumed ? (value === 'true') : true); break;
             case '--logLevel': if(valueConsumed) effectiveConfig.logLevel = value.toUpperCase(); break;
+            case '--serverType': if(valueConsumed) effectiveConfig.serverType = value; break;
             default: valueConsumed = false;
         }
         if (valueConsumed) { log('DEBUG', `CLI Override: ${arg} = ${args[i+1]}`); i++; }
