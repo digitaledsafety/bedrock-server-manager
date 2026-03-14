@@ -16,22 +16,23 @@ This application provides a web-based interface to manage a single Minecraft Bed
 ## What's Inside?
 
 1.  [Prerequisites](#1-prerequisites)
-2.  [Node.js Installation](#2-nodejs-installation)
+2.  [HTTP API Documentation](API.md)
+3.  [Node.js Installation](#2-nodejs-installation)
     *   [Windows](#nodejs-for-windows)
     *   [Linux](#nodejs-for-linux)
-3.  [Application Setup](#3-application-setup)
+4.  [Application Setup](#3-application-setup)
     *   [Configuration (`config.json`)](#configuration-configjson)
     *   [Command-Line Overrides](#command-line-overrides)
-4.  [Starting the Application](#4-starting-the-application)
-5.  [Testing](#5-testing)
-6.  [Basic Usage](#6-basic-usage)
+5.  [Starting the Application](#4-starting-the-application)
+6.  [Testing](#5-testing)
+7.  [Basic Usage](#6-basic-usage)
     *   [Server Information](#server-information)
     *   [Server Controls](#server-controls)
     *   [Auto-Update Settings](#auto-update-settings)
     *   [World Management](#world-management)
     *   [Server Properties](#server-properties)
     *   [Pack Management](#pack-management)
-7.  [Running Multiple Server Managers](#7-running-multiple-server-managers)
+8.  [Running Multiple Server Managers](#7-running-multiple-server-managers)
 
 ---
 
@@ -42,6 +43,12 @@ This application provides a web-based interface to manage a single Minecraft Bed
 *   **System Utilities:**
     *   **Linux:** `unzip` is required for extracting server files. Install via `sudo apt-get install unzip` (Debian/Ubuntu) or `sudo yum install unzip` (CentOS/RHEL).
     *   **Windows:** PowerShell (typically version 5.1+) is required for server extraction. This is usually available by default on modern Windows systems.
+
+---
+
+## HTTP API Documentation
+
+Detailed information about the HTTP API endpoints can be found in [API.md](API.md).
 
 ---
 
