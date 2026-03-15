@@ -39,15 +39,8 @@ function setLogLevel(levelName) {
     const levelNameToUse = (levelName || "INFO").toUpperCase();
     const newLevel = LOG_LEVELS[levelNameToUse];
     if (newLevel !== undefined) {
-        const oldLogLevel = currentLogLevel;
         currentLogLevel = newLevel;
-        // Log this message only if the new level allows INFO messages AND the old level also allowed it,
-        // or if we are increasing verbosity to INFO from something more restrictive.
-        if (LOG_LEVELS.INFO >= currentLogLevel && (LOG_LEVELS.INFO >= oldLogLevel || currentLogLevel <= oldLogLevel) ) {
-            const initialLogMessage = `${new Date().toISOString()} [INFO] Log level set to ${levelNameToUse}\n`;
-            console.log(initialLogMessage);
-            logStream.write(initialLogMessage);
-        }
+        log('INFO', `Log level set to ${levelNameToUse}`);
     } else {
         const warningMessage = `${new Date().toISOString()} [WARNING] Invalid log level: ${levelName}. Defaulting to INFO.\n`;
         console.warn(warningMessage);
@@ -250,9 +243,9 @@ export function extractFiles(zipPath, extractPath) {
             try {
                 // Set permissions to 755 (owner can read/write/execute, others can read/execute)
                 fs.chmodSync(executableFilePath, 0o755);
-                console.log(`Permissions set to 755 for ${executableFilePath}`);
+                log('INFO', `Permissions set to 755 for ${executableFilePath}`);
             } catch (err) {
-                console.error(`Failed to set permissions for ${executableFilePath}:`, err);
+                log('ERROR', `Failed to set permissions for ${executableFilePath}: ${err.message}`);
             }
 
             resolve();
@@ -554,7 +547,13 @@ export async function checkAndInstall() {
             log('INFO', `Removed existing server directory ${SERVER_DIRECTORY}`);
         }
         log('INFO', `Moving new server files from ${tempInstallPath} to ${SERVER_DIRECTORY}`);
-        fs.renameSync(tempInstallPath, SERVER_DIRECTORY);
+        try {
+            fs.renameSync(tempInstallPath, SERVER_DIRECTORY);
+        } catch (renameError) {
+            log('WARNING', `fs.renameSync failed (${renameError.message}). Falling back to copy-and-remove.`);
+            fs.cpSync(tempInstallPath, SERVER_DIRECTORY, { recursive: true });
+            fs.rmSync(tempInstallPath, { recursive: true, force: true });
+        }
         log('INFO', 'Successfully moved new server files to SERVER_DIRECTORY.');
         if (backupDir) {
             await copyExistingData(backupDir, SERVER_DIRECTORY);
