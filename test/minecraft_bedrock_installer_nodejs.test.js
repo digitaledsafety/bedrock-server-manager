@@ -76,6 +76,21 @@ gamemode=survival
 
         expect(properties).toEqual({});
     });
+
+    it('should handle property values with equals signs and different line endings', async () => {
+        const mockProperties = "server-name=My=Server\r\nlevel-seed=12345\nother-prop=value=with=equals";
+        fs.existsSync.mockReturnValue(true);
+        fs.promises.readFile.mockResolvedValue(mockProperties);
+        backend.init({ serverDirectory: '/test/server' });
+
+        const properties = await backend.readServerProperties();
+
+        expect(properties).toEqual({
+            'server-name': 'My=Server',
+            'level-seed': '12345',
+            'other-prop': 'value=with=equals'
+        });
+    });
   });
 
   describe('readGlobalConfig', () => {
