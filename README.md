@@ -28,7 +28,7 @@ Full documentation is available at [https://bedrock-server-manager.digitaleducat
 4.  **Access the UI:**
     Open your browser to `http://localhost:3000`.
 
-For detailed configuration, API information, and usage guides, please refer to the [official documentation](https://digitaledsafety.github.io/bedrock-server-manager/).
+For detailed configuration, API information, and usage guides, please refer to the [official documentation](https://bedrock-server-manager.digitaleducationsafety.org/).
 
 ---
 **Disclaimer:** This is a fan-made tool! It's not officially linked to or endorsed by Mojang, Minecraft, or Microsoft.
