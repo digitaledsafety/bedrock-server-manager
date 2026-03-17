@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home - Bedrock Server Manager</title>
+    <link href="style.css" rel="stylesheet">
+    <style>
+        .container {
+            max-width: 1000px;
+            margin: 20px auto;
+        }
+        .content {
+            background-color: #373737;
+            padding: 30px;
+            border: 2px solid #1E1E1E;
+            line-height: 1.6;
+        }
+        .content h1, .content h2, .content h3 {
+            text-align: left;
+            margin-top: 1.5em;
+        }
+        .content h1 { margin-top: 0; }
+        .content code {
+            background-color: #1E1E1E;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        .content pre {
+            background-color: #1E1E1E;
+            padding: 15px;
+            border: 2px solid #1E1E1E;
+            overflow-x: auto;
+        }
+        .content pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+        .content a {
+            color: #55FF55;
+            text-decoration: none;
+        }
+        .content a:hover {
+            text-decoration: underline;
+        }
+        .nav {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .nav a {
+            margin: 0 15px;
+            color: #FFFFFF;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .nav a:hover {
+            color: #55FF55;
+        }
+        .content img {
+            max-width: 100%;
+            height: auto;
+            border: 2px solid #1E1E1E;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>
+            <img src="favicon.ico" alt="Minecraft Grass Block" style="vertical-align: middle; margin-right: 10px; image-rendering: pixelated; width: 32px;">
+            Bedrock Server Manager
+        </h1>
+
+        <div class="nav">
+            <a href="index.html">User Guide</a>
+            <a href="API.html">API Documentation</a>
+            <a href="https://github.com/digitaledsafety/bedrock-server-manager">GitHub Repository</a>
+        </div>
+
+        <div class="content">
+            <h1>Bedrock Server Manager</h1>
+<p><a href="https://github.com/digitaledsafety/bedrock-server-manager/actions/workflows/main.yml"><img src="https://github.com/digitaledsafety/bedrock-server-manager/actions/workflows/main.yml/badge.svg" alt="CI"></a>
+<a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+<img src="https://img.shields.io/badge/status-beta-orange.svg" alt="Status: Beta"></p>
+<p>This application provides a web-based interface to manage a single Minecraft Bedrock Dedicated Server. You can start, stop, and restart your server, manage updates, tweak server properties (<code>server.properties</code>), manage worlds, and configure automatic updates. The interface is designed to be mobile-friendly.</p>
+<p><img src="./mbsm-screen.PNG" alt="A clear view of the Minecraft Bedrock Server Manager web interface">
+<em>(Note: The screenshot shows the general UI. Some minor details might differ slightly with the current version.)</em></p>
+<p><strong>Just so you know: This is a fan-made tool! It’s not officially linked to or endorsed by Mojang, Minecraft, or Microsoft.</strong></p>
+<hr>
+<h2>What’s Inside?</h2>
+<ol>
+<li><a href="#1-prerequisites">Prerequisites</a></li>
+<li><a href="API.html">HTTP API Documentation</a></li>
+<li><a href="#2-nodejs-installation">Node.js Installation</a>
+<ul>
+<li><a href="#nodejs-for-windows">Windows</a></li>
+<li><a href="#nodejs-for-linux">Linux</a></li>
+</ul>
+</li>
+<li><a href="#3-application-setup">Application Setup</a>
+<ul>
+<li><a href="#configuration-configjson">Configuration (<code>config.json</code>)</a></li>
+<li><a href="#command-line-overrides">Command-Line Overrides</a></li>
+</ul>
+</li>
+<li><a href="#4-starting-the-application">Starting the Application</a></li>
+<li><a href="#5-testing">Testing</a></li>
+<li><a href="#6-basic-usage">Basic Usage</a>
+<ul>
+<li><a href="#server-information">Server Information</a></li>
+<li><a href="#server-controls">Server Controls</a></li>
+<li><a href="#auto-update-settings">Auto-Update Settings</a></li>
+<li><a href="#world-management">World Management</a></li>
+<li><a href="#server-properties">Server Properties</a></li>
+<li><a href="#pack-management">Pack Management</a></li>
+</ul>
+</li>
+<li><a href="#7-running-multiple-server-managers">Running Multiple Server Managers</a></li>
+</ol>
+<hr>
+<h2>1. Prerequisites</h2>
+<ul>
+<li><strong>Node.js and npm:</strong> The application runs on Node.js. <code>npm</code> (Node Package Manager) is included with Node.js.</li>
+<li><strong>Minecraft Bedrock Dedicated Server Software:</strong> You should have the server software from Mojang. The manager can download it for you if it’s not present in the configured server directory during the first update check.</li>
+<li><strong>System Utilities:</strong>
+<ul>
+<li><strong>Linux:</strong> <code>unzip</code> is required for extracting server files. Install via <code>sudo apt-get install unzip</code> (Debian/Ubuntu) or <code>sudo yum install unzip</code> (CentOS/RHEL).</li>
+<li><strong>Windows:</strong> PowerShell (typically version 5.1+) is required for server extraction. This is usually available by default on modern Windows systems.</li>
+</ul>
+</li>
+</ul>
+<hr>
+<h2>HTTP API Documentation</h2>
+<p>Detailed information about the HTTP API endpoints can be found in <a href="API.html">API.html</a>.</p>
+<hr>
+<h2>2. Node.js Installation</h2>
+<h3>Node.js for Windows</h3>
+<ol>
+<li><strong>Download:</strong> Go to <a href="https://nodejs.org/">https://nodejs.org/</a> and download the Windows Installer (.msi) for the latest LTS version.</li>
+<li><strong>Install:</strong> Run the installer, accepting default options.</li>
+<li><strong>Verify:</strong> Open Command Prompt or PowerShell and type <code>node -v</code> and <code>npm -v</code>. You should see their versions.</li>
+</ol>
+<h3>Node.js for Linux</h3>
+<p>Using Node Version Manager (<code>nvm</code>) is recommended:</p>
+<ol>
+<li><strong>Install <code>nvm</code>:</strong><pre><code class="language-bash">curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+</code></pre>
+<em>(Check the <code>nvm</code> GitHub page for the latest version number).</em> Close and reopen your terminal, or run <code>source ~/.bashrc</code> (or <code>~/.zshrc</code>).</li>
+<li><strong>Install Node.js LTS:</strong><pre><code class="language-bash">nvm install --lts
+nvm use --lts
+</code></pre>
+</li>
+<li><strong>Verify:</strong> Type <code>node -v</code> and <code>npm -v</code>.</li>
+</ol>
+<hr>
+<h2>3. Application Setup</h2>
+<ol>
+<li>
+<p><strong>Get the Application Files:</strong>
+Clone this repository or download and extract the ZIP file.</p>
+<pre><code class="language-bash">git clone &lt;repository-url&gt;
+cd minecraft-bedrock-server-manager
+</code></pre>
+</li>
+<li>
+<p><strong>Install Dependencies:</strong>
+Navigate to the application directory in your terminal and run:</p>
+<pre><code class="language-bash">npm install
+</code></pre>
+</li>
+<li>
+<p><strong>Configuration (<code>config.json</code>):</strong>
+The primary way to configure the server manager is through the <code>config.json</code> file located in the application’s root directory. If this file is missing, a default one will be created when you first run the application.</p>
+<p>Here’s an overview of the <code>config.json</code> structure and fields:</p>
+<pre><code class="language-json">{
+  &quot;serverName&quot;: &quot;Default Minecraft Server&quot;,
+  &quot;serverPortIPv4&quot;: 19132,
+  &quot;serverPortIPv6&quot;: 19133,
+  &quot;serverDirectory&quot;: &quot;./server_data/default_server&quot;,
+  &quot;tempDirectory&quot;: &quot;./server_data/temp/default_server&quot;,
+  &quot;backupDirectory&quot;: &quot;./server_data/backup/default_server&quot;,
+  &quot;worldName&quot;: &quot;Bedrock level&quot;,
+  &quot;autoStart&quot;: false,
+  &quot;autoUpdateEnabled&quot;: true,
+  &quot;autoUpdateIntervalMinutes&quot;: 60,
+  &quot;logLevel&quot;: &quot;INFO&quot;
+}
+</code></pre>
+<ul>
+<li><code>serverName</code>: A friendly name for your server (displayed in the UI).</li>
+<li><code>serverPortIPv4</code>: The IPv4 port for the Minecraft server (must match <code>server-port</code> in <code>server.properties</code>).</li>
+<li><code>serverPortIPv6</code>: The IPv6 port for the Minecraft server (must match <code>server-portv6</code> in <code>server.properties</code>).</li>
+<li><code>serverDirectory</code>: Path to your Minecraft server files.
+<ul>
+<li>If relative (e.g., starts with <code>./</code> or <code>../</code>), it’s resolved relative to the application’s root directory.</li>
+<li>If absolute, it’s used as is.</li>
+</ul>
+</li>
+<li><code>tempDirectory</code>: Path for temporary downloads (e.g., server updates). Resolved like <code>serverDirectory</code>.</li>
+<li><code>backupDirectory</code>: Path to store server backups. Resolved like <code>serverDirectory</code>.</li>
+<li><code>worldName</code>: The default world name to set in <code>server.properties</code> if not already set.</li>
+<li><code>autoStart</code>: (boolean) If <code>true</code>, the manager will attempt to start the Minecraft server when the manager itself starts.</li>
+<li><code>autoUpdateEnabled</code>: (boolean) If <code>true</code>, enables automatic checking and installation of server updates.</li>
+<li><code>autoUpdateIntervalMinutes</code>: (number) How often (in minutes) to check for updates if auto-update is enabled.</li>
+<li><code>logLevel</code>: (string) Controls log verbosity. Options: “DEBUG”, “INFO”, “WARNING”, “ERROR”, “FATAL”. Defaults to “INFO”.</li>
+</ul>
+</li>
+<li>
+<p><strong>Command-Line Overrides:</strong>
+You can override settings from <code>config.json</code> at runtime using command-line arguments when starting the application (e.g., <code>node app.js --serverPortIPv4 19134 --autoStart true</code>).</p>
+<p>Supported overrides:</p>
+<ul>
+<li><code>--serverName &lt;name&gt;</code></li>
+<li><code>--serverPortIPv4 &lt;port&gt;</code></li>
+<li><code>--serverPortIPv6 &lt;port&gt;</code></li>
+<li><code>--serverDirectory &lt;path&gt;</code></li>
+<li><code>--tempDirectory &lt;path&gt;</code></li>
+<li><code>--backupDirectory &lt;path&gt;</code></li>
+<li><code>--worldName &lt;name&gt;</code></li>
+<li><code>--autoStart</code> or <code>--autoStart true</code> / <code>--autoStart false</code> (or <code>--no-autoStart</code>)</li>
+<li><code>--autoUpdateEnabled</code> or <code>--autoUpdateEnabled true</code> / <code>--autoUpdateEnabled false</code> (or <code>--no-autoUpdateEnabled</code>)</li>
+<li><code>--logLevel &lt;level&gt;</code> (e.g., DEBUG, INFO)</li>
+</ul>
+</li>
+<li>
+<p><strong>First-Time Server Setup:</strong>
+If the directory specified in <code>serverDirectory</code> is empty or doesn’t contain server files, use the “Check &amp; Install Update” button in the web interface. This will download and set up the latest official Bedrock server software.</p>
+</li>
+</ol>
+<hr>
+<h2>4. Starting the Application</h2>
+<ol>
+<li>Navigate to the application directory in your terminal.</li>
+<li>Run the application:<pre><code class="language-bash">node app.js [cli-overrides]
+</code></pre>
+For example: <code>node app.js --serverPortIPv4 19134</code></li>
+<li>Open your web browser and go to <code>http://localhost:3000</code> (or the port specified if <code>PORT</code> in <code>app.js</code> was changed).</li>
+</ol>
+<hr>
+<h2>5. Testing</h2>
+<p>This project uses <a href="https://jestjs.io/">Jest</a> for testing. The tests cover the main API endpoints and server logic.</p>
+<p>To run the tests:</p>
+<ol>
+<li><strong>Install Dependencies:</strong>
+If you haven’t already, make sure all dependencies, including development dependencies, are installed.<pre><code class="language-bash">npm install
+</code></pre>
+</li>
+<li><strong>Run the Test Suite:</strong>
+Execute the test script defined in <code>package.json</code>.<pre><code class="language-bash">npm test
+</code></pre>
+This will run all test files located in the <code>test/</code> directory.</li>
+</ol>
+<hr>
+<h2>6. Basic Usage</h2>
+<p>The web interface provides several sections for managing your server:</p>
+<h3>Server Information</h3>
+<p>At the top of the page, you’ll see details about the configured Minecraft server, such as its name, directory, and ports, as read from <code>config.json</code> and CLI overrides.</p>
+<h3>Server Controls</h3>
+<ul>
+<li><strong>Server Status:</strong> Indicates if the Minecraft server is <code>RUNNING</code> or <code>STOPPED</code>.</li>
+<li><strong>Start Server:</strong> Starts the Minecraft server.</li>
+<li><strong>Stop Server:</strong> Stops the Minecraft server.</li>
+<li><strong>Restart Server:</strong> Restarts the Minecraft server.</li>
+<li><strong>Check &amp; Install Update:</strong>
+<ol>
+<li>Checks the official Minecraft website for the latest server version.</li>
+<li>If a new version is found:
+<ul>
+<li>Stops the current server (if running).</li>
+<li>Backs up existing server data (worlds, <code>server.properties</code>, <code>permissions.json</code>, <code>whitelist.json</code>).</li>
+<li>Downloads and extracts the new server files.</li>
+<li>Restores the backed-up data into the new server directory.</li>
+<li>Starts the updated server.</li>
+</ul>
+</li>
+</ol>
+</li>
+</ul>
+<h3>Auto-Update Settings</h3>
+<ul>
+<li><strong>Enable Automatic Updates:</strong> Check this box to have the manager automatically check for and install updates.</li>
+<li><strong>Update Check Interval (minutes):</strong> Set how often (in minutes) to check for new server versions.</li>
+<li><strong>Save Auto-Update Settings:</strong> Click to apply your auto-update preferences.</li>
+</ul>
+<h3>World Management</h3>
+<ul>
+<li>Displays a list of world folders found in your server’s <code>worlds</code> directory.</li>
+<li>The currently active world (as per <code>server.properties</code>) is highlighted.</li>
+<li><strong>Activate Button:</strong> Click this next to a world’s name. This updates the <code>level-name</code> field in the “Server Properties” section below. You <strong>must</strong> click “Save Properties” in that section and then restart the server for the world change to take effect.</li>
+</ul>
+<h3>Server Properties</h3>
+<ul>
+<li>Allows you to view and edit your <code>server.properties</code> file directly from the UI.</li>
+<li>Modify values as needed.</li>
+<li><strong>Save Properties:</strong> Click to save your changes to <code>server.properties</code>. <strong>A server restart is usually required for most property changes to apply.</strong></li>
+</ul>
+<h3>Pack Management</h3>
+<p>This section allows you to upload and manage behavior and resource packs for your server.</p>
+<ul>
+<li><strong>Pack File (.mcpack):</strong> Select the <code>.mcpack</code> file you want to upload.</li>
+<li><strong>Pack Type:</strong> Choose the type of pack you are uploading:
+<ul>
+<li><code>Behavior Pack</code>: For custom behaviors, entities, etc. Installed in <code>behavior_packs</code>.</li>
+<li><code>Resource Pack</code>: For custom textures, sounds, UI, etc. Installed in <code>resource_packs</code>.</li>
+<li><code>Development Behavior Pack</code>: For behavior packs used during development. Installed in <code>development_behavior_packs</code>.</li>
+<li><code>Development Resource Pack</code>: For resource packs used during development. Installed in <code>development_resource_packs</code>.</li>
+</ul>
+</li>
+<li><strong>Target World:</strong> Select the world to which this pack should be applied. The manager will update the corresponding <code>world_behavior_packs.json</code> or <code>world_resource_packs.json</code> file for that world.</li>
+<li><strong>Upload Pack:</strong> Click to upload the selected pack.
+<ul>
+<li>The pack will be extracted to the appropriate directory within your <code>serverDirectory</code>.</li>
+<li>The relevant world configuration JSON file will be updated to include the pack.</li>
+<li><strong>Note:</strong> A server restart might be required for the pack to become active or for changes to take full effect, especially for behavior packs or if a world is already loaded.</li>
+</ul>
+</li>
+</ul>
+<hr>
+<h2>7. Running Multiple Server Managers</h2>
+<p>Each instance of this application manages a <em>single</em> Minecraft Bedrock server. If you want to manage multiple Minecraft servers, you need to run multiple independent instances of this server manager. Here are two common ways:</p>
+<ol>
+<li>
+<p><strong>Separate Directories:</strong></p>
+<ul>
+<li>Copy the entire application into separate folders (e.g., <code>mc_manager_server1</code>, <code>mc_manager_server2</code>).</li>
+<li>Each folder will have its own <code>config.json</code>. Edit each <code>config.json</code> to point to unique <code>serverDirectory</code>, <code>tempDirectory</code>, <code>backupDirectory</code>, and importantly, ensure the Minecraft server ports (<code>serverPortIPv4</code>, <code>serverPortIPv6</code>) are unique for each server to avoid conflicts.</li>
+<li>You’ll also need to run <code>node app.js</code> from within each directory, ensuring each manager instance listens on a unique web interface port (by modifying <code>PORT</code> in <code>app.js</code> for each copy, or by using a reverse proxy).</li>
+</ul>
+</li>
+<li>
+<p><strong>CLI Overrides from a Single Application Directory:</strong></p>
+<ul>
+<li>You can run multiple <code>node app.js</code> processes from the same application code.</li>
+<li>For each process, use command-line arguments to specify unique settings, especially:
+<ul>
+<li><code>--serverDirectory &lt;unique_path_for_server1_data&gt;</code></li>
+<li><code>--tempDirectory &lt;unique_path_for_server1_temp&gt;</code></li>
+<li><code>--backupDirectory &lt;unique_path_for_server1_backup&gt;</code></li>
+<li><code>--serverPortIPv4 &lt;unique_port_for_server1_ipv4&gt;</code></li>
+<li><code>--serverPortIPv6 &lt;unique_port_for_server1_ipv6&gt;</code></li>
+<li>You’ll also need to ensure each manager instance’s web UI runs on a different port. This currently requires modifying the <code>PORT</code> constant in <code>app.js</code> for each process or using a reverse proxy setup.</li>
+</ul>
+</li>
+<li>Example:<pre><code class="language-bash"># Terminal 1 (for server 1 on UI port 3000)
+# (Modify app.js to use PORT 3000 or ensure it's default)
+node app.js --serverName &quot;Server One&quot; --serverDirectory ./server1_data --serverPortIPv4 19132 --serverPortIPv6 19133
+
+# Terminal 2 (for server 2 on UI port 3001)
+# (Modify app.js to use PORT 3001 for this run, or use PM2 with port args)
+node app.js --serverName &quot;Server Two&quot; --serverDirectory ./server2_data --serverPortIPv4 19134 --serverPortIPv6 19135
+</code></pre>
+</li>
+<li>Managing the different web UI ports for each manager instance is key. Using a process manager like PM2 can help manage multiple Node.js processes with different environment variables or arguments.</li>
+</ul>
+</li>
+</ol>
+<p><strong>Key for multiple servers:</strong> Each Minecraft Bedrock server <em>must</em> have its own unique data directory and operate on unique game ports.</p>
+<hr>
+<p>Have fun managing your Minecraft Bedrock Server!</p>
+
+        </div>
+
+        <p style="text-align: center; margin-top: 30px;">
+            <img src="icon.ico" alt="Logo" style="width:25px; vertical-align: middle; margin-right: 10px; image-rendering: pixelated; border: none;">
+            by the Digital Education & Safety Foundation
+        </p>
+    </div>
+</body>
+</html>
