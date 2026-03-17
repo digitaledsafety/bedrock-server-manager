@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Bedrock Server Manager HTTP API Documentation
 
 This document describes the HTTP API provided by the Bedrock Server Manager. All API endpoints are prefixed with `/api`.

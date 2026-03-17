@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Bedrock Server Manager
 
 [![CI](https://github.com/digitaledsafety/bedrock-server-manager/actions/workflows/main.yml/badge.svg)](https://github.com/digitaledsafety/bedrock-server-manager/actions/workflows/main.yml)
