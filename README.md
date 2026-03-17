@@ -8,7 +8,7 @@ This application provides a web-based interface to manage a single Minecraft Bed
 
 ## Documentation
 
-Full documentation is available at [https://digitaledsafety.github.io/bedrock-server-manager/](https://digitaledsafety.github.io/bedrock-server-manager/).
+Full documentation is available at [https://bedrock-server-manager.digitaleducationsafety.org/](https://bedrock-server-manager.digitaleducationsafety.org/).
 
 ## Quick Start
 
