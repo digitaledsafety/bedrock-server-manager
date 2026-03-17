@@ -250,9 +250,9 @@ export function extractFiles(zipPath, extractPath) {
             try {
                 // Set permissions to 755 (owner can read/write/execute, others can read/execute)
                 fs.chmodSync(executableFilePath, 0o755);
-                console.log(`Permissions set to 755 for ${executableFilePath}`);
+                log('INFO', `Permissions set to 755 for ${executableFilePath}`);
             } catch (err) {
-                console.error(`Failed to set permissions for ${executableFilePath}:`, err);
+                log('ERROR', `Failed to set permissions for ${executableFilePath}: ${err.message}`);
             }
 
             resolve();
@@ -473,7 +473,7 @@ export async function startServer() {
         log('INFO', `Starting Minecraft server from ${serverExePath}`);
         const serverProcess = spawn(serverExePath, [], {
             cwd: SERVER_DIRECTORY,
-            stdio: 'inherit',
+            stdio: ['ignore', 'pipe', 'pipe'],
             detached: false
         });
         if (serverProcess.pid) {
@@ -484,6 +484,24 @@ export async function startServer() {
             } catch (error) {
                 log('ERROR', `Failed to write PID file: ${error.message}`);
             }
+
+            const serverLogPath = pathJoin(SERVER_DIRECTORY, 'server.log');
+            const serverLogStream = fs.createWriteStream(serverLogPath, { flags: 'a' });
+
+            serverProcess.stdout.on('data', (data) => {
+                serverLogStream.write(data);
+                process.stdout.write(data); // Also log to manager's stdout
+            });
+
+            serverProcess.stderr.on('data', (data) => {
+                serverLogStream.write(data);
+                process.stderr.write(data); // Also log to manager's stderr
+            });
+
+            serverProcess.on('close', () => {
+                serverLogStream.end();
+            });
+
         } else {
             log('ERROR', `Server process started but PID was not obtained.`);
         }
@@ -554,7 +572,13 @@ export async function checkAndInstall() {
             log('INFO', `Removed existing server directory ${SERVER_DIRECTORY}`);
         }
         log('INFO', `Moving new server files from ${tempInstallPath} to ${SERVER_DIRECTORY}`);
-        fs.renameSync(tempInstallPath, SERVER_DIRECTORY);
+        try {
+            fs.renameSync(tempInstallPath, SERVER_DIRECTORY);
+        } catch (renameError) {
+            log('WARNING', `fs.renameSync failed (${renameError.message}). Attempting copy-and-remove fallback.`);
+            fs.cpSync(tempInstallPath, SERVER_DIRECTORY, { recursive: true });
+            fs.rmSync(tempInstallPath, { recursive: true, force: true });
+        }
         log('INFO', 'Successfully moved new server files to SERVER_DIRECTORY.');
         if (backupDir) {
             await copyExistingData(backupDir, SERVER_DIRECTORY);

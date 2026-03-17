@@ -364,14 +364,34 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 
+    async function fetchLogs() {
+        try {
+            const response = await fetch('/api/logs');
+            const data = await response.json();
+            if (data.success) {
+                if (consoleOutput.value !== data.logs) {
+                    const isScrolledToBottom = consoleOutput.scrollHeight - consoleOutput.clientHeight <= consoleOutput.scrollTop + 1;
+                    consoleOutput.value = data.logs;
+                    if (isScrolledToBottom) {
+                        consoleOutput.scrollTop = consoleOutput.scrollHeight;
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching logs:', error);
+        }
+    }
+
     // Initial load
     fetchServerStatus(); // This will now also set initial button states
     //loadServerProperties();
     //loadWorlds();
     loadAutoUpdateConfig(); // New: Load auto-update config on page load
+    fetchLogs();
 
     // Refresh status and worlds periodically
     setInterval(fetchServerStatus, 10000); // Every 10 seconds
     setInterval(loadWorlds, 30000); // Every 30 seconds
+    setInterval(fetchLogs, 5000); // Every 5 seconds
 
 });

@@ -195,6 +195,26 @@ app.get('/api/config', async (req, res) => {
     }
 });
 
+app.get('/api/logs', async (req, res) => {
+    try {
+        const config = await backend.readGlobalConfig();
+        const serverLogPath = pathJoin(config.serverDirectory, 'server.log');
+
+        if (!fs.existsSync(serverLogPath)) {
+            return res.json({ success: true, logs: 'Server log file not found. Start the server to generate logs.' });
+        }
+
+        const logContent = await fs.promises.readFile(serverLogPath, 'utf8');
+        const lines = logContent.split('\n');
+        const lastLines = lines.slice(-100).join('\n');
+
+        res.json({ success: true, logs: lastLines });
+    } catch (error) {
+        backend.log('ERROR', `Error reading server logs: ${error.message}`);
+        res.status(500).json({ error: 'Failed to read server logs' });
+    }
+});
+
 app.post('/api/config', async (req, res) => {
     try {
         const newSettings = req.body;
