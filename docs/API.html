@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Documentation - Bedrock Server Manager</title>
+    <link href="style.css" rel="stylesheet">
+    <style>
+        .container {
+            max-width: 1000px;
+            margin: 20px auto;
+        }
+        .content {
+            background-color: #373737;
+            padding: 30px;
+            border: 2px solid #1E1E1E;
+            line-height: 1.6;
+        }
+        .content h1, .content h2, .content h3 {
+            text-align: left;
+            margin-top: 1.5em;
+        }
+        .content h1 { margin-top: 0; }
+        .content code {
+            background-color: #1E1E1E;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        .content pre {
+            background-color: #1E1E1E;
+            padding: 15px;
+            border: 2px solid #1E1E1E;
+            overflow-x: auto;
+        }
+        .content pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+        .content a {
+            color: #55FF55;
+            text-decoration: none;
+        }
+        .content a:hover {
+            text-decoration: underline;
+        }
+        .nav {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .nav a {
+            margin: 0 15px;
+            color: #FFFFFF;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .nav a:hover {
+            color: #55FF55;
+        }
+        .content img {
+            max-width: 100%;
+            height: auto;
+            border: 2px solid #1E1E1E;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>
+            <img src="favicon.ico" alt="Minecraft Grass Block" style="vertical-align: middle; margin-right: 10px; image-rendering: pixelated; width: 32px;">
+            Bedrock Server Manager
+        </h1>
+
+        <div class="nav">
+            <a href="index.html">User Guide</a>
+            <a href="API.html">API Documentation</a>
+            <a href="https://github.com/digitaledsafety/bedrock-server-manager">GitHub Repository</a>
+        </div>
+
+        <div class="content">
+            <h1>Bedrock Server Manager HTTP API Documentation</h1>
+<p>This document describes the HTTP API provided by the Bedrock Server Manager. All API endpoints are prefixed with <code>/api</code>.</p>
+<h2>Server Control</h2>
+<h3>GET /api/status</h3>
+<p>Returns the current status of the Minecraft server process.</p>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;status&quot;: &quot;running&quot; | &quot;stopped&quot; }</code></li>
+<li><code>500 Internal Server Error</code>: <code>{ &quot;error&quot;: &quot;Failed to get server status&quot; }</code></li>
+</ul>
+<hr>
+<h3>POST /api/start</h3>
+<p>Starts the Minecraft server if it’s not already running.</p>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;success&quot;: true, &quot;message&quot;: &quot;Server start initiated.&quot; }</code></li>
+<li><code>500 Internal Server Error</code>: <code>{ &quot;error&quot;: &quot;Failed to start server&quot; }</code></li>
+</ul>
+<hr>
+<h3>POST /api/stop</h3>
+<p>Stops the Minecraft server if it’s running.</p>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;success&quot;: true, &quot;message&quot;: &quot;Server stop initiated.&quot; }</code></li>
+<li><code>500 Internal Server Error</code>: <code>{ &quot;error&quot;: &quot;Failed to stop server&quot; }</code></li>
+</ul>
+<hr>
+<h3>POST /api/restart</h3>
+<p>Restarts the Minecraft server.</p>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;success&quot;: true, &quot;message&quot;: &quot;Server restart initiated.&quot; }</code></li>
+<li><code>500 Internal Server Error</code>: <code>{ &quot;error&quot;: &quot;Failed to restart server&quot; }</code></li>
+</ul>
+<hr>
+<h3>POST /api/update</h3>
+<p>Checks for Minecraft server updates and installs them if available. This involves stopping the server, backing up data, downloading the new version, restoring data, and restarting the server.</p>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;success&quot;: boolean, &quot;message&quot;: string }</code></li>
+<li><code>500 Internal Server Error</code>: <code>{ &quot;error&quot;: &quot;Failed to check/install update&quot; }</code></li>
+</ul>
+<hr>
+<h2>Server Properties</h2>
+<h3>GET /api/properties</h3>
+<p>Retrieves the current <code>server.properties</code> configuration.</p>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;success&quot;: true, &quot;properties&quot;: { &quot;key&quot;: &quot;value&quot;, ... } }</code></li>
+<li><code>500 Internal Server Error</code>: <code>{ &quot;error&quot;: &quot;Failed to read server properties&quot; }</code></li>
+</ul>
+<hr>
+<h3>POST /api/properties</h3>
+<p>Updates the <code>server.properties</code> file. Note that a server restart is required for changes to take effect.</p>
+<p><strong>Request Body:</strong>
+JSON object containing the property keys and values to update.</p>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;success&quot;: true, &quot;message&quot;: &quot;Server properties updated. Restart server for changes to take effect.&quot; }</code></li>
+<li><code>400 Bad Request</code>: <code>{ &quot;error&quot;: string }</code> (if validation fails)</li>
+<li><code>500 Internal Server Error</code>: <code>{ &quot;error&quot;: &quot;Failed to write server properties&quot; }</code></li>
+</ul>
+<hr>
+<h2>World Management</h2>
+<h3>GET /api/worlds</h3>
+<p>Lists all world folders found in the server’s <code>worlds</code> directory.</p>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;success&quot;: true, &quot;worlds&quot;: [&quot;world1&quot;, &quot;world2&quot;, ...] }</code></li>
+<li><code>500 Internal Server Error</code>: <code>{ &quot;error&quot;: &quot;Failed to list worlds&quot; }</code></li>
+</ul>
+<hr>
+<h3>POST /api/activate-world</h3>
+<p>Sets a specific world as active by updating the <code>level-name</code> in <code>server.properties</code>. This endpoint also triggers a server restart.</p>
+<p><strong>Request Body:</strong>
+<code>{ &quot;worldName&quot;: &quot;string&quot; }</code></p>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;message&quot;: &quot;World 'worldName' activated.&quot; }</code></li>
+<li><code>400 Bad Request</code>: <code>{ &quot;error&quot;: string }</code> (if world name is missing or invalid)</li>
+<li><code>500 Internal Server Error</code>: <code>{ &quot;error&quot;: &quot;Failed to activate world&quot; }</code></li>
+</ul>
+<hr>
+<h2>Application Configuration</h2>
+<h3>GET /api/config</h3>
+<p>Retrieves the current application configuration (e.g., auto-update settings).</p>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;success&quot;: true, &quot;config&quot;: { ... } }</code></li>
+<li><code>500 Internal Server Error</code>: <code>{ &quot;error&quot;: &quot;Failed to get application config&quot; }</code></li>
+</ul>
+<hr>
+<h3>POST /api/config</h3>
+<p>Updates the application configuration settings.</p>
+<p><strong>Request Body:</strong>
+<code>{ &quot;autoUpdateEnabled&quot;: boolean, &quot;autoUpdateIntervalMinutes&quot;: number, &quot;logLevel&quot;: &quot;string&quot; }</code> (All fields are optional)</p>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;success&quot;: true, &quot;message&quot;: &quot;Global config settings updated successfully.&quot; }</code></li>
+<li><code>500 Internal Server Error</code>: <code>{ &quot;error&quot;: &quot;Failed to set global config&quot; }</code></li>
+</ul>
+<hr>
+<h2>Pack Management</h2>
+<h3>POST /api/upload-pack</h3>
+<p>Uploads and applies a behavior or resource pack (<code>.mcpack</code> or <code>.mcaddon</code>) to a specific world.</p>
+<p><strong>Request Type:</strong> <code>multipart/form-data</code></p>
+<p><strong>Parameters:</strong></p>
+<ul>
+<li><code>packFile</code>: The <code>.mcpack</code> or <code>.mcaddon</code> file.</li>
+<li><code>worldName</code>: (string, required) The target world for the pack.</li>
+<li><code>packType</code>: (string, optional) The type of pack if uploading a single <code>.mcpack</code>. Options: <code>behavior</code>, <code>resource</code>, <code>dev_behavior</code>, <code>dev_resource</code>. Auto-detected if omitted.</li>
+</ul>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;success&quot;: true, &quot;message&quot;: string }</code></li>
+<li><code>400 Bad Request</code>: <code>{ &quot;success&quot;: false, &quot;message&quot;: string }</code> (if file missing, invalid type, or world not found)</li>
+<li><code>500 Internal Server Error</code>: <code>{ &quot;success&quot;: false, &quot;message&quot;: &quot;Failed to upload pack due to server error.&quot; }</code></li>
+</ul>
+
+        </div>
+
+        <p style="text-align: center; margin-top: 30px;">
+            <img src="icon.ico" alt="Logo" style="width:25px; vertical-align: middle; margin-right: 10px; image-rendering: pixelated; border: none;">
+            by the Digital Education & Safety Foundation
+        </p>
+    </div>
+</body>
+</html>
