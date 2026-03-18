@@ -4,6 +4,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 ![Status: Beta](https://img.shields.io/badge/status-beta-orange.svg)
 
+![A clear view of the Minecraft Bedrock Server Manager web interface](public/mbsm-screen.PNG)
+*(Note: The screenshot shows the general UI. Some minor details might differ slightly with the current version.)*
+
 This application provides a web-based interface to manage a single Minecraft Bedrock Dedicated Server.
 
 ## Documentation
