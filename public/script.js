@@ -240,13 +240,20 @@ document.addEventListener('DOMContentLoaded', () => {
                             worldItem.dataset.worldName = world;
                             worldItem.innerHTML = `
                                 <span>${world}</span>
-                                <button class="activate-world-button bg-blue-500 hover:bg-blue-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world}">
-                                    Activate
-                                </button>
+                                <div class="world-actions">
+                                    <button class="activate-world-button" data-world-name="${world}">
+                                        Activate
+                                    </button>
+                                    ${currentLevelName !== world ? `
+                                    <button class="delete-world-button" data-world-name="${world}">
+                                        Delete
+                                    </button>` : ''}
+                                </div>
                             `;
                             worldListContainer.appendChild(worldItem);
                         });
                         addActivateButtonListeners(); // Re-add listeners after updating DOM
+                        addDeleteButtonListeners();
                     } else {
                         worldListContainer.innerHTML = '<p class="text-gray-600">No worlds found. Start the server to generate a default world.</p>';
                     }
@@ -267,6 +274,41 @@ document.addEventListener('DOMContentLoaded', () => {
             button.removeEventListener('click', handleActivateWorldClick); // Prevent duplicate listeners
             button.addEventListener('click', handleActivateWorldClick);
         });
+    }
+
+    function addDeleteButtonListeners() {
+        document.querySelectorAll('.delete-world-button').forEach(button => {
+            button.removeEventListener('click', handleDeleteWorldClick);
+            button.addEventListener('click', handleDeleteWorldClick);
+        });
+    }
+
+    async function handleDeleteWorldClick(event) {
+        const worldName = event.target.dataset.worldName;
+        if (!confirm(`Are you sure you want to delete the world '${worldName}'? This action cannot be undone.`)) {
+            return;
+        }
+
+        try {
+            showMessage(`Deleting world '${worldName}'...`);
+            const response = await fetch('/api/delete-world', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ worldName })
+            });
+            const data = await response.json();
+            if (response.ok && data.success) {
+                showMessage(data.message || `World '${worldName}' deleted.`, 'success');
+                loadWorlds(); // Refresh world list
+            } else {
+                showMessage(data.error || `Failed to delete world '${worldName}'.`, 'error');
+            }
+        } catch (error) {
+            console.error('Error deleting world:', error);
+            showMessage('Failed to delete world.', 'error');
+        }
     }
 
     async function handleActivateWorldClick(event) {
@@ -385,7 +427,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initial load
     fetchServerStatus(); // This will now also set initial button states
     //loadServerProperties();
-    //loadWorlds();
+    loadWorlds();
     loadAutoUpdateConfig(); // New: Load auto-update config on page load
     fetchLogs();
 

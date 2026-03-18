@@ -78,9 +78,16 @@
                     <% worlds.forEach(world => { %>
                         <li class="world-item <%= properties['level-name'] === world ? 'active' : '' %>" data-world-name="<%= world %>">
                             <span><%= world %></span>
-                            <button class="activate-world-button" data-world-name="<%= world %>">
-                                Activate
-                            </button>
+                            <div class="world-actions">
+                                <button class="activate-world-button" data-world-name="<%= world %>">
+                                    Activate
+                                </button>
+                                <% if (properties['level-name'] !== world) { %>
+                                    <button class="delete-world-button" data-world-name="<%= world %>">
+                                        Delete
+                                    </button>
+                                <% } %>
+                            </div>
                         </li>
                     <% }); %>
                 <% } else { %>
