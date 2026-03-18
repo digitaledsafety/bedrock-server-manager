@@ -666,6 +666,46 @@ export async function listWorlds() {
     return worldNames;
 }
 
+/**
+ * Deletes a world directory.
+ * @param {string} worldName - The name of the world to delete.
+ * @returns {Promise<boolean>} True if successful, false otherwise.
+ */
+export async function deleteWorld(worldName) {
+    if (!SERVER_DIRECTORY) {
+        log('ERROR', 'SERVER_DIRECTORY not set. Cannot delete world.');
+        return false;
+    }
+    if (!isValidWorldName(worldName)) {
+        log('ERROR', `Invalid worldName format for deletion: ${worldName}`);
+        return false;
+    }
+
+    const worldsPath = pathJoin(SERVER_DIRECTORY, 'worlds');
+    const targetWorldPath = pathJoin(worldsPath, worldName);
+
+    if (!fs.existsSync(targetWorldPath)) {
+        log('WARNING', `World directory '${worldName}' not found at ${targetWorldPath}. Cannot delete.`);
+        return false;
+    }
+
+    try {
+        const properties = await readServerProperties();
+        if (properties['level-name'] === worldName) {
+            log('ERROR', `Cannot delete active world: ${worldName}`);
+            throw new Error(`Cannot delete the active world '${worldName}'. Switch to another world first.`);
+        }
+
+        log('INFO', `Deleting world: ${worldName} at ${targetWorldPath}`);
+        await fs.promises.rm(targetWorldPath, { recursive: true, force: true });
+        log('INFO', `Successfully deleted world: ${worldName}`);
+        return true;
+    } catch (error) {
+        log('ERROR', `Failed to delete world '${worldName}': ${error.message}`);
+        throw error;
+    }
+}
+
 export async function activateWorld(worldName) {
     if (!SERVER_DIRECTORY) {
         log('ERROR', 'SERVER_DIRECTORY not set. Cannot activate world.');
@@ -1072,7 +1112,7 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
 
                         // Security: Check for Zip Slip vulnerability
                         const resolvedTargetFilePath = path.resolve(targetFilePath);
-                        const resolvedFinalPackPath = path.resolve(finalPackPath);
+                        const resolvedFinalPackPath = path.resolve(finalPackPath) + path.sep;
                         if (!resolvedTargetFilePath.startsWith(resolvedFinalPackPath)) {
                             log('WARNING', `Zip Slip attempt detected in .mcaddon: ${zipEntry.entryName}`);
                             return; // Skip this entry
@@ -1199,7 +1239,7 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
 
                     // Security: Check for Zip Slip vulnerability
                     const resolvedTargetFilePath = path.resolve(targetFilePath);
-                    const resolvedFinalPackPath = path.resolve(finalPackPath);
+                    const resolvedFinalPackPath = path.resolve(finalPackPath) + path.sep;
                     if (!resolvedTargetFilePath.startsWith(resolvedFinalPackPath)) {
                         log('WARNING', `Zip Slip attempt detected in .mcpack: ${zipEntry.entryName}`);
                         return; // Skip this entry
