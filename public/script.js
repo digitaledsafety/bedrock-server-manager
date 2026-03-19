@@ -9,10 +9,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const levelNameInput = document.getElementById('level-name'); // Get the level-name input
     const consoleOutput = document.getElementById('consoleOutput'); // Get the console textarea
 
-    // Auto-Update specific elements
+    // Configuration specific elements
     const autoUpdateConfigForm = document.getElementById('autoUpdateConfigForm');
     const autoUpdateEnabledCheckbox = document.getElementById('autoUpdateEnabled');
     const autoUpdateIntervalMinutesInput = document.getElementById('autoUpdateIntervalMinutes');
+    const logLevelSelect = document.getElementById('logLevel');
 
     // Pack Management specific elements
     const uploadPackForm = document.getElementById('uploadPackForm');
@@ -240,13 +241,18 @@ document.addEventListener('DOMContentLoaded', () => {
                             worldItem.dataset.worldName = world;
                             worldItem.innerHTML = `
                                 <span>${world}</span>
-                                <button class="activate-world-button bg-blue-500 hover:bg-blue-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world}">
-                                    Activate
-                                </button>
+                                <div class="button-group">
+                                    <button class="activate-world-button" data-world-name="${world}">
+                                        Activate
+                                    </button>
+                                    <button class="delete-world-button" data-world-name="${world}" ${currentLevelName === world ? 'disabled' : ''} style="background-color: #AA0000;">
+                                        Delete
+                                    </button>
+                                </div>
                             `;
                             worldListContainer.appendChild(worldItem);
                         });
-                        addActivateButtonListeners(); // Re-add listeners after updating DOM
+                        addWorldButtonListeners(); // Re-add listeners after updating DOM
                     } else {
                         worldListContainer.innerHTML = '<p class="text-gray-600">No worlds found. Start the server to generate a default world.</p>';
                     }
@@ -262,11 +268,43 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function addActivateButtonListeners() {
+    function addWorldButtonListeners() {
         document.querySelectorAll('.activate-world-button').forEach(button => {
-            button.removeEventListener('click', handleActivateWorldClick); // Prevent duplicate listeners
+            button.removeEventListener('click', handleActivateWorldClick);
             button.addEventListener('click', handleActivateWorldClick);
         });
+        document.querySelectorAll('.delete-world-button').forEach(button => {
+            button.removeEventListener('click', handleDeleteWorldClick);
+            button.addEventListener('click', handleDeleteWorldClick);
+        });
+    }
+
+    async function handleDeleteWorldClick(event) {
+        const worldName = event.target.dataset.worldName;
+        if (!confirm(`Are you sure you want to delete the world '${worldName}'? This action cannot be undone.`)) {
+            return;
+        }
+
+        try {
+            showMessage(`Deleting world '${worldName}'...`);
+            const response = await fetch('/api/delete-world', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ worldName })
+            });
+            const data = await response.json();
+            if (response.ok && data.success) {
+                showMessage(data.message || `World '${worldName}' deleted.`, 'success');
+                loadWorlds(); // Refresh list
+            } else {
+                showMessage(data.message || `Failed to delete world '${worldName}'.`, 'error');
+            }
+        } catch (error) {
+            console.error('Error deleting world:', error);
+            showMessage('Failed to delete world.', 'error');
+        }
     }
 
     async function handleActivateWorldClick(event) {
@@ -291,6 +329,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // Fetch status because activation restarts the server
                 setTimeout(fetchServerStatus, 2000);
+                loadWorlds(); // Refresh list to update disabled delete buttons
             } else {
                 showMessage(data.error || `Failed to activate world '${worldName}'.`, 'error');
             }
@@ -321,7 +360,8 @@ document.addEventListener('DOMContentLoaded', () => {
         event.preventDefault();
         const newConfig = {
             autoUpdateEnabled: autoUpdateEnabledCheckbox.checked,
-            autoUpdateIntervalMinutes: parseInt(autoUpdateIntervalMinutesInput.value, 10)
+            autoUpdateIntervalMinutes: parseInt(autoUpdateIntervalMinutesInput.value, 10),
+            logLevel: logLevelSelect.value
         };
 
         if (isNaN(newConfig.autoUpdateIntervalMinutes) || newConfig.autoUpdateIntervalMinutes < 1) {
@@ -330,7 +370,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            showMessage('Saving auto-update settings...');
+            showMessage('Saving settings...');
             const response = await fetch('/api/config', {
                 method: 'POST',
                 headers: {
@@ -340,9 +380,9 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             const data = await response.json();
             if (data.success) {
-                showMessage('Auto-update settings saved successfully!', 'success');
+                showMessage('Settings saved successfully!', 'success');
             } else {
-                showMessage('Failed to save auto-update settings: ' + data.message, 'error');
+                showMessage('Failed to save settings: ' + data.message, 'error');
             }
         } catch (error) {
             console.error('Error saving auto-update config:', error);
@@ -385,7 +425,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initial load
     fetchServerStatus(); // This will now also set initial button states
     //loadServerProperties();
-    //loadWorlds();
+    loadWorlds();
     loadAutoUpdateConfig(); // New: Load auto-update config on page load
     fetchLogs();
 
