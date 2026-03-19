@@ -185,6 +185,21 @@ app.post('/api/activate-world', validateWorldName, async (req, res) => {
     }
 });
 
+app.post('/api/delete-world', validateWorldName, async (req, res) => {
+    try {
+        const { worldName } = req.body;
+        const result = await backend.deleteWorld(worldName);
+        if (result.success) {
+            res.json({ success: true, message: result.message });
+        } else {
+            res.status(400).json({ success: false, message: result.message });
+        }
+    } catch (error) {
+        backend.log('ERROR', `Failed to delete world: ${error.message}`);
+        res.status(500).json({ error: 'Failed to delete world' });
+    }
+});
+
 app.get('/api/config', async (req, res) => {
     try {
         const appConfig = await backend.readGlobalConfig();
@@ -246,45 +261,33 @@ app.post('/api/upload-pack', upload.single('packFile'), async (req, res) => {
         return res.status(400).json({ success: false, message: 'No pack file uploaded.' });
     }
 
-    // packType is now optional due to auto-detection in the backend
-    if (!worldName) {
-        fs.unlink(packFile.path, (err) => {
-            if (err) backend.log('WARNING', `Failed to delete orphaned upload ${packFile.path}: ${err.message}`);
-        });
-        return res.status(400).json({ success: false, message: 'World name is required.' });
-    }
-
-    // Validate packType if provided
-    if (packType) {
-        const validPackTypes = ['behavior', 'resource', 'dev_behavior', 'dev_resource'];
-        if (!validPackTypes.includes(packType)) {
-            fs.unlink(packFile.path, (err) => {
-                if (err) backend.log('WARNING', `Failed to delete orphaned upload ${packFile.path}: ${err.message}`);
-            });
-            return res.status(400).json({ success: false, message: 'Invalid pack type specified.' });
-        }
-    }
-
-    // Validate worldName
-    if (!backend.isValidWorldName(worldName)) {
-        backend.log('ERROR', `Invalid worldName format or characters for pack upload: ${worldName}`);
-        fs.unlink(packFile.path, (err) => {
-            if (err) backend.log('WARNING', `Failed to delete orphaned upload ${packFile.path}: ${err.message}`);
-        });
-        return res.status(400).json({ success: false, message: 'Invalid worldName format for pack upload.' });
-    }
-
-    // More robust: Check if world actually exists
-    const existingWorlds = await backend.listWorlds();
-    if (!existingWorlds.includes(worldName)) {
-        backend.log('ERROR', `Attempt to upload pack to non-existent world: ${worldName}`);
-        fs.unlink(packFile.path, (err) => {
-            if (err) backend.log('WARNING', `Failed to delete orphaned upload ${packFile.path}: ${err.message}`);
-        });
-        return res.status(400).json({ success: false, message: `Target world '${worldName}' does not exist.` });
-    }
-
     try {
+        // packType is now optional due to auto-detection in the backend
+        if (!worldName) {
+            return res.status(400).json({ success: false, message: 'World name is required.' });
+        }
+
+        // Validate packType if provided
+        if (packType) {
+            const validPackTypes = ['behavior', 'resource', 'dev_behavior', 'dev_resource'];
+            if (!validPackTypes.includes(packType)) {
+                return res.status(400).json({ success: false, message: 'Invalid pack type specified.' });
+            }
+        }
+
+        // Validate worldName
+        if (!backend.isValidWorldName(worldName)) {
+            backend.log('ERROR', `Invalid worldName format or characters for pack upload: ${worldName}`);
+            return res.status(400).json({ success: false, message: 'Invalid worldName format for pack upload.' });
+        }
+
+        // More robust: Check if world actually exists
+        const existingWorlds = await backend.listWorlds();
+        if (!existingWorlds.includes(worldName)) {
+            backend.log('ERROR', `Attempt to upload pack to non-existent world: ${worldName}`);
+            return res.status(400).json({ success: false, message: `Target world '${worldName}' does not exist.` });
+        }
+
         backend.log('INFO', `Processing pack upload: File=${packFile.path}, OriginalName=${packFile.originalname}, Type=${packType}, World=${worldName}`);
         // Pass originalname so backend can distinguish .mcpack from .mcaddon
         // packType is relevant for .mcpack, ignored for .mcaddon by the backend logic
@@ -292,24 +295,19 @@ app.post('/api/upload-pack', upload.single('packFile'), async (req, res) => {
         if (result.success) {
             res.json({ success: true, message: result.message });
         } else {
-            // uploadPack should handle deleting the temp file on its own errors,
-            // but if it failed before even trying, or we want to be sure:
-            if (fs.existsSync(packFile.path)) {
-                 fs.unlink(packFile.path, (err) => {
-                    if (err) backend.log('WARNING', `Failed to delete upload ${packFile.path} after backend processing error: ${err.message}`);
-                });
-            }
             res.status(400).json({ success: false, message: result.message });
         }
     } catch (error) {
         backend.log('ERROR', `Error uploading pack: ${error.message}`);
-        // Ensure temp file is deleted on unexpected error
-        if (fs.existsSync(packFile.path)) {
+        res.status(500).json({ success: false, message: 'Failed to upload pack due to server error.' });
+    } finally {
+        // Always attempt to delete the temporary upload file
+        if (packFile && packFile.path && fs.existsSync(packFile.path)) {
             fs.unlink(packFile.path, (err) => {
-                if (err) backend.log('WARNING', `Failed to delete upload ${packFile.path} after exception: ${err.message}`);
+                if (err) backend.log('WARNING', `Failed to delete upload ${packFile.path} in finally block: ${err.message}`);
+                else backend.log('DEBUG', `Deleted temporary upload file: ${packFile.path}`);
             });
         }
-        res.status(500).json({ success: false, message: 'Failed to upload pack due to server error.' });
     }
 }, (error, req, res, next) => {
     // Custom error handler for multer errors (e.g., file size limit)

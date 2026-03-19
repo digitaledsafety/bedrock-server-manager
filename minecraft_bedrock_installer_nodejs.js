@@ -624,8 +624,12 @@ export async function readServerProperties() {
     data.split('\n').forEach(line => {
         const trimmedLine = line.trim();
         if (trimmedLine && !trimmedLine.startsWith('#')) {
-            const [key, value] = trimmedLine.split('=').map(s => s.trim());
-            if (key) { properties[key] = value || ''; }
+            const equalIndex = trimmedLine.indexOf('=');
+            if (equalIndex > 0) {
+                const key = trimmedLine.substring(0, equalIndex).trim();
+                const value = trimmedLine.substring(equalIndex + 1).trim();
+                properties[key] = value;
+            }
         }
     });
     log('INFO', `Read server.properties from ${configPath}`);
@@ -637,15 +641,43 @@ export async function writeServerProperties(propertiesToWrite) {
         log('ERROR', 'SERVER_DIRECTORY not set. Cannot write server.properties.');
         throw new Error('Server directory not configured.');
     }
-    const configPath = pathJoin(SERVER_DIRECTORY, 'server.properties');
-    let content = '';
-    for (const key in propertiesToWrite) {
-        if (Object.hasOwnProperty.call(propertiesToWrite, key)) {
-            content += `${key}=${propertiesToWrite[key]}\n`;
-        }
-    }
-    await fs.promises.writeFile(configPath, content, 'utf8');
-    log('INFO', `Wrote server.properties to ${configPath}`);
+    const configPath = pathJoin(SERVER_DIRECTORY, 'server.properties');
+    let lines = [];
+    const keysToUpdate = new Set(Object.keys(propertiesToWrite));
+
+    if (fs.existsSync(configPath)) {
+        const data = await fs.promises.readFile(configPath, 'utf8');
+        lines = data.split('\n');
+
+        for (let i = 0; i < lines.length; i++) {
+            const trimmedLine = lines[i].trim();
+            if (trimmedLine && !trimmedLine.startsWith('#')) {
+                const equalIndex = trimmedLine.indexOf('=');
+                if (equalIndex > 0) {
+                    const key = trimmedLine.substring(0, equalIndex).trim();
+                    if (keysToUpdate.has(key)) {
+                        lines[i] = `${key}=${propertiesToWrite[key]}`;
+                        keysToUpdate.delete(key);
+                    }
+                }
+            }
+        }
+    }
+
+    // Add any new properties that weren't in the original file
+    for (const key of keysToUpdate) {
+        lines.push(`${key}=${propertiesToWrite[key]}`);
+    }
+
+    // Ensure the content ends with a newline if it's not empty,
+    // but avoid extra empty lines at the end when joining.
+    let finalContent = lines.join('\n');
+    if (finalContent && !finalContent.endsWith('\n')) {
+        finalContent += '\n';
+    }
+
+    await fs.promises.writeFile(configPath, finalContent, 'utf8');
+    log('INFO', `Wrote server.properties to ${configPath} (non-destructive)`);
 }
 
 export async function listWorlds() {
@@ -664,6 +696,39 @@ export async function listWorlds() {
         .map(entry => entry.name);
     log('INFO', `Listed worlds: ${worldNames.join(', ')}`);
     return worldNames;
+}
+
+export async function deleteWorld(worldName) {
+    if (!SERVER_DIRECTORY) {
+        log('ERROR', 'SERVER_DIRECTORY not set. Cannot delete world.');
+        return { success: false, message: 'Server directory not configured.' };
+    }
+    if (!isValidWorldName(worldName)) {
+        log('ERROR', `Invalid worldName format for deletion: ${worldName}`);
+        return { success: false, message: 'Invalid world name format.' };
+    }
+
+    try {
+        const properties = await readServerProperties();
+        if (properties['level-name'] === worldName) {
+            log('WARNING', `Attempted to delete active world: ${worldName}`);
+            return { success: false, message: 'Cannot delete the currently active world.' };
+        }
+
+        const worldPath = pathJoin(SERVER_DIRECTORY, 'worlds', worldName);
+        if (!fs.existsSync(worldPath)) {
+            log('WARNING', `World directory not found for deletion: ${worldPath}`);
+            return { success: false, message: 'World directory not found.' };
+        }
+
+        log('INFO', `Deleting world directory: ${worldPath}`);
+        fs.rmSync(worldPath, { recursive: true, force: true });
+        log('INFO', `Successfully deleted world: ${worldName}`);
+        return { success: true, message: `World '${worldName}' deleted successfully.` };
+    } catch (error) {
+        log('ERROR', `Failed to delete world '${worldName}': ${error.message}`);
+        return { success: false, message: `Failed to delete world: ${error.message}` };
+    }
 }
 
 export async function activateWorld(worldName) {
@@ -1224,13 +1289,6 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
 
     } catch (error) {
         log('ERROR', `Error processing pack upload for ${originalFilename}: ${error.message} ${error.stack}`);
-        try {
-            if (fs.existsSync(tempFilePath)) {
-                fs.unlinkSync(tempFilePath);
-            }
-        } catch (unlinkError) {
-            log('WARNING', `Could not delete temporary file ${tempFilePath} after error: ${unlinkError.message}`);
-        }
         return { success: false, message: `Error processing pack: ${error.message}` };
     }
 }
