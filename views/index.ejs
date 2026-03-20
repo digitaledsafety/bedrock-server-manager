@@ -54,6 +54,9 @@
         <div class="section">
             <h2>Server Log</h2>
             <textarea id="consoleOutput" readonly placeholder="Server logs will appear here..."></textarea>
+            <div class="button-group" style="margin-top: 10px;">
+                <button id="clearLogsButton" class="bg-gray-500 hover:bg-gray-700">Clear Logs</button>
+            </div>
         </div>
 
         <div class="section">
@@ -81,6 +84,11 @@
                             <button class="activate-world-button" data-world-name="<%= world %>">
                                 Activate
                             </button>
+                            <% if (properties['level-name'] !== world) { %>
+                                <button class="delete-world-button bg-red-500 hover:bg-red-700" data-world-name="<%= world %>">
+                                    Delete
+                                </button>
+                            <% } %>
                         </li>
                     <% }); %>
                 <% } else { %>

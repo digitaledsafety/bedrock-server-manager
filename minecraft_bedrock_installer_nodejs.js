@@ -613,6 +613,27 @@ function removeDir(dirPath) {
 }
 
 
+export async function clearServerLogs() {
+    if (!SERVER_DIRECTORY) {
+        log('WARNING', 'SERVER_DIRECTORY not set. Cannot clear logs.');
+        return false;
+    }
+    const serverLogPath = pathJoin(SERVER_DIRECTORY, 'server.log');
+    try {
+        if (fs.existsSync(serverLogPath)) {
+            await fs.promises.writeFile(serverLogPath, '', 'utf8');
+            log('INFO', `Server log file cleared: ${serverLogPath}`);
+            return true;
+        } else {
+            log('INFO', `Server log file does not exist: ${serverLogPath}`);
+            return true;
+        }
+    } catch (error) {
+        log('ERROR', `Error clearing server logs: ${error.message}`);
+        return false;
+    }
+}
+
 export async function readServerProperties() {
     const configPath = pathJoin(SERVER_DIRECTORY, 'server.properties');
     if (!SERVER_DIRECTORY || !fs.existsSync(configPath)) { // Check SERVER_DIRECTORY is defined
@@ -664,6 +685,40 @@ export async function listWorlds() {
         .map(entry => entry.name);
     log('INFO', `Listed worlds: ${worldNames.join(', ')}`);
     return worldNames;
+}
+
+export async function deleteWorld(worldName) {
+    if (!SERVER_DIRECTORY) {
+        log('ERROR', 'SERVER_DIRECTORY not set. Cannot delete world.');
+        return { success: false, message: 'Server directory not configured.' };
+    }
+    if (!isValidWorldName(worldName)) {
+        log('ERROR', `Invalid worldName format for deletion: ${worldName}`);
+        return { success: false, message: 'Invalid world name format.' };
+    }
+
+    try {
+        const properties = await readServerProperties();
+        if (properties['level-name'] === worldName) {
+            log('WARNING', `Attempted to delete active world: ${worldName}`);
+            return { success: false, message: 'Cannot delete the currently active world.' };
+        }
+
+        const worldsPath = pathJoin(SERVER_DIRECTORY, 'worlds');
+        const targetWorldPath = pathJoin(worldsPath, worldName);
+
+        if (!fs.existsSync(targetWorldPath)) {
+            log('WARNING', `World directory '${worldName}' not found at ${targetWorldPath}.`);
+            return { success: false, message: 'World not found.' };
+        }
+
+        await fs.promises.rm(targetWorldPath, { recursive: true, force: true });
+        log('INFO', `Deleted world: ${worldName}`);
+        return { success: true, message: `World '${worldName}' deleted successfully.` };
+    } catch (error) {
+        log('ERROR', `Failed to delete world '${worldName}': ${error.message}`);
+        return { success: false, message: `Failed to delete world: ${error.message}` };
+    }
 }
 
 export async function activateWorld(worldName) {
@@ -1072,7 +1127,7 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
 
                         // Security: Check for Zip Slip vulnerability
                         const resolvedTargetFilePath = path.resolve(targetFilePath);
-                        const resolvedFinalPackPath = path.resolve(finalPackPath);
+                        const resolvedFinalPackPath = path.resolve(finalPackPath) + path.sep;
                         if (!resolvedTargetFilePath.startsWith(resolvedFinalPackPath)) {
                             log('WARNING', `Zip Slip attempt detected in .mcaddon: ${zipEntry.entryName}`);
                             return; // Skip this entry
@@ -1199,7 +1254,7 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
 
                     // Security: Check for Zip Slip vulnerability
                     const resolvedTargetFilePath = path.resolve(targetFilePath);
-                    const resolvedFinalPackPath = path.resolve(finalPackPath);
+                    const resolvedFinalPackPath = path.resolve(finalPackPath) + path.sep;
                     if (!resolvedTargetFilePath.startsWith(resolvedFinalPackPath)) {
                         log('WARNING', `Zip Slip attempt detected in .mcpack: ${zipEntry.entryName}`);
                         return; // Skip this entry
@@ -1224,13 +1279,6 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
 
     } catch (error) {
         log('ERROR', `Error processing pack upload for ${originalFilename}: ${error.message} ${error.stack}`);
-        try {
-            if (fs.existsSync(tempFilePath)) {
-                fs.unlinkSync(tempFilePath);
-            }
-        } catch (unlinkError) {
-            log('WARNING', `Could not delete temporary file ${tempFilePath} after error: ${unlinkError.message}`);
-        }
         return { success: false, message: `Error processing pack: ${error.message}` };
     }
 }
