@@ -170,6 +170,21 @@ app.get('/api/worlds', async (req, res) => {
     }
 });
 
+app.post('/api/delete-world', validateWorldName, async (req, res) => {
+    try {
+        const { worldName } = req.body;
+        const result = await backend.deleteWorld(worldName);
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        backend.log('ERROR', `Failed to delete world: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Failed to delete world due to server error.' });
+    }
+});
+
 app.post('/api/activate-world', validateWorldName, async (req, res) => {
     try {
         const { worldName } = req.body;
@@ -195,6 +210,20 @@ app.get('/api/config', async (req, res) => {
     }
 });
 
+app.post('/api/logs/clear', async (req, res) => {
+    try {
+        const success = await backend.clearServerLogs();
+        if (success) {
+            res.json({ success: true, message: 'Server logs cleared successfully.' });
+        } else {
+            res.status(500).json({ success: false, message: 'Failed to clear server logs.' });
+        }
+    } catch (error) {
+        backend.log('ERROR', `Error in /api/logs/clear: ${error.message}`);
+        res.status(500).json({ error: 'Failed to clear server logs' });
+    }
+});
+
 app.get('/api/logs', async (req, res) => {
     try {
         const config = await backend.readGlobalConfig();
@@ -204,9 +233,24 @@ app.get('/api/logs', async (req, res) => {
             return res.json({ success: true, logs: 'Server log file not found. Start the server to generate logs.' });
         }
 
-        const logContent = await fs.promises.readFile(serverLogPath, 'utf8');
+        // Optimize: read only the last 16KB of the log file
+        const stats = await fs.promises.stat(serverLogPath);
+        const fileSize = stats.size;
+        const readSize = Math.min(fileSize, 16 * 1024); // 16KB
+        const buffer = Buffer.alloc(readSize);
+
+        const fileHandle = await fs.promises.open(serverLogPath, 'r');
+        try {
+            await fileHandle.read(buffer, 0, readSize, fileSize - readSize);
+        } finally {
+            await fileHandle.close();
+        }
+
+        const logContent = buffer.toString('utf8');
         const lines = logContent.split('\n');
-        const lastLines = lines.slice(-100).join('\n');
+        // If we read from the middle of a line, ignore the partial first line
+        const displayLines = readSize === fileSize ? lines : lines.slice(1);
+        const lastLines = displayLines.slice(-100).join('\n');
 
         res.json({ success: true, logs: lastLines });
     } catch (error) {
@@ -220,13 +264,25 @@ app.post('/api/config', async (req, res) => {
         const newSettings = req.body;
         let currentFullConfig = await backend.readGlobalConfig();
         if (newSettings.autoUpdateEnabled !== undefined) {
-            currentFullConfig.autoUpdateEnabled = newSettings.autoUpdateEnabled;
+            currentFullConfig.autoUpdateEnabled = !!newSettings.autoUpdateEnabled;
         }
         if (newSettings.autoUpdateIntervalMinutes !== undefined) {
-            currentFullConfig.autoUpdateIntervalMinutes = parseInt(newSettings.autoUpdateIntervalMinutes, 10);
+            const interval = parseInt(newSettings.autoUpdateIntervalMinutes, 10);
+            if (isNaN(interval) || interval < 1) {
+                return res.status(400).json({ success: false, message: 'Update interval must be a positive integer.' });
+            }
+            currentFullConfig.autoUpdateIntervalMinutes = interval;
         }
         if (newSettings.logLevel !== undefined) {
-            currentFullConfig.logLevel = newSettings.logLevel.toUpperCase();
+            if (typeof newSettings.logLevel !== 'string') {
+                return res.status(400).json({ success: false, message: 'Log level must be a string.' });
+            }
+            const allowedLogLevels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'FATAL'];
+            const level = newSettings.logLevel.toUpperCase();
+            if (!allowedLogLevels.includes(level)) {
+                return res.status(400).json({ success: false, message: `Invalid log level. Allowed: ${allowedLogLevels.join(', ')}` });
+            }
+            currentFullConfig.logLevel = level;
         }
         await backend.writeGlobalConfig(currentFullConfig);
         await backend.startAutoUpdateScheduler();
@@ -246,45 +302,41 @@ app.post('/api/upload-pack', upload.single('packFile'), async (req, res) => {
         return res.status(400).json({ success: false, message: 'No pack file uploaded.' });
     }
 
-    // packType is now optional due to auto-detection in the backend
-    if (!worldName) {
-        fs.unlink(packFile.path, (err) => {
-            if (err) backend.log('WARNING', `Failed to delete orphaned upload ${packFile.path}: ${err.message}`);
-        });
-        return res.status(400).json({ success: false, message: 'World name is required.' });
-    }
-
-    // Validate packType if provided
-    if (packType) {
-        const validPackTypes = ['behavior', 'resource', 'dev_behavior', 'dev_resource'];
-        if (!validPackTypes.includes(packType)) {
-            fs.unlink(packFile.path, (err) => {
-                if (err) backend.log('WARNING', `Failed to delete orphaned upload ${packFile.path}: ${err.message}`);
+    const cleanup = () => {
+        if (fs.existsSync(packFile.path)) {
+            fs.promises.unlink(packFile.path).catch(err => {
+                backend.log('WARNING', `Failed to delete upload ${packFile.path}: ${err.message}`);
             });
-            return res.status(400).json({ success: false, message: 'Invalid pack type specified.' });
         }
-    }
-
-    // Validate worldName
-    if (!backend.isValidWorldName(worldName)) {
-        backend.log('ERROR', `Invalid worldName format or characters for pack upload: ${worldName}`);
-        fs.unlink(packFile.path, (err) => {
-            if (err) backend.log('WARNING', `Failed to delete orphaned upload ${packFile.path}: ${err.message}`);
-        });
-        return res.status(400).json({ success: false, message: 'Invalid worldName format for pack upload.' });
-    }
-
-    // More robust: Check if world actually exists
-    const existingWorlds = await backend.listWorlds();
-    if (!existingWorlds.includes(worldName)) {
-        backend.log('ERROR', `Attempt to upload pack to non-existent world: ${worldName}`);
-        fs.unlink(packFile.path, (err) => {
-            if (err) backend.log('WARNING', `Failed to delete orphaned upload ${packFile.path}: ${err.message}`);
-        });
-        return res.status(400).json({ success: false, message: `Target world '${worldName}' does not exist.` });
-    }
+    };
 
     try {
+        // packType is now optional due to auto-detection in the backend
+        if (!worldName) {
+            return res.status(400).json({ success: false, message: 'World name is required.' });
+        }
+
+        // Validate packType if provided
+        if (packType) {
+            const validPackTypes = ['behavior', 'resource', 'dev_behavior', 'dev_resource'];
+            if (!validPackTypes.includes(packType)) {
+                return res.status(400).json({ success: false, message: 'Invalid pack type specified.' });
+            }
+        }
+
+        // Validate worldName
+        if (!backend.isValidWorldName(worldName)) {
+            backend.log('ERROR', `Invalid worldName format or characters for pack upload: ${worldName}`);
+            return res.status(400).json({ success: false, message: 'Invalid worldName format for pack upload.' });
+        }
+
+        // More robust: Check if world actually exists
+        const existingWorlds = await backend.listWorlds();
+        if (!existingWorlds.includes(worldName)) {
+            backend.log('ERROR', `Attempt to upload pack to non-existent world: ${worldName}`);
+            return res.status(400).json({ success: false, message: `Target world '${worldName}' does not exist.` });
+        }
+
         backend.log('INFO', `Processing pack upload: File=${packFile.path}, OriginalName=${packFile.originalname}, Type=${packType}, World=${worldName}`);
         // Pass originalname so backend can distinguish .mcpack from .mcaddon
         // packType is relevant for .mcpack, ignored for .mcaddon by the backend logic
@@ -292,24 +344,13 @@ app.post('/api/upload-pack', upload.single('packFile'), async (req, res) => {
         if (result.success) {
             res.json({ success: true, message: result.message });
         } else {
-            // uploadPack should handle deleting the temp file on its own errors,
-            // but if it failed before even trying, or we want to be sure:
-            if (fs.existsSync(packFile.path)) {
-                 fs.unlink(packFile.path, (err) => {
-                    if (err) backend.log('WARNING', `Failed to delete upload ${packFile.path} after backend processing error: ${err.message}`);
-                });
-            }
             res.status(400).json({ success: false, message: result.message });
         }
     } catch (error) {
         backend.log('ERROR', `Error uploading pack: ${error.message}`);
-        // Ensure temp file is deleted on unexpected error
-        if (fs.existsSync(packFile.path)) {
-            fs.unlink(packFile.path, (err) => {
-                if (err) backend.log('WARNING', `Failed to delete upload ${packFile.path} after exception: ${err.message}`);
-            });
-        }
         res.status(500).json({ success: false, message: 'Failed to upload pack due to server error.' });
+    } finally {
+        cleanup();
     }
 }, (error, req, res, next) => {
     // Custom error handler for multer errors (e.g., file size limit)
