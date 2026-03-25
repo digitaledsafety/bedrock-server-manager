@@ -4,12 +4,15 @@ import { jest } from '@jest/globals';
 jest.unstable_mockModule('fs', () => ({
   promises: {
     readFile: jest.fn(),
+    stat: jest.fn(),
+    open: jest.fn(),
+    writeFile: jest.fn(),
   },
   existsSync: jest.fn(),
   readFileSync: jest.fn(),
   writeFileSync: jest.fn(),
   createWriteStream: jest.fn(() => ({ write: jest.fn() })),
-  mkdirSync: jest.fn(), // Added mock for mkdirSync
+  mkdirSync: jest.fn(),
 }));
 
 // Dynamically import the modules after mocks are defined
@@ -56,6 +59,19 @@ gamemode=survival
         'level-seed': '12345',
         'gamemode': 'survival',
       });
+    });
+
+    it('should correctly parse values containing = characters', async () => {
+        const mockProperties = 'motd=Hello=World';
+        fs.existsSync.mockReturnValue(true);
+        fs.promises.readFile.mockResolvedValue(mockProperties);
+        backend.init({ serverDirectory: '/test/server' });
+
+        const properties = await backend.readServerProperties();
+
+        expect(properties).toEqual({
+            'motd': 'Hello=World',
+        });
     });
 
     it('should return an empty object if the file does not exist', async () => {
@@ -119,5 +135,54 @@ gamemode=survival
 
         process.argv = [];
     });
+  });
+
+  describe('isValidWorldName', () => {
+    it('should return true for valid world names', () => {
+        expect(backend.isValidWorldName('My_World-123')).toBe(true);
+        expect(backend.isValidWorldName('Standard World')).toBe(true);
+    });
+
+    it('should return false for empty or whitespace strings', () => {
+        expect(backend.isValidWorldName('')).toBe(false);
+        expect(backend.isValidWorldName('   ')).toBe(false);
+    });
+
+    it('should return false for invalid characters or path traversal', () => {
+        expect(backend.isValidWorldName('World/../Path')).toBe(false);
+        expect(backend.isValidWorldName('World.zip')).toBe(false);
+        expect(backend.isValidWorldName('World@123')).toBe(false);
+    });
+  });
+
+  describe('getServerLogs', () => {
+      it('should return logs correctly from file', async () => {
+          const mockLogContent = 'Line 1\nLine 2\nLine 3';
+          const mockStats = { size: mockLogContent.length };
+          const mockFileHandle = {
+              read: jest.fn().mockImplementation((buffer) => {
+                  buffer.write(mockLogContent);
+                  return Promise.resolve({ bytesRead: mockLogContent.length });
+              }),
+              close: jest.fn().mockResolvedValue(undefined),
+          };
+
+          fs.existsSync.mockReturnValue(true);
+          fs.promises.stat.mockResolvedValue(mockStats);
+          fs.promises.open.mockResolvedValue(mockFileHandle);
+
+          backend.init({ serverDirectory: '/test/server' });
+          const logs = await backend.getServerLogs();
+
+          expect(logs).toBe('Line 1\nLine 2\nLine 3');
+      });
+  });
+
+  describe('getConfig', () => {
+      it('should return the current configuration', async () => {
+          const testConfig = { serverName: 'Test Config' };
+          backend.init(testConfig);
+          expect(backend.getConfig()).toEqual(expect.objectContaining(testConfig));
+      });
   });
 });

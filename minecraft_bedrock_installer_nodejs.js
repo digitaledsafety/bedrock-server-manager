@@ -76,7 +76,7 @@ export function log(level, message) {
  * @returns {boolean} True if the world name is valid, false otherwise.
  */
 export function isValidWorldName(worldName) {
-    if (!worldName || typeof worldName !== 'string') return false;
+    if (!worldName || typeof worldName !== 'string' || worldName.trim().length === 0) return false;
     const worldNameRegex = /^[a-zA-Z0-9_ -]+$/;
     // Prevent path traversal and check against allowed characters
     if (worldName.includes('.') || worldName.includes('/') || worldName.includes('\\') || !worldNameRegex.test(worldName)) {
@@ -634,6 +634,46 @@ export async function clearServerLogs() {
     }
 }
 
+/**
+ * Reads the last 16KB of the server log file and returns up to 100 lines.
+ * @returns {Promise<string>} The last part of the server logs.
+ */
+export async function getServerLogs() {
+    if (!SERVER_DIRECTORY) {
+        return 'Server directory not configured.';
+    }
+
+    const serverLogPath = pathJoin(SERVER_DIRECTORY, 'server.log');
+
+    if (!fs.existsSync(serverLogPath)) {
+        return 'Server log file not found. Start the server to generate logs.';
+    }
+
+    try {
+        // Optimize: read only the last 16KB of the log file
+        const stats = await fs.promises.stat(serverLogPath);
+        const fileSize = stats.size;
+        const readSize = Math.min(fileSize, 16 * 1024); // 16KB
+        const buffer = Buffer.alloc(readSize);
+
+        const fileHandle = await fs.promises.open(serverLogPath, 'r');
+        try {
+            await fileHandle.read(buffer, 0, readSize, fileSize - readSize);
+        } finally {
+            await fileHandle.close();
+        }
+
+        const logContent = buffer.toString('utf8');
+        const lines = logContent.split('\n');
+        // If we read from the middle of a line, ignore the partial first line
+        const displayLines = readSize === fileSize ? lines : lines.slice(1);
+        return displayLines.slice(-100).join('\n');
+    } catch (error) {
+        log('ERROR', `Error reading server logs: ${error.message}`);
+        throw new Error('Failed to read server logs');
+    }
+}
+
 export async function readServerProperties() {
     const configPath = pathJoin(SERVER_DIRECTORY, 'server.properties');
     if (!SERVER_DIRECTORY || !fs.existsSync(configPath)) { // Check SERVER_DIRECTORY is defined
@@ -642,13 +682,17 @@ export async function readServerProperties() {
     }
     const data = await fs.promises.readFile(configPath, 'utf8');
     const properties = {};
-    data.split('\n').forEach(line => {
-        const trimmedLine = line.trim();
-        if (trimmedLine && !trimmedLine.startsWith('#')) {
-            const [key, value] = trimmedLine.split('=').map(s => s.trim());
-            if (key) { properties[key] = value || ''; }
-        }
-    });
+    data.split('\n').forEach(line => {
+        const trimmedLine = line.trim();
+        if (trimmedLine && !trimmedLine.startsWith('#')) {
+            const separatorIndex = trimmedLine.indexOf('=');
+            if (separatorIndex !== -1) {
+                const key = trimmedLine.substring(0, separatorIndex).trim();
+                const value = trimmedLine.substring(separatorIndex + 1).trim();
+                if (key) { properties[key] = value; }
+            }
+        }
+    });
     log('INFO', `Read server.properties from ${configPath}`);
     return properties;
 }
@@ -906,6 +950,14 @@ export async function readGlobalConfig() {
     log('INFO', 'Configuration loading complete.');
     log('DEBUG', `Final effective configuration: ${JSON.stringify(effectiveConfig, null, 2)}`);
     return effectiveConfig;
+}
+
+/**
+ * Returns the current active configuration from memory.
+ * @returns {object} The current configuration object.
+ */
+export function getConfig() {
+    return config;
 }
 
 export async function writeGlobalConfig(configToWrite) {
