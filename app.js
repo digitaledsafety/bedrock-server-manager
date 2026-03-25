@@ -202,7 +202,7 @@ app.post('/api/activate-world', validateWorldName, async (req, res) => {
 
 app.get('/api/config', async (req, res) => {
     try {
-        const appConfig = await backend.readGlobalConfig();
+        const appConfig = backend.getConfig();
         res.json({ success: true, config: appConfig });
     } catch (error) {
         backend.log('ERROR', `Error getting application config: ${error.message}`);
@@ -226,35 +226,10 @@ app.post('/api/logs/clear', async (req, res) => {
 
 app.get('/api/logs', async (req, res) => {
     try {
-        const config = await backend.readGlobalConfig();
-        const serverLogPath = pathJoin(config.serverDirectory, 'server.log');
-
-        if (!fs.existsSync(serverLogPath)) {
-            return res.json({ success: true, logs: 'Server log file not found. Start the server to generate logs.' });
-        }
-
-        // Optimize: read only the last 16KB of the log file
-        const stats = await fs.promises.stat(serverLogPath);
-        const fileSize = stats.size;
-        const readSize = Math.min(fileSize, 16 * 1024); // 16KB
-        const buffer = Buffer.alloc(readSize);
-
-        const fileHandle = await fs.promises.open(serverLogPath, 'r');
-        try {
-            await fileHandle.read(buffer, 0, readSize, fileSize - readSize);
-        } finally {
-            await fileHandle.close();
-        }
-
-        const logContent = buffer.toString('utf8');
-        const lines = logContent.split('\n');
-        // If we read from the middle of a line, ignore the partial first line
-        const displayLines = readSize === fileSize ? lines : lines.slice(1);
-        const lastLines = displayLines.slice(-100).join('\n');
-
-        res.json({ success: true, logs: lastLines });
+        const logs = await backend.getServerLogs();
+        res.json({ success: true, logs });
     } catch (error) {
-        backend.log('ERROR', `Error reading server logs: ${error.message}`);
+        backend.log('ERROR', `Error in /api/logs: ${error.message}`);
         res.status(500).json({ error: 'Failed to read server logs' });
     }
 });
@@ -368,7 +343,7 @@ app.post('/api/upload-pack', upload.single('packFile'), async (req, res) => {
 // --- Frontend Routes ---
 app.get('/', async (req, res) => {
     try {
-        const currentConfig = await backend.readGlobalConfig();
+        const currentConfig = backend.getConfig();
         const properties = await backend.readServerProperties();
         const worlds = await backend.listWorlds();
         const isRunning = await backend.isProcessRunning();
