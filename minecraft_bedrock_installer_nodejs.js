@@ -25,7 +25,7 @@ let serverPID = null;
 
 const LAST_VERSION_FILE = 'last_version.txt';
 const WEBHOOK_URL = process.env.MC_UPDATE_WEBHOOK;
-const CONFIG_FILES = ['server.properties', 'permissions.json', 'whitelist.json'];
+const CONFIG_FILES = ['server.properties', 'permissions.json', 'whitelist.json', 'allowlist.json'];
 const WORLD_DIRECTORIES = ['worlds'];
 const GLOBAL_CONFIG_FILE = 'config.json';
 
@@ -45,12 +45,12 @@ function setLogLevel(levelName) {
         // or if we are increasing verbosity to INFO from something more restrictive.
         if (LOG_LEVELS.INFO >= currentLogLevel && (LOG_LEVELS.INFO >= oldLogLevel || currentLogLevel <= oldLogLevel) ) {
             const initialLogMessage = `${new Date().toISOString()} [INFO] Log level set to ${levelNameToUse}\n`;
-            console.log(initialLogMessage);
+            process.stdout.write(initialLogMessage);
             logStream.write(initialLogMessage);
         }
     } else {
         const warningMessage = `${new Date().toISOString()} [WARNING] Invalid log level: ${levelName}. Defaulting to INFO.\n`;
-        console.warn(warningMessage);
+        process.stderr.write(warningMessage);
         logStream.write(warningMessage);
         currentLogLevel = LOG_LEVELS.INFO;
     }
@@ -59,14 +59,14 @@ function setLogLevel(levelName) {
 export function log(level, message) {
     const messageLevel = LOG_LEVELS[level.toUpperCase()];
     if (messageLevel === undefined) {
-        console.warn(`Invalid log level used in log() call: ${level}`);
+        process.stderr.write(`Invalid log level used in log() call: ${level}\n`);
         return;
     }
     if (messageLevel >= currentLogLevel) {
-        const timestamp = new Date().toISOString();
-        const logMessage = `${timestamp} [${level.toUpperCase()}] ${message}\n`;
-        console.log(logMessage);
-        logStream.write(logMessage);
+        const timestamp = new Date().toISOString();
+        const logMessage = `${timestamp} [${level.toUpperCase()}] ${message}\n`;
+        process.stdout.write(logMessage);
+        logStream.write(logMessage);
     }
 }
 
@@ -165,8 +165,6 @@ export async function getLatestVersion() {
             log('ERROR', error.message);
             throw error;
         }
-
-        return { latestVersion: version, downloadUrl: downloadUrl };
     }
 
     // Default to bedrock
@@ -219,25 +217,25 @@ export async function getLatestVersion() {
 }
 
 export function downloadFile(downloadUrl, downloadPath) {
-    return new Promise((resolve, reject) => {
-        const url = new URL(downloadUrl);
-        const protocol = url.protocol === 'https:' ? https : http;
-        const file = fs.createWriteStream(downloadPath);
-        protocol.get(url, (response) => {
-            if (response.statusCode < 200 || response.statusCode >= 300) {
-                reject(new Error(`Failed to download file: ${response.statusCode} ${response.statusMessage}`));
-                return;
-            }
-            response.pipe(file);
-            file.on('finish', () => { file.close(resolve); });
-            file.on('error', (err) => { fs.unlink(downloadPath, () => reject(new Error(`Error writing to file: ${err.message}`))); });
-            response.on('error', (err) => { fs.unlink(downloadPath, () => reject(new Error(`Error during download: ${err.message}`))); });
-        });
-    });
+    return new Promise((resolve, reject) => {
+        const url = new URL(downloadUrl);
+        const protocol = url.protocol === 'https:' ? https : http;
+        const file = fs.createWriteStream(downloadPath);
+        protocol.get(url, (response) => {
+            if (response.statusCode < 200 || response.statusCode >= 300) {
+                reject(new Error(`Failed to download file: ${response.statusCode} ${response.statusMessage}`));
+                return;
+            }
+            response.pipe(file);
+            file.on('finish', () => { file.close(resolve); });
+            file.on('error', (err) => { fs.unlink(downloadPath, () => reject(new Error(`Error writing to file: ${err.message}`))); });
+            response.on('error', (err) => { fs.unlink(downloadPath, () => reject(new Error(`Error during download: ${err.message}`))); });
+        });
+    });
 }
 
 export function extractFiles(zipPath, extractPath) {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve, reject) => {
         try {
             log('INFO', `Using adm-zip for extraction for ${zipPath} to ${extractPath}.`);
             const zip = new AdmZip(zipPath);
@@ -255,12 +253,12 @@ export function extractFiles(zipPath, extractPath) {
                 log('ERROR', `Failed to set permissions for ${executableFilePath}: ${err.message}`);
             }
 
-            resolve();
+            resolve();
         } catch (error) {
             log('ERROR', `Extraction failed for ${zipPath}: ${error.message}`);
             reject(new Error(`Extraction failed: ${error.message}`));
-        }
-    });
+        }
+    });
 }
 
 export async function changeOwnership(dirPath, user, group) {
@@ -391,20 +389,33 @@ export async function copyExistingData(backupDir, newInstallDir) {
     log('INFO', 'Finished copying existing data.');
 }
 
-export async function stopServer() {
-    if (!serverPID && SERVER_DIRECTORY) {
+/**
+ * Attempts to recover the server PID from the server.pid file.
+ * @returns {number|null} The recovered PID, or null if not found or invalid.
+ */
+function recoverPID() {
+    if (SERVER_DIRECTORY) {
         const pidFile = pathJoin(SERVER_DIRECTORY, 'server.pid');
         if (fs.existsSync(pidFile)) {
             try {
-                const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
+                const pidString = fs.readFileSync(pidFile, 'utf8').trim();
+                const pid = parseInt(pidString, 10);
                 if (!isNaN(pid)) {
                     serverPID = pid;
-                    log('INFO', `Recovered server PID from file for stopping: ${serverPID}`);
+                    log('INFO', `Recovered server PID from file: ${serverPID}`);
+                    return serverPID;
                 }
             } catch (error) {
-                log('ERROR', `Failed to read PID file for stopping: ${error.message}`);
+                log('ERROR', `Failed to read PID file: ${error.message}`);
             }
         }
+    }
+    return null;
+}
+
+export async function stopServer() {
+    if (!serverPID) {
+        recoverPID();
     }
 
     if (!serverPID) {
@@ -471,11 +482,11 @@ export async function startServer() {
             return;
         }
         log('INFO', `Starting Minecraft server from ${serverExePath}`);
-        const serverProcess = spawn(serverExePath, [], {
-            cwd: SERVER_DIRECTORY,
-            stdio: ['ignore', 'pipe', 'pipe'],
-            detached: false
-        });
+        const serverProcess = spawn(serverExePath, [], {
+            cwd: SERVER_DIRECTORY,
+            stdio: ['ignore', 'pipe', 'pipe'],
+            detached: true
+        });
         if (serverProcess.pid) {
             serverPID = serverProcess.pid;
             log('INFO', `Server process started with PID: ${serverPID}.`);
@@ -635,22 +646,26 @@ export async function clearServerLogs() {
 }
 
 export async function readServerProperties() {
-    const configPath = pathJoin(SERVER_DIRECTORY, 'server.properties');
-    if (!SERVER_DIRECTORY || !fs.existsSync(configPath)) { // Check SERVER_DIRECTORY is defined
-        log('WARNING', `server.properties not found at ${configPath} (or server directory not set). Returning empty config.`);
-        return {};
-    }
-    const data = await fs.promises.readFile(configPath, 'utf8');
-    const properties = {};
-    data.split('\n').forEach(line => {
-        const trimmedLine = line.trim();
-        if (trimmedLine && !trimmedLine.startsWith('#')) {
-            const [key, value] = trimmedLine.split('=').map(s => s.trim());
-            if (key) { properties[key] = value || ''; }
-        }
-    });
-    log('INFO', `Read server.properties from ${configPath}`);
-    return properties;
+    const configPath = pathJoin(SERVER_DIRECTORY, 'server.properties');
+    if (!SERVER_DIRECTORY || !fs.existsSync(configPath)) { // Check SERVER_DIRECTORY is defined
+        log('WARNING', `server.properties not found at ${configPath} (or server directory not set). Returning empty config.`);
+        return {};
+    }
+    const data = await fs.promises.readFile(configPath, 'utf8');
+    const properties = {};
+    data.split(/\r?\n/).forEach(line => {
+        const trimmedLine = line.trim();
+        if (trimmedLine && !trimmedLine.startsWith('#')) {
+            const separatorIndex = trimmedLine.indexOf('=');
+            if (separatorIndex !== -1) {
+                const key = trimmedLine.substring(0, separatorIndex).trim();
+                const value = trimmedLine.substring(separatorIndex + 1).trim();
+                if (key) { properties[key] = value; }
+            }
+        }
+    });
+    log('INFO', `Read server.properties from ${configPath}`);
+    return properties;
 }
 
 export async function writeServerProperties(propertiesToWrite) {
@@ -762,20 +777,8 @@ export async function restartServer() {
 }
 
 export async function isProcessRunning() {
-    if (!serverPID && SERVER_DIRECTORY) {
-        const pidFile = pathJoin(SERVER_DIRECTORY, 'server.pid');
-        if (fs.existsSync(pidFile)) {
-            try {
-                const pidString = fs.readFileSync(pidFile, 'utf8').trim();
-                const pid = parseInt(pidString, 10);
-                if (!isNaN(pid)) {
-                    serverPID = pid;
-                    log('INFO', `Recovered server PID from file: ${serverPID}`);
-                }
-            } catch (error) {
-                log('ERROR', `Failed to read PID file: ${error.message}`);
-            }
-        }
+    if (!serverPID) {
+        recoverPID();
     }
 
     if (!serverPID) {
