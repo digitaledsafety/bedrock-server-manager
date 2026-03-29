@@ -55,6 +55,7 @@
             <h2>Server Log</h2>
             <textarea id="consoleOutput" readonly placeholder="Server logs will appear here..."></textarea>
             <div class="button-group" style="margin-top: 10px;">
+                <button id="downloadLogsButton" class="bg-blue-500 hover:bg-blue-700">Download Full Log</button>
                 <button id="clearLogsButton" class="bg-gray-500 hover:bg-gray-700">Clear Logs</button>
             </div>
         </div>
@@ -72,6 +73,13 @@
                 </div>
                 <button type="submit">Save Auto-Update Settings</button>
             </form>
+        </div>
+
+        <div class="section">
+            <h2>Backup Management</h2>
+            <div id="backupList" class="world-list">
+                <p>Loading backups...</p>
+            </div>
         </div>
 
         <div class="section">
