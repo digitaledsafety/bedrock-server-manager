@@ -351,10 +351,6 @@ export async function backupServer() {
     }
 }
 
-export async function copyDir(src, dest) {
-    log('DEBUG', `Using fs.cpSync for copyDir from ${src} to ${dest}`);
-    fs.cpSync(src, dest, { recursive: true });
-}
 
 export async function copyExistingData(backupDir, newInstallDir) {
     log('INFO', `Copying existing data from ${backupDir} to ${newInstallDir}`);
@@ -603,14 +599,6 @@ export async function checkAndInstall() {
     }
 }
 
-/**
- * Removes a directory recursively. Cross-platform compatible.
- * @param {string} dirPath The path to the directory to remove.
- */
-function removeDir(dirPath) {
-    log('DEBUG', `Using fs.rmSync for removeDir: ${dirPath}`);
-    fs.rmSync(dirPath, { recursive: true, force: true });
-}
 
 
 export async function clearServerLogs() {
@@ -759,6 +747,48 @@ export async function restartServer() {
     await new Promise(resolve => setTimeout(resolve, 3000));
     await startServer();
     log('INFO', 'Minecraft server restart command executed.');
+}
+
+export async function listBackups() {
+    if (!BACKUP_DIRECTORY || !fs.existsSync(BACKUP_DIRECTORY)) {
+        log('WARNING', 'BACKUP_DIRECTORY not found or not set.');
+        return [];
+    }
+    try {
+        const entries = await fs.promises.readdir(BACKUP_DIRECTORY, { withFileTypes: true });
+        const backups = entries
+            .filter(entry => entry.isDirectory())
+            .map(entry => entry.name);
+        log('INFO', `Listed backups: ${backups.join(', ')}`);
+        return backups;
+    } catch (error) {
+        log('ERROR', `Error listing backups: ${error.message}`);
+        return [];
+    }
+}
+
+export async function deleteBackup(backupName) {
+    if (!BACKUP_DIRECTORY) {
+        log('ERROR', 'BACKUP_DIRECTORY not set. Cannot delete backup.');
+        return { success: false, message: 'Backup directory not configured.' };
+    }
+    if (!isValidWorldName(backupName)) { // reusing same validation logic for simplicity
+        log('ERROR', `Invalid backupName format: ${backupName}`);
+        return { success: false, message: 'Invalid backup name format.' };
+    }
+    const targetPath = pathJoin(BACKUP_DIRECTORY, backupName);
+    if (!fs.existsSync(targetPath)) {
+        log('WARNING', `Backup directory '${backupName}' not found at ${targetPath}.`);
+        return { success: false, message: 'Backup not found.' };
+    }
+    try {
+        await fs.promises.rm(targetPath, { recursive: true, force: true });
+        log('INFO', `Deleted backup: ${backupName}`);
+        return { success: true, message: `Backup '${backupName}' deleted successfully.` };
+    } catch (error) {
+        log('ERROR', `Failed to delete backup '${backupName}': ${error.message}`);
+        return { success: false, message: `Failed to delete backup: ${error.message}` };
+    }
 }
 
 export async function isProcessRunning() {
@@ -997,6 +1027,58 @@ async function updateWorldPackJson(worldPath, packTypeJsonFile, packId, packVers
 }
 
 /**
+ * Extracts pack entries from a ZIP, handles ZIP slip protection.
+ * @param {Array} zipEntries - Entries from AdmZip.
+ * @param {string} packRootInZip - Root path within the ZIP.
+ * @param {string} finalPackPath - Destination path on disk.
+ * @param {Array<string>} allPackRoots - All pack roots in the ZIP (for .mcaddon).
+ */
+function extractPackEntries(zipEntries, packRootInZip, finalPackPath, allPackRoots = []) {
+    zipEntries.forEach(zipEntry => {
+        if (zipEntry.isDirectory) return;
+
+        let isEntryInPack = false;
+        let relativePathInPack = '';
+
+        if (packRootInZip === '') {
+            const entryName = zipEntry.entryName;
+            const belongsToOtherPack = allPackRoots.some(otherRoot => {
+                if (otherRoot === '') return false;
+                return entryName.startsWith(otherRoot + '/');
+            });
+
+            if (!belongsToOtherPack) {
+                isEntryInPack = true;
+                relativePathInPack = entryName;
+            }
+        } else {
+            const prefix = packRootInZip + '/';
+            if (zipEntry.entryName.startsWith(prefix)) {
+                isEntryInPack = true;
+                relativePathInPack = path.relative(packRootInZip, zipEntry.entryName);
+            }
+        }
+
+        if (isEntryInPack && relativePathInPack) {
+            const targetFilePath = path.join(finalPackPath, relativePathInPack);
+            const resolvedTargetFilePath = path.resolve(targetFilePath);
+            const resolvedFinalPackPath = path.resolve(finalPackPath) + path.sep;
+
+            if (!resolvedTargetFilePath.startsWith(resolvedFinalPackPath)) {
+                log('WARNING', `Zip Slip attempt detected: ${zipEntry.entryName}`);
+                return;
+            }
+
+            const targetFileDir = path.dirname(targetFilePath);
+            if (!fs.existsSync(targetFileDir)) {
+                fs.mkdirSync(targetFileDir, { recursive: true });
+            }
+            fs.writeFileSync(targetFilePath, zipEntry.getData());
+        }
+    });
+}
+
+/**
  * Uploads and applies a pack (or packs from an addon) to a specific world.
  * @param {string} tempFilePath - Path to the temporary uploaded file (.mcpack or .mcaddon).
  * @param {string} originalFilename - The original name of the uploaded file.
@@ -1093,53 +1175,7 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
                     fs.rmSync(finalPackPath, { recursive: true, force: true });
                 }
                 fs.mkdirSync(finalPackPath, { recursive: true });
-
-                zipEntries.forEach(zipEntry => {
-                    if (zipEntry.isDirectory) return;
-
-                    let isEntryInPack = false;
-                    let relativePathInPack = '';
-
-                    if (packRootInZip === '') {
-                        // If this pack is at the root, it owns all files EXCEPT those that belong to other packs
-                        // (which are in subdirectories identified as pack roots).
-                        const entryName = zipEntry.entryName;
-                        const belongsToOtherPack = allPackRoots.some(otherRoot => {
-                            if (otherRoot === '') return false; // Don't compare with self
-                            return entryName.startsWith(otherRoot + '/');
-                        });
-
-                        if (!belongsToOtherPack) {
-                            isEntryInPack = true;
-                            relativePathInPack = entryName;
-                        }
-                    } else {
-                        // If this pack is in a subdirectory, it owns everything under that prefix
-                        const prefix = packRootInZip + '/';
-                        if (zipEntry.entryName.startsWith(prefix)) {
-                            isEntryInPack = true;
-                            relativePathInPack = path.relative(packRootInZip, zipEntry.entryName);
-                        }
-                    }
-
-                    if (isEntryInPack && relativePathInPack) {
-                        const targetFilePath = path.join(finalPackPath, relativePathInPack);
-
-                        // Security: Check for Zip Slip vulnerability
-                        const resolvedTargetFilePath = path.resolve(targetFilePath);
-                        const resolvedFinalPackPath = path.resolve(finalPackPath) + path.sep;
-                        if (!resolvedTargetFilePath.startsWith(resolvedFinalPackPath)) {
-                            log('WARNING', `Zip Slip attempt detected in .mcaddon: ${zipEntry.entryName}`);
-                            return; // Skip this entry
-                        }
-
-                        const targetFileDir = path.dirname(targetFilePath);
-                        if (!fs.existsSync(targetFileDir)) {
-                            fs.mkdirSync(targetFileDir, { recursive: true });
-                        }
-                        fs.writeFileSync(targetFilePath, zipEntry.getData());
-                    }
-                });
+                extractPackEntries(zipEntries, packRootInZip, finalPackPath, allPackRoots);
                 log('INFO', `Extracted pack '${packName}' to ${finalPackPath}`);
 
                 const updateSuccess = await updateWorldPackJson(worldPath, currentWorldPackJsonFile, packId, packVersion);
@@ -1232,41 +1268,7 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
             }
             fs.mkdirSync(finalPackPath, { recursive: true });
 
-            zipEntries.forEach(zipEntry => {
-                if (zipEntry.isDirectory) return;
-
-                let isEntryInPack = false;
-                let relativePathInPack = '';
-
-                if (packRootInZip === '') {
-                    isEntryInPack = true;
-                    relativePathInPack = zipEntry.entryName;
-                } else {
-                    const prefix = packRootInZip + '/';
-                    if (zipEntry.entryName.startsWith(prefix)) {
-                        isEntryInPack = true;
-                        relativePathInPack = path.relative(packRootInZip, zipEntry.entryName);
-                    }
-                }
-
-                if (isEntryInPack && relativePathInPack) {
-                    const targetFilePath = path.join(finalPackPath, relativePathInPack);
-
-                    // Security: Check for Zip Slip vulnerability
-                    const resolvedTargetFilePath = path.resolve(targetFilePath);
-                    const resolvedFinalPackPath = path.resolve(finalPackPath) + path.sep;
-                    if (!resolvedTargetFilePath.startsWith(resolvedFinalPackPath)) {
-                        log('WARNING', `Zip Slip attempt detected in .mcpack: ${zipEntry.entryName}`);
-                        return; // Skip this entry
-                    }
-
-                    const targetFileDir = path.dirname(targetFilePath);
-                    if (!fs.existsSync(targetFileDir)) {
-                        fs.mkdirSync(targetFileDir, { recursive: true });
-                    }
-                    fs.writeFileSync(targetFilePath, zipEntry.getData());
-                }
-            });
+            extractPackEntries(zipEntries, packRootInZip, finalPackPath);
             log('INFO', `Extracted .mcpack '${packName}' to ${finalPackPath}`);
 
             const updateSuccess = await updateWorldPackJson(worldPath, worldPackJsonFile, packId, packVersion);

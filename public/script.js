@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const restartButton = document.getElementById('restartButton');
     const updateButton = document.getElementById('updateButton');
     const clearLogsButton = document.getElementById('clearLogsButton');
+    const downloadLogsButton = document.getElementById('downloadLogsButton');
     const propertiesForm = document.getElementById('propertiesForm');
     const levelNameInput = document.getElementById('level-name'); // Get the level-name input
     const consoleOutput = document.getElementById('consoleOutput'); // Get the console textarea
@@ -417,6 +418,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (clearLogsButton) clearLogsButton.addEventListener('click', handleClearLogs);
+    if (downloadLogsButton) {
+        downloadLogsButton.addEventListener('click', () => {
+            window.location.href = '/api/logs/download';
+        });
+    }
     if (propertiesForm) propertiesForm.addEventListener('submit', saveServerProperties);
     if (autoUpdateConfigForm) autoUpdateConfigForm.addEventListener('submit', saveAutoUpdateConfig);
     if (uploadPackForm) {
@@ -443,11 +449,78 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function loadBackups() {
+        try {
+            const response = await fetch('/api/backups');
+            const data = await response.json();
+            if (data.success) {
+                const backupListContainer = document.getElementById('backupList');
+                if (backupListContainer) {
+                    backupListContainer.innerHTML = '';
+                    if (data.backups && data.backups.length > 0) {
+                        data.backups.forEach(backup => {
+                            const backupItem = document.createElement('div');
+                            backupItem.className = 'world-item';
+                            backupItem.innerHTML = `
+                                <span>${backup}</span>
+                                <button class="delete-backup-button bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-backup-name="${backup}">
+                                    Delete
+                                </button>
+                            `;
+                            backupListContainer.appendChild(backupItem);
+                        });
+                        addDeleteBackupButtonListeners();
+                    } else {
+                        backupListContainer.innerHTML = '<p class="text-gray-600">No backups found.</p>';
+                    }
+                }
+            } else {
+                showMessage('Failed to load backups: ' + data.message, 'error');
+            }
+        } catch (error) {
+            console.error('Error loading backups:', error);
+            showMessage('Failed to load backups.', 'error');
+        }
+    }
+
+    function addDeleteBackupButtonListeners() {
+        document.querySelectorAll('.delete-backup-button').forEach(button => {
+            button.addEventListener('click', handleDeleteBackupClick);
+        });
+    }
+
+    async function handleDeleteBackupClick(event) {
+        const backupName = event.target.dataset.backupName;
+        if (!confirm(`Are you sure you want to delete the backup '${backupName}'?`)) return;
+
+        try {
+            showMessage(`Deleting backup '${backupName}'...`);
+            const response = await fetch('/api/delete-backup', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ backupName })
+            });
+            const data = await response.json();
+            if (response.ok && data.success) {
+                showMessage(data.message || `Backup '${backupName}' deleted.`, 'success');
+                loadBackups();
+            } else {
+                showMessage(data.message || `Failed to delete backup '${backupName}'.`, 'error');
+            }
+        } catch (error) {
+            console.error('Error deleting backup:', error);
+            showMessage('Failed to delete backup.', 'error');
+        }
+    }
+
     // Initial load
     fetchServerStatus(); // This will now also set initial button states
     //loadServerProperties();
     //loadWorlds();
     loadAutoUpdateConfig(); // New: Load auto-update config on page load
+    loadBackups();
     addActivateButtonListeners();
     addDeleteButtonListeners();
     fetchLogs();
@@ -455,6 +528,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Refresh status and worlds periodically
     setInterval(fetchServerStatus, 10000); // Every 10 seconds
     setInterval(loadWorlds, 30000); // Every 30 seconds
+    setInterval(loadBackups, 60000); // Every minute
     setInterval(fetchLogs, 5000); // Every 5 seconds
 
 });

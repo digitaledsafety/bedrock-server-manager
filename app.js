@@ -170,6 +170,31 @@ app.get('/api/worlds', async (req, res) => {
     }
 });
 
+app.get('/api/backups', async (req, res) => {
+    try {
+        const backups = await backend.listBackups();
+        res.json({ success: true, backups });
+    } catch (error) {
+        backend.log('ERROR', `Failed to list backups: ${error.message}`);
+        res.status(500).json({ error: 'Failed to list backups' });
+    }
+});
+
+app.post('/api/delete-backup', async (req, res) => {
+    try {
+        const { backupName } = req.body;
+        const result = await backend.deleteBackup(backupName);
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        backend.log('ERROR', `Failed to delete backup: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Failed to delete backup due to server error.' });
+    }
+});
+
 app.post('/api/delete-world', validateWorldName, async (req, res) => {
     try {
         const { worldName } = req.body;
@@ -256,6 +281,22 @@ app.get('/api/logs', async (req, res) => {
     } catch (error) {
         backend.log('ERROR', `Error reading server logs: ${error.message}`);
         res.status(500).json({ error: 'Failed to read server logs' });
+    }
+});
+
+app.get('/api/logs/download', async (req, res) => {
+    try {
+        const config = await backend.readGlobalConfig();
+        const serverLogPath = pathJoin(config.serverDirectory, 'server.log');
+
+        if (fs.existsSync(serverLogPath)) {
+            res.download(serverLogPath, 'server.log');
+        } else {
+            res.status(404).json({ error: 'Server log file not found.' });
+        }
+    } catch (error) {
+        backend.log('ERROR', `Error downloading server logs: ${error.message}`);
+        res.status(500).json({ error: 'Failed to download server logs' });
     }
 });
 
@@ -405,7 +446,7 @@ const start = async () => {
         if (process.env.NODE_ENV !== 'test') {
             app.listen(port, () => {
                 backend.log('INFO', `Express frontend server listening on port ${port}`);
-                console.log(`Open your browser to http://localhost:${port}`);
+                backend.log('INFO', `Open your browser to http://localhost:${port}`);
             });
         }
     } catch (error) {
