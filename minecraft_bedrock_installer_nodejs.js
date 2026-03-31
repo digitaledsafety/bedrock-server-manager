@@ -25,7 +25,7 @@ let serverPID = null;
 
 const LAST_VERSION_FILE = 'last_version.txt';
 const WEBHOOK_URL = process.env.MC_UPDATE_WEBHOOK;
-const CONFIG_FILES = ['server.properties', 'permissions.json', 'whitelist.json'];
+const CONFIG_FILES = ['server.properties', 'permissions.json', 'whitelist.json', 'allowlist.json'];
 const WORLD_DIRECTORIES = ['worlds'];
 const GLOBAL_CONFIG_FILE = 'config.json';
 
@@ -640,15 +640,19 @@ export async function readServerProperties() {
         log('WARNING', `server.properties not found at ${configPath} (or server directory not set). Returning empty config.`);
         return {};
     }
-    const data = await fs.promises.readFile(configPath, 'utf8');
-    const properties = {};
-    data.split('\n').forEach(line => {
-        const trimmedLine = line.trim();
-        if (trimmedLine && !trimmedLine.startsWith('#')) {
-            const [key, value] = trimmedLine.split('=').map(s => s.trim());
-            if (key) { properties[key] = value || ''; }
-        }
-    });
+    const data = await fs.promises.readFile(configPath, 'utf8');
+    const properties = {};
+    data.split(/\r?\n/).forEach(line => {
+        const trimmedLine = line.trim();
+        if (trimmedLine && !trimmedLine.startsWith('#')) {
+            const separatorIndex = trimmedLine.indexOf('=');
+            if (separatorIndex !== -1) {
+                const key = trimmedLine.substring(0, separatorIndex).trim();
+                const value = trimmedLine.substring(separatorIndex + 1).trim();
+                if (key) { properties[key] = value; }
+            }
+        }
+    });
     log('INFO', `Read server.properties from ${configPath}`);
     return properties;
 }

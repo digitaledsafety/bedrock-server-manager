@@ -161,7 +161,10 @@
                         'block-network-ids-are-hashes': ['true', 'false'],
                         'script-debugger-auto-attach': ['true', 'false'],
                         'pvp': ['true', 'false'],
-                        'hardcore': ['true', 'false']
+                        'hardcore': ['true', 'false'],
+                        'correct-player-movement': ['true', 'false'],
+                        'server-authoritative-movement': ['client-auth', 'server-auth', 'server-auth-with-rewind'],
+                        'allow-spectators': ['true', 'false']
                     };
                     for (const key in properties) {
                         const isDropdown = dropdownProperties.hasOwnProperty(key);

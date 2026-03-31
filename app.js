@@ -285,6 +285,7 @@ app.post('/api/config', async (req, res) => {
             currentFullConfig.logLevel = level;
         }
         await backend.writeGlobalConfig(currentFullConfig);
+        backend.init(currentFullConfig);
         await backend.startAutoUpdateScheduler();
         res.json({ success: true, message: 'Global config settings updated successfully.' });
     } catch (error) {

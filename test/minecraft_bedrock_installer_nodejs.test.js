@@ -76,6 +76,23 @@ gamemode=survival
 
         expect(properties).toEqual({});
     });
+
+    it('should handle property values containing equals signs', async () => {
+      const mockProperties = `
+server-name=My=Server=Name
+level-name=World=1
+`;
+      fs.existsSync.mockReturnValue(true);
+      fs.promises.readFile.mockResolvedValue(mockProperties);
+      backend.init({ serverDirectory: '/test/server' });
+
+      const properties = await backend.readServerProperties();
+
+      expect(properties).toEqual({
+        'server-name': 'My=Server=Name',
+        'level-name': 'World=1',
+      });
+    });
   });
 
   describe('readGlobalConfig', () => {
