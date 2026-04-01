@@ -1,19 +1,39 @@
 import { jest } from '@jest/globals';
+import { EventEmitter } from 'events';
+import path from 'path';
 
 // Use jest.unstable_mockModule for ES modules
 jest.unstable_mockModule('fs', () => ({
   promises: {
     readFile: jest.fn(),
+    writeFile: jest.fn(),
   },
   existsSync: jest.fn(),
   readFileSync: jest.fn(),
   writeFileSync: jest.fn(),
   createWriteStream: jest.fn(() => ({ write: jest.fn() })),
-  mkdirSync: jest.fn(), // Added mock for mkdirSync
+  mkdirSync: jest.fn(),
+  rmSync: jest.fn(),
+}));
+
+jest.unstable_mockModule('https', () => ({
+  default: {
+    get: jest.fn(),
+  },
+}));
+
+// Mock AdmZip
+class MockZip {
+  constructor(filePath) { this.filePath = filePath; }
+  getEntries() { return []; }
+}
+jest.unstable_mockModule('adm-zip', () => ({
+  default: MockZip
 }));
 
 // Dynamically import the modules after mocks are defined
 const fs = await import('fs');
+const https = (await import('https')).default;
 const backend = await import('../minecraft_bedrock_installer_nodejs.js');
 
 describe('Minecraft Bedrock Installer Backend', () => {
@@ -92,6 +112,93 @@ level-name=World=1
         'server-name': 'My=Server=Name',
         'level-name': 'World=1',
       });
+    });
+  });
+
+  describe('getLatestVersion', () => {
+    it('should extract version from redirect URL for bedrock_education', async () => {
+      backend.init({ serverType: 'bedrock_education' });
+
+      const mockRedirectUrl = 'https://example.com/MinecraftEducation_Server_Windows_1.21.1.0.zip';
+      const mockResponse = new EventEmitter();
+      mockResponse.statusCode = 302;
+      mockResponse.headers = { location: mockRedirectUrl };
+      mockResponse.resume = jest.fn();
+
+      https.get.mockImplementation((url, callback) => {
+        callback(mockResponse);
+        return new EventEmitter();
+      });
+
+      const result = await backend.getLatestVersion();
+
+      expect(result).toEqual({
+        latestVersion: '1.21.1.0',
+        downloadUrl: mockRedirectUrl,
+      });
+    });
+
+    it('should throw error if version cannot be extracted for bedrock_education', async () => {
+      backend.init({ serverType: 'bedrock_education' });
+
+      const mockRedirectUrl = 'https://example.com/some-other-file.zip';
+      const mockResponse = new EventEmitter();
+      mockResponse.statusCode = 302;
+      mockResponse.headers = { location: mockRedirectUrl };
+      mockResponse.resume = jest.fn();
+
+      https.get.mockImplementation((url, callback) => {
+        callback(mockResponse);
+        return new EventEmitter();
+      });
+
+      await expect(backend.getLatestVersion()).rejects.toThrow('Could not extract version from the redirected URL');
+    });
+  });
+
+  describe('writeServerProperties', () => {
+    it('should preserve comments and order when updating properties', async () => {
+      const existingContent = '# Server Properties\nserver-name=Old Name\ngamemode=survival\n# Another comment\ndifficulty=easy\n';
+      fs.existsSync.mockReturnValue(true);
+      fs.promises.readFile.mockResolvedValue(existingContent);
+      backend.init({ serverDirectory: '/test/server' });
+
+      await backend.writeServerProperties({
+        'server-name': 'New Name',
+        'difficulty': 'hard',
+        'new-prop': 'value'
+      });
+
+      const expectedContent = '# Server Properties\nserver-name=New Name\ngamemode=survival\n# Another comment\ndifficulty=hard\nnew-prop=value\n';
+      expect(fs.promises.writeFile).toHaveBeenCalledWith(
+        '/test/server/server.properties',
+        expectedContent,
+        'utf8'
+      );
+    });
+  });
+
+  describe('uploadPack', () => {
+    it('should return error if server directory is not set', async () => {
+      backend.init({ serverDirectory: null });
+      const result = await backend.uploadPack('temp.zip', 'test.mcpack', 'behavior', 'world');
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('Server directory not configured.');
+    });
+
+    it('should return error if world name is invalid', async () => {
+      backend.init({ serverDirectory: '/test/server' });
+      const result = await backend.uploadPack('temp.zip', 'test.mcpack', 'behavior', 'invalid/world');
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('Invalid world name format.');
+    });
+
+    it('should return error if world directory does not exist', async () => {
+      backend.init({ serverDirectory: '/test/server' });
+      fs.existsSync.mockReturnValue(false);
+      const result = await backend.uploadPack('temp.zip', 'test.mcpack', 'behavior', 'world');
+      expect(result.success).toBe(false);
+      expect(result.message).toBe("World 'world' not found.");
     });
   });
 
