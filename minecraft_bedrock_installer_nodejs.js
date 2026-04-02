@@ -1001,6 +1001,63 @@ async function updateWorldPackJson(worldPath, packTypeJsonFile, packId, packVers
 }
 
 /**
+ * Helper to extract specific entries from a ZIP (pack) to a target directory, with Zip Slip protection.
+ * @param {Array} zipEntries - All entries in the ZIP file.
+ * @param {string} packRootInZip - The relative path within the ZIP that acts as the root for this pack.
+ * @param {string} finalPackPath - The absolute path on the filesystem where files should be extracted.
+ * @param {Array<string>} allPackRootsInZip - Optional. All identified pack roots in the ZIP (used for .mcaddon to avoid cross-pack extraction).
+ */
+function extractPackEntries(zipEntries, packRootInZip, finalPackPath, allPackRootsInZip = []) {
+    const resolvedFinalPackPath = path.resolve(finalPackPath) + path.sep;
+
+    zipEntries.forEach(zipEntry => {
+        if (zipEntry.isDirectory) return;
+
+        let isEntryInPack = false;
+        let relativePathInPack = '';
+
+        if (packRootInZip === '') {
+            // If this pack is at the root, it owns all files EXCEPT those that belong to other packs
+            // (which are in subdirectories identified as pack roots).
+            const entryName = zipEntry.entryName;
+            const belongsToOtherPack = allPackRootsInZip.some(otherRoot => {
+                if (otherRoot === '') return false; // Don't compare with self
+                return entryName.startsWith(otherRoot + '/');
+            });
+
+            if (!belongsToOtherPack) {
+                isEntryInPack = true;
+                relativePathInPack = entryName;
+            }
+        } else {
+            // If this pack is in a subdirectory, it owns everything under that prefix
+            const prefix = packRootInZip + '/';
+            if (zipEntry.entryName.startsWith(prefix)) {
+                isEntryInPack = true;
+                relativePathInPack = path.relative(packRootInZip, zipEntry.entryName);
+            }
+        }
+
+        if (isEntryInPack && relativePathInPack) {
+            const targetFilePath = path.join(finalPackPath, relativePathInPack);
+
+            // Security: Check for Zip Slip vulnerability
+            const resolvedTargetFilePath = path.resolve(targetFilePath);
+            if (!resolvedTargetFilePath.startsWith(resolvedFinalPackPath)) {
+                log('WARNING', `Zip Slip attempt detected in pack: ${zipEntry.entryName}`);
+                return; // Skip this entry
+            }
+
+            const targetFileDir = path.dirname(targetFilePath);
+            if (!fs.existsSync(targetFileDir)) {
+                fs.mkdirSync(targetFileDir, { recursive: true });
+            }
+            fs.writeFileSync(targetFilePath, zipEntry.getData());
+        }
+    });
+}
+
+/**
  * Uploads and applies a pack (or packs from an addon) to a specific world.
  * @param {string} tempFilePath - Path to the temporary uploaded file (.mcpack or .mcaddon).
  * @param {string} originalFilename - The original name of the uploaded file.
@@ -1098,52 +1155,7 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
                 }
                 fs.mkdirSync(finalPackPath, { recursive: true });
 
-                zipEntries.forEach(zipEntry => {
-                    if (zipEntry.isDirectory) return;
-
-                    let isEntryInPack = false;
-                    let relativePathInPack = '';
-
-                    if (packRootInZip === '') {
-                        // If this pack is at the root, it owns all files EXCEPT those that belong to other packs
-                        // (which are in subdirectories identified as pack roots).
-                        const entryName = zipEntry.entryName;
-                        const belongsToOtherPack = allPackRoots.some(otherRoot => {
-                            if (otherRoot === '') return false; // Don't compare with self
-                            return entryName.startsWith(otherRoot + '/');
-                        });
-
-                        if (!belongsToOtherPack) {
-                            isEntryInPack = true;
-                            relativePathInPack = entryName;
-                        }
-                    } else {
-                        // If this pack is in a subdirectory, it owns everything under that prefix
-                        const prefix = packRootInZip + '/';
-                        if (zipEntry.entryName.startsWith(prefix)) {
-                            isEntryInPack = true;
-                            relativePathInPack = path.relative(packRootInZip, zipEntry.entryName);
-                        }
-                    }
-
-                    if (isEntryInPack && relativePathInPack) {
-                        const targetFilePath = path.join(finalPackPath, relativePathInPack);
-
-                        // Security: Check for Zip Slip vulnerability
-                        const resolvedTargetFilePath = path.resolve(targetFilePath);
-                        const resolvedFinalPackPath = path.resolve(finalPackPath) + path.sep;
-                        if (!resolvedTargetFilePath.startsWith(resolvedFinalPackPath)) {
-                            log('WARNING', `Zip Slip attempt detected in .mcaddon: ${zipEntry.entryName}`);
-                            return; // Skip this entry
-                        }
-
-                        const targetFileDir = path.dirname(targetFilePath);
-                        if (!fs.existsSync(targetFileDir)) {
-                            fs.mkdirSync(targetFileDir, { recursive: true });
-                        }
-                        fs.writeFileSync(targetFilePath, zipEntry.getData());
-                    }
-                });
+                extractPackEntries(zipEntries, packRootInZip, finalPackPath, allPackRoots);
                 log('INFO', `Extracted pack '${packName}' to ${finalPackPath}`);
 
                 const updateSuccess = await updateWorldPackJson(worldPath, currentWorldPackJsonFile, packId, packVersion);
@@ -1236,41 +1248,7 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
             }
             fs.mkdirSync(finalPackPath, { recursive: true });
 
-            zipEntries.forEach(zipEntry => {
-                if (zipEntry.isDirectory) return;
-
-                let isEntryInPack = false;
-                let relativePathInPack = '';
-
-                if (packRootInZip === '') {
-                    isEntryInPack = true;
-                    relativePathInPack = zipEntry.entryName;
-                } else {
-                    const prefix = packRootInZip + '/';
-                    if (zipEntry.entryName.startsWith(prefix)) {
-                        isEntryInPack = true;
-                        relativePathInPack = path.relative(packRootInZip, zipEntry.entryName);
-                    }
-                }
-
-                if (isEntryInPack && relativePathInPack) {
-                    const targetFilePath = path.join(finalPackPath, relativePathInPack);
-
-                    // Security: Check for Zip Slip vulnerability
-                    const resolvedTargetFilePath = path.resolve(targetFilePath);
-                    const resolvedFinalPackPath = path.resolve(finalPackPath) + path.sep;
-                    if (!resolvedTargetFilePath.startsWith(resolvedFinalPackPath)) {
-                        log('WARNING', `Zip Slip attempt detected in .mcpack: ${zipEntry.entryName}`);
-                        return; // Skip this entry
-                    }
-
-                    const targetFileDir = path.dirname(targetFilePath);
-                    if (!fs.existsSync(targetFileDir)) {
-                        fs.mkdirSync(targetFileDir, { recursive: true });
-                    }
-                    fs.writeFileSync(targetFilePath, zipEntry.getData());
-                }
-            });
+            extractPackEntries(zipEntries, packRootInZip, finalPackPath);
             log('INFO', `Extracted .mcpack '${packName}' to ${finalPackPath}`);
 
             const updateSuccess = await updateWorldPackJson(worldPath, worldPackJsonFile, packId, packVersion);
