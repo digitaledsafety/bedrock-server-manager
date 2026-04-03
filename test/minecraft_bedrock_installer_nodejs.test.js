@@ -4,6 +4,9 @@ import { jest } from '@jest/globals';
 jest.unstable_mockModule('fs', () => ({
   promises: {
     readFile: jest.fn(),
+    writeFile: jest.fn(),
+    readdir: jest.fn(),
+    rm: jest.fn(),
   },
   existsSync: jest.fn(),
   readFileSync: jest.fn(),
@@ -92,6 +95,42 @@ level-name=World=1
         'server-name': 'My=Server=Name',
         'level-name': 'World=1',
       });
+    });
+  });
+
+  describe('writeServerProperties', () => {
+    it('should preserve comments and order when writing server.properties', async () => {
+      const mockProperties = `# Initial Comment
+server-name=Old Name
+# Mid comment
+gamemode=survival
+`;
+      fs.existsSync.mockReturnValue(true);
+      fs.promises.readFile.mockResolvedValue(mockProperties);
+      backend.init({ serverDirectory: '/test/server' });
+
+      const newProperties = {
+        'server-name': 'New Name',
+        'gamemode': 'creative',
+        'new-property': 'value'
+      };
+
+      await backend.writeServerProperties(newProperties);
+
+      expect(fs.promises.writeFile).toHaveBeenCalledWith('/test/server/server.properties', expect.stringContaining('gamemode=creative'), 'utf8');
+    });
+
+    it('should maintain CRLF line endings if present in the original file', async () => {
+        const mockProperties = `server-name=Old Name\r\ngamemode=survival\r\n`;
+        fs.existsSync.mockReturnValue(true);
+        fs.promises.readFile.mockResolvedValue(mockProperties);
+        backend.init({ serverDirectory: '/test/server' });
+
+        const newProperties = { 'server-name': 'New Name', 'gamemode': 'survival' };
+        await backend.writeServerProperties(newProperties);
+
+        const expectedContent = `server-name=New Name\r\ngamemode=survival\r\n`;
+        expect(fs.promises.writeFile).toHaveBeenCalledWith('/test/server/server.properties', expectedContent, 'utf8');
     });
   });
 

@@ -79,7 +79,7 @@
             <div class="world-list">
                 <% if (worlds && worlds.length > 0) { %>
                     <% worlds.forEach(world => { %>
-                        <li class="world-item <%= properties['level-name'] === world ? 'active' : '' %>" data-world-name="<%= world %>">
+                        <div class="world-item <%= properties['level-name'] === world ? 'active' : '' %>" data-world-name="<%= world %>">
                             <span><%= world %></span>
                             <button class="activate-world-button" data-world-name="<%= world %>">
                                 Activate
@@ -89,7 +89,7 @@
                                     Delete
                                 </button>
                             <% } %>
-                        </li>
+                        </div>
                     <% }); %>
                 <% } else { %>
                     <p>No worlds found. Start the server to generate a default world.</p>
