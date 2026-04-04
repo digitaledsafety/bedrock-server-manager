@@ -4,12 +4,15 @@ import { jest } from '@jest/globals';
 jest.unstable_mockModule('fs', () => ({
   promises: {
     readFile: jest.fn(),
+    writeFile: jest.fn(),
+    readdir: jest.fn(),
+    rm: jest.fn(),
   },
   existsSync: jest.fn(),
   readFileSync: jest.fn(),
   writeFileSync: jest.fn(),
-  createWriteStream: jest.fn(() => ({ write: jest.fn() })),
-  mkdirSync: jest.fn(), // Added mock for mkdirSync
+  createWriteStream: jest.fn(() => ({ write: jest.fn(), end: jest.fn(), on: jest.fn() })),
+  mkdirSync: jest.fn(),
 }));
 
 // Dynamically import the modules after mocks are defined
@@ -135,6 +138,90 @@ level-name=World=1
         expect(config.autoUpdateEnabled).toBe(true);
 
         process.argv = [];
+    });
+  });
+
+  describe('writeServerProperties', () => {
+    it('should preserve comments and order when writing', async () => {
+      const originalContent = `# Comment
+key1=val1
+# Another comment
+key2=val2`;
+      fs.existsSync.mockReturnValue(true);
+      fs.promises.readFile.mockResolvedValue(originalContent);
+      backend.init({ serverDirectory: '/test/server' });
+
+      await backend.writeServerProperties({ key1: 'newval1', key3: 'val3' });
+
+      expect(fs.promises.writeFile).toHaveBeenCalledWith(
+        '/test/server/server.properties',
+        `# Comment
+key1=newval1
+# Another comment
+key2=val2
+key3=val3
+`,
+        'utf8'
+      );
+    });
+
+    it('should handle CRLF line endings', async () => {
+      const originalContent = `key1=val1\r\nkey2=val2\r\n`;
+      fs.existsSync.mockReturnValue(true);
+      fs.promises.readFile.mockResolvedValue(originalContent);
+      backend.init({ serverDirectory: '/test/server' });
+
+      await backend.writeServerProperties({ key1: 'newval1' });
+
+      expect(fs.promises.writeFile).toHaveBeenCalledWith(
+        '/test/server/server.properties',
+        `key1=newval1\r\nkey2=val2\r\n`,
+        'utf8'
+      );
+    });
+  });
+
+  describe('deleteWorld', () => {
+    it('should not delete the active world', async () => {
+      fs.existsSync.mockReturnValue(true);
+      fs.promises.readFile.mockResolvedValue('level-name=ActiveWorld\n');
+      backend.init({ serverDirectory: '/test/server' });
+
+      const result = await backend.deleteWorld('ActiveWorld');
+
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('Cannot delete the currently active world.');
+    });
+
+    it('should delete an inactive world', async () => {
+      fs.existsSync.mockReturnValue(true);
+      fs.promises.readFile.mockResolvedValue('level-name=OtherWorld\n');
+      backend.init({ serverDirectory: '/test/server' });
+
+      const result = await backend.deleteWorld('InactiveWorld');
+
+      expect(result.success).toBe(true);
+      expect(fs.promises.rm).toHaveBeenCalledWith(expect.stringContaining('InactiveWorld'), expect.any(Object));
+    });
+  });
+
+  describe('activateWorld', () => {
+    it('should update server.properties and restart server', async () => {
+      fs.existsSync.mockReturnValue(true);
+      fs.promises.readFile.mockResolvedValue('level-name=OldWorld\n');
+      backend.init({ serverDirectory: '/test/server' });
+
+      // Mock stopServer and startServer behavior (restartServer calls both)
+      // Since they are async and might involve timeouts, we just care about the property update here
+
+      const success = await backend.activateWorld('NewWorld');
+
+      expect(success).toBe(true);
+      expect(fs.promises.writeFile).toHaveBeenCalledWith(
+        '/test/server/server.properties',
+        expect.stringContaining('level-name=NewWorld'),
+        'utf8'
+      );
     });
   });
 });
