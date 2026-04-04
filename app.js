@@ -5,6 +5,7 @@ import multer from 'multer';
 import * as fs from 'fs';
 
 import * as backend from './minecraft_bedrock_installer_nodejs.js';
+import { propertiesMetadata, categories } from './properties_metadata.js';
 
 const __filenameESM = fileURLToPath(import.meta.url);
 const __dirnameESM = dirname(__filenameESM);
@@ -147,6 +148,10 @@ app.get('/api/properties', async (req, res) => {
         backend.log('ERROR', `Failed to read server properties: ${error.message}`);
         res.status(500).json({ error: 'Failed to read server properties' });
     }
+});
+
+app.get('/api/properties/metadata', (req, res) => {
+    res.json({ success: true, metadata: propertiesMetadata, categories });
 });
 
 app.post('/api/properties', sanitizeServerProperties, async (req, res) => {

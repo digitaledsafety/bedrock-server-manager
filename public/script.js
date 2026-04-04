@@ -7,7 +7,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const updateButton = document.getElementById('updateButton');
     const clearLogsButton = document.getElementById('clearLogsButton');
     const propertiesForm = document.getElementById('propertiesForm');
-    const levelNameInput = document.getElementById('level-name'); // Get the level-name input
+    const propertiesContainer = document.getElementById('propertiesContainer');
+    const propertiesTabs = document.getElementById('propertiesTabs');
     const consoleOutput = document.getElementById('consoleOutput'); // Get the console textarea
 
     // Auto-Update specific elements
@@ -164,24 +165,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    let propertiesMetadata = {};
+    let propertyCategories = [];
+    let currentServerProperties = {};
+
     async function loadServerProperties() {
         try {
-            const response = await fetch('/api/properties');
-            const data = await response.json();
-            console.log(data);
-            if (data.success) {
-                // Properties are initially rendered by EJS.
-                // This function is primarily for fetching and logging,
-                // or if you were to dynamically re-render the form.
-                console.log('Server properties loaded:', data.properties);
+            const [propRes, metaRes] = await Promise.all([
+                fetch('/api/properties'),
+                fetch('/api/properties/metadata')
+            ]);
 
-                // If levelNameInput exists and is a text input, ensure its value is set
-                if (levelNameInput && data.properties['level-name']) {
-                    levelNameInput.value = data.properties['level-name'];
-                }
+            const propData = await propRes.json();
+            const metaData = await metaRes.json();
 
+            if (propData.success && metaData.success) {
+                currentServerProperties = propData.properties;
+                propertiesMetadata = metaData.metadata;
+                propertyCategories = metaData.categories;
+                renderPropertiesUI();
             } else {
-                showMessage('Failed to load server properties: ' + data.message, 'error');
+                showMessage('Failed to load server properties or metadata.', 'error');
             }
         } catch (error) {
             console.error('Error loading server properties:', error);
@@ -189,12 +193,135 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function renderPropertiesUI() {
+        propertiesTabs.innerHTML = '';
+        propertiesContainer.innerHTML = '';
+
+        propertyCategories.forEach((category, index) => {
+            const tabButton = document.createElement('button');
+            tabButton.type = 'button';
+            tabButton.className = `tab-button ${index === 0 ? 'active' : ''}`;
+            tabButton.textContent = category.label;
+            tabButton.onclick = () => switchTab(category.id);
+            propertiesTabs.appendChild(tabButton);
+
+            const categorySection = document.createElement('div');
+            categorySection.id = `category-${category.id}`;
+            categorySection.className = `tab-content ${index === 0 ? 'active' : ''}`;
+
+            const grid = document.createElement('div');
+            grid.className = 'form-grid';
+
+            // Filter properties for this category
+            Object.entries(propertiesMetadata).forEach(([key, meta]) => {
+                if (meta.category === category.id) {
+                    const value = currentServerProperties[key] || '';
+                    grid.appendChild(createPropertyElement(key, meta, value));
+                }
+            });
+
+            // Handle "Advanced" category - include properties not in metadata
+            if (category.id === 'advanced') {
+                Object.entries(currentServerProperties).forEach(([key, value]) => {
+                    if (!propertiesMetadata[key]) {
+                        grid.appendChild(createPropertyElement(key, { label: key, type: 'string', description: 'Advanced setting' }, value));
+                    }
+                });
+            }
+
+            categorySection.appendChild(grid);
+            propertiesContainer.appendChild(categorySection);
+        });
+    }
+
+    function createPropertyElement(key, meta, value) {
+        const group = document.createElement('div');
+        group.className = 'form-group';
+
+        const labelContainer = document.createElement('div');
+        labelContainer.className = 'label-container';
+
+        const label = document.createElement('label');
+        label.htmlFor = key;
+        label.textContent = meta.label || key;
+        labelContainer.appendChild(label);
+
+        if (meta.description) {
+            const infoIcon = document.createElement('span');
+            infoIcon.className = 'info-icon';
+            infoIcon.textContent = '?';
+            infoIcon.title = meta.description;
+            labelContainer.appendChild(infoIcon);
+        }
+        group.appendChild(labelContainer);
+
+        let input;
+        if (meta.type === 'boolean') {
+            const toggleWrapper = document.createElement('label');
+            toggleWrapper.className = 'toggle-switch';
+
+            input = document.createElement('input');
+            input.type = 'checkbox';
+            input.id = key;
+            input.name = key;
+            input.checked = value === 'true';
+
+            const slider = document.createElement('span');
+            slider.className = 'slider';
+
+            toggleWrapper.appendChild(input);
+            toggleWrapper.appendChild(slider);
+            group.appendChild(toggleWrapper);
+        } else if (meta.type === 'select') {
+            input = document.createElement('select');
+            input.id = key;
+            input.name = key;
+            meta.options.forEach(opt => {
+                const option = document.createElement('option');
+                option.value = opt;
+                option.textContent = opt;
+                option.selected = String(value) === String(opt);
+                input.appendChild(option);
+            });
+            group.appendChild(input);
+        } else {
+            input = document.createElement('input');
+            input.type = meta.type === 'number' ? 'number' : 'text';
+            input.id = key;
+            input.name = key;
+            input.value = value;
+            if (meta.min !== undefined) input.min = meta.min;
+            if (meta.max !== undefined) input.max = meta.max;
+            group.appendChild(input);
+        }
+
+        return group;
+    }
+
+    function switchTab(categoryId) {
+        document.querySelectorAll('.tab-button').forEach(btn => {
+            btn.classList.toggle('active', btn.textContent === propertyCategories.find(c => c.id === categoryId).label);
+        });
+        document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.toggle('active', content.id === `category-${categoryId}`);
+        });
+    }
+
     async function saveServerProperties(event) {
         event.preventDefault();
-        const formData = new FormData(propertiesForm);
-        const properties = {};
-        for (const [key, value] of formData.entries()) {
-            properties[key] = value;
+        const properties = { ...currentServerProperties }; // Start with existing to preserve unedited ones
+
+        // Iterate over all form elements to handle checkboxes (booleans) correctly
+        const elements = propertiesForm.elements;
+        for (let i = 0; i < elements.length; i++) {
+            const el = elements[i];
+            if (el.name) {
+                if (el.type === 'checkbox') {
+                    properties[el.name] = el.checked ? 'true' : 'false';
+                } else {
+                    properties[el.name] = el.value;
+                }
+            }
         }
 
         try {
@@ -209,7 +336,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             if (data.success) {
                 showMessage('Server properties saved successfully!', 'success');
-                // Refresh worlds list and active world status after saving properties
+                currentServerProperties = properties;
+                // Refresh worlds list if level-name changed
                 loadWorlds();
             } else {
                 showMessage('Failed to save server properties: ' + data.message, 'error');
@@ -445,7 +573,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initial load
     fetchServerStatus(); // This will now also set initial button states
-    //loadServerProperties();
+    loadServerProperties();
     //loadWorlds();
     loadAutoUpdateConfig(); // New: Load auto-update config on page load
     addActivateButtonListeners();
