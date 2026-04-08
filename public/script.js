@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const restartButton = document.getElementById('restartButton');
     const updateButton = document.getElementById('updateButton');
     const clearLogsButton = document.getElementById('clearLogsButton');
+    const downloadLogsButton = document.getElementById('downloadLogsButton');
     const propertiesForm = document.getElementById('propertiesForm');
     const levelNameInput = document.getElementById('level-name'); // Get the level-name input
     const consoleOutput = document.getElementById('consoleOutput'); // Get the console textarea
@@ -417,6 +418,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (clearLogsButton) clearLogsButton.addEventListener('click', handleClearLogs);
+    if (downloadLogsButton) {
+        downloadLogsButton.addEventListener('click', () => {
+            showMessage('Log download initiated.', 'success');
+        });
+    }
     if (propertiesForm) propertiesForm.addEventListener('submit', saveServerProperties);
     if (autoUpdateConfigForm) autoUpdateConfigForm.addEventListener('submit', saveAutoUpdateConfig);
     if (uploadPackForm) {

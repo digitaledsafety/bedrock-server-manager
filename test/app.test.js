@@ -22,15 +22,21 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
 }));
 
 // Mock the fs module for app.js initialization
-jest.unstable_mockModule('fs', () => ({
+const mockFs = {
     existsSync: jest.fn().mockReturnValue(true), // Assume temp dir exists
     mkdirSync: jest.fn(),
-}));
+    promises: {
+        stat: jest.fn(),
+        open: jest.fn(),
+    }
+};
+jest.unstable_mockModule('fs', () => mockFs);
 
 
 // Dynamically import the app and the mocked backend after setup
 const { default: app } = await import('../app.js');
 const backend = await import('../minecraft_bedrock_installer_nodejs.js');
+const fs = await import('fs');
 
 describe('API Endpoints', () => {
 
@@ -93,6 +99,18 @@ describe('API Endpoints', () => {
 
         expect(res.statusCode).toEqual(500);
         expect(res.body).toEqual({ error: 'Failed to start server' });
+    });
+  });
+
+  describe('GET /api/logs/download', () => {
+    it('should return 404 if the log file does not exist', async () => {
+        backend.readGlobalConfig.mockResolvedValue({ serverDirectory: './non_existent' });
+        fs.existsSync.mockReturnValue(false);
+
+        const res = await request(app).get('/api/logs/download');
+
+        expect(res.statusCode).toEqual(404);
+        expect(res.text).toEqual('Server log file not found.');
     });
   });
 

@@ -1,5 +1,5 @@
 import express from 'express';
-import path, { dirname, join as pathJoin } from 'path';
+import path, { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
 import * as fs from 'fs';
@@ -10,7 +10,7 @@ const __filenameESM = fileURLToPath(import.meta.url);
 const __dirnameESM = dirname(__filenameESM);
 
 // Ensure temp directory for uploads exists
-const TEMP_UPLOAD_DIR = pathJoin(__dirnameESM, 'temp_uploads');
+const TEMP_UPLOAD_DIR = path.join(__dirnameESM, 'temp_uploads');
 if (!fs.existsSync(TEMP_UPLOAD_DIR)) {
     fs.mkdirSync(TEMP_UPLOAD_DIR, { recursive: true });
 }
@@ -48,11 +48,11 @@ const upload = multer({
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(pathJoin(__dirnameESM, 'public')));
+app.use(express.static(path.join(__dirnameESM, 'public')));
 
 // EJS Setup
 app.set('view engine', 'ejs');
-app.set('views', pathJoin(__dirnameESM, 'views'));
+app.set('views', path.join(__dirnameESM, 'views'));
 
 // --- Input Validation Middleware ---
 const validateWorldName = (req, res, next) => {
@@ -224,10 +224,26 @@ app.post('/api/logs/clear', async (req, res) => {
     }
 });
 
+app.get('/api/logs/download', async (req, res) => {
+    try {
+        const config = await backend.readGlobalConfig();
+        const serverLogPath = path.join(config.serverDirectory, 'server.log');
+
+        if (!fs.existsSync(serverLogPath)) {
+            return res.status(404).send('Server log file not found.');
+        }
+
+        res.download(serverLogPath, 'server.log');
+    } catch (error) {
+        backend.log('ERROR', `Error downloading server logs: ${error.message}`);
+        res.status(500).send('Failed to download server logs');
+    }
+});
+
 app.get('/api/logs', async (req, res) => {
     try {
         const config = await backend.readGlobalConfig();
-        const serverLogPath = pathJoin(config.serverDirectory, 'server.log');
+        const serverLogPath = path.join(config.serverDirectory, 'server.log');
 
         if (!fs.existsSync(serverLogPath)) {
             return res.json({ success: true, logs: 'Server log file not found. Start the server to generate logs.' });
