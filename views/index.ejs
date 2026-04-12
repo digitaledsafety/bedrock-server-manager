@@ -56,6 +56,7 @@
             <textarea id="consoleOutput" readonly placeholder="Server logs will appear here..."></textarea>
             <div class="button-group" style="margin-top: 10px;">
                 <button id="clearLogsButton" class="bg-gray-500 hover:bg-gray-700">Clear Logs</button>
+                <button id="downloadLogsButton" class="bg-blue-500 hover:bg-blue-700">Download Full Log</button>
             </div>
         </div>
 
@@ -76,6 +77,13 @@
 
         <div class="section">
             <h2>World Management</h2>
+            <form id="createWorldForm" style="margin-bottom: 20px;">
+                <div class="form-group">
+                    <label for="newWorldName">New World Name:</label>
+                    <input type="text" id="newWorldName" name="worldName" placeholder="Enter world name" required>
+                </div>
+                <button type="submit">Create New World</button>
+            </form>
             <div class="world-list">
                 <% if (worlds && worlds.length > 0) { %>
                     <% worlds.forEach(world => { %>

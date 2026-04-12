@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const restartButton = document.getElementById('restartButton');
     const updateButton = document.getElementById('updateButton');
     const clearLogsButton = document.getElementById('clearLogsButton');
+    const downloadLogsButton = document.getElementById('downloadLogsButton');
     const propertiesForm = document.getElementById('propertiesForm');
     const propertiesContainer = document.getElementById('propertiesContainer');
     const propertiesTabs = document.getElementById('propertiesTabs');
@@ -15,6 +16,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const autoUpdateConfigForm = document.getElementById('autoUpdateConfigForm');
     const autoUpdateEnabledCheckbox = document.getElementById('autoUpdateEnabled');
     const autoUpdateIntervalMinutesInput = document.getElementById('autoUpdateIntervalMinutes');
+
+    // World Management specific elements
+    const createWorldForm = document.getElementById('createWorldForm');
+    const newWorldNameInput = document.getElementById('newWorldName');
 
     // Pack Management specific elements
     const uploadPackForm = document.getElementById('uploadPackForm');
@@ -437,6 +442,37 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function handleCreateWorld(event) {
+        event.preventDefault();
+        const worldName = newWorldNameInput.value.trim();
+        if (!worldName) {
+            showMessage('Please enter a world name.', 'error');
+            return;
+        }
+
+        try {
+            showMessage(`Creating world '${worldName}'...`);
+            const response = await fetch('/api/create-world', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ worldName })
+            });
+            const data = await response.json();
+            if (response.ok && data.success) {
+                showMessage(data.message || `World '${worldName}' created.`, 'success');
+                newWorldNameInput.value = ''; // Clear input
+                loadWorlds(); // Refresh world list
+            } else {
+                showMessage(data.message || `Failed to create world '${worldName}'.`, 'error');
+            }
+        } catch (error) {
+            console.error('Error creating world:', error);
+            showMessage('Failed to create world.', 'error');
+        }
+    }
+
     async function handleActivateWorldClick(event) {
         const worldName = event.target.dataset.worldName;
         try {
@@ -545,6 +581,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (clearLogsButton) clearLogsButton.addEventListener('click', handleClearLogs);
+    if (createWorldForm) createWorldForm.addEventListener('submit', handleCreateWorld);
+    if (downloadLogsButton) {
+        downloadLogsButton.addEventListener('click', () => {
+            window.location.href = '/api/logs/download';
+        });
+    }
     if (propertiesForm) propertiesForm.addEventListener('submit', saveServerProperties);
     if (autoUpdateConfigForm) autoUpdateConfigForm.addEventListener('submit', saveAutoUpdateConfig);
     if (uploadPackForm) {
