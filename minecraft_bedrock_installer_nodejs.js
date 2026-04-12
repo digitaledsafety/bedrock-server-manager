@@ -1,7 +1,7 @@
 import https from 'https';
 import http from 'http';
 import * as fs from 'fs';
-import path, { dirname, join as pathJoin } from 'path';
+import path, { dirname } from 'path';
 import { exec as childProcessExec, spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { URL } from 'url';
@@ -31,7 +31,7 @@ const GLOBAL_CONFIG_FILE = 'config.json';
 
 let autoUpdateIntervalId = null;
 
-const logStream = fs.createWriteStream(pathJoin(__dirnameESM, 'mc_installer.log'), { flags: 'a' });
+const logStream = fs.createWriteStream(path.join(__dirnameESM, 'mc_installer.log'), { flags: 'a' });
 const LOG_LEVELS = { DEBUG: 0, INFO: 1, WARNING: 2, ERROR: 3, FATAL: 4 };
 let currentLogLevel = LOG_LEVELS.INFO;
 
@@ -45,7 +45,8 @@ function setLogLevel(levelName) {
         // or if we are increasing verbosity to INFO from something more restrictive.
         if (LOG_LEVELS.INFO >= currentLogLevel && (LOG_LEVELS.INFO >= oldLogLevel || currentLogLevel <= oldLogLevel) ) {
             const initialLogMessage = `${new Date().toISOString()} [INFO] Log level set to ${levelNameToUse}\n`;
-            console.log(initialLogMessage);
+            // Internal log level change is a special case, but we should still use standard streams or our logStream
+            process.stdout.write(initialLogMessage);
             logStream.write(initialLogMessage);
         }
     } else {
@@ -65,7 +66,7 @@ export function log(level, message) {
     if (messageLevel >= currentLogLevel) {
         const timestamp = new Date().toISOString();
         const logMessage = `${timestamp} [${level.toUpperCase()}] ${message}\n`;
-        console.log(logMessage);
+        process.stdout.write(logMessage);
         logStream.write(logMessage);
     }
 }
@@ -303,7 +304,7 @@ export async function changeOwnership(dirPath, user, group) {
 
 export function storeLatestVersion(version) {
     try {
-        fs.writeFileSync(pathJoin(__dirnameESM, LAST_VERSION_FILE), version);
+        fs.writeFileSync(path.join(__dirnameESM, LAST_VERSION_FILE), version);
         log('INFO', `Stored latest version: ${version}`);
     } catch (error) {
         log('ERROR', `Error storing version to file: ${error.message}`);
@@ -312,7 +313,7 @@ export function storeLatestVersion(version) {
 
 export function getStoredVersion() {
     try {
-        const lastVersionFilePath = pathJoin(__dirnameESM, LAST_VERSION_FILE);
+        const lastVersionFilePath = path.join(__dirnameESM, LAST_VERSION_FILE);
         if (fs.existsSync(lastVersionFilePath)) {
             const version = fs.readFileSync(lastVersionFilePath, 'utf8').trim();
             log('INFO', `Retrieved stored version: ${version}`);
@@ -332,7 +333,7 @@ export async function backupServer() {
         log('INFO', `Server directory not found or not set. Skipping backup.`);
         return null;
     }
-    const backupDir = pathJoin(BACKUP_DIRECTORY, new Date().toISOString().replace(/:/g, '-').replace(/\./g, '_'));
+    const backupDir = path.join(BACKUP_DIRECTORY, new Date().toISOString().replace(/:/g, '-').replace(/\./g, '_'));
     fs.mkdirSync(backupDir, { recursive: true });
     log('INFO', `Creating backup in ${backupDir}`);
     try {
@@ -368,8 +369,8 @@ export async function copyExistingData(backupDir, newInstallDir) {
     ];
 
     for (const dirName of directoriesToCopy) {
-        const srcPath = pathJoin(backupDir, dirName);
-        const destPath = pathJoin(newInstallDir, dirName);
+        const srcPath = path.join(backupDir, dirName);
+        const destPath = path.join(newInstallDir, dirName);
         if (fs.existsSync(srcPath)) {
             log('INFO', `Copying directory: ${dirName}`);
             fs.cpSync(srcPath, destPath, { recursive: true });
@@ -379,8 +380,8 @@ export async function copyExistingData(backupDir, newInstallDir) {
     }
 
     for (const file of CONFIG_FILES) {
-        const srcPath = pathJoin(backupDir, file);
-        const destPath = pathJoin(newInstallDir, file);
+        const srcPath = path.join(backupDir, file);
+        const destPath = path.join(newInstallDir, file);
         if (fs.existsSync(srcPath)) {
             log('INFO', `Copying config file: ${file}`);
             fs.copyFileSync(srcPath, destPath);
@@ -393,7 +394,7 @@ export async function copyExistingData(backupDir, newInstallDir) {
 
 export async function stopServer() {
     if (!serverPID && SERVER_DIRECTORY) {
-        const pidFile = pathJoin(SERVER_DIRECTORY, 'server.pid');
+        const pidFile = path.join(SERVER_DIRECTORY, 'server.pid');
         if (fs.existsSync(pidFile)) {
             try {
                 const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
@@ -439,7 +440,7 @@ export async function stopServer() {
             }
         }
 
-        const pidFile = pathJoin(SERVER_DIRECTORY, 'server.pid');
+        const pidFile = path.join(SERVER_DIRECTORY, 'server.pid');
         if (fs.existsSync(pidFile)) {
             fs.unlinkSync(pidFile);
         }
@@ -465,7 +466,7 @@ export async function startServer() {
         }
     }
     try {
-        const serverExePath = pathJoin(SERVER_DIRECTORY, getServerExeName());
+        const serverExePath = path.join(SERVER_DIRECTORY, getServerExeName());
         if (!fs.existsSync(serverExePath)) {
             log('WARNING', `Server executable not found at ${serverExePath}. Cannot start server. Run update/install first.`);
             return;
@@ -480,12 +481,12 @@ export async function startServer() {
             serverPID = serverProcess.pid;
             log('INFO', `Server process started with PID: ${serverPID}.`);
             try {
-                fs.writeFileSync(pathJoin(SERVER_DIRECTORY, 'server.pid'), serverPID.toString(), 'utf8');
+                fs.writeFileSync(path.join(SERVER_DIRECTORY, 'server.pid'), serverPID.toString(), 'utf8');
             } catch (error) {
                 log('ERROR', `Failed to write PID file: ${error.message}`);
             }
 
-            const serverLogPath = pathJoin(SERVER_DIRECTORY, 'server.log');
+            const serverLogPath = path.join(SERVER_DIRECTORY, 'server.log');
             const serverLogStream = fs.createWriteStream(serverLogPath, { flags: 'a' });
 
             serverProcess.stdout.on('data', (data) => {
@@ -537,8 +538,8 @@ export async function checkAndInstall() {
     }
     log('INFO', `New version found: ${latestVersion}. Current version: ${lastVersion || 'None'}`);
    
-    const tempInstallPath = pathJoin(TEMP_DIRECTORY, latestVersion);
-    const downloadPath = pathJoin(tempInstallPath, `bedrock-server-${latestVersion}.zip`);
+    const tempInstallPath = path.join(TEMP_DIRECTORY, latestVersion);
+    const downloadPath = path.join(tempInstallPath, `bedrock-server-${latestVersion}.zip`);
     try {
         if (WEBHOOK_URL) {
             try { await sendWebhookNotification(`New Minecraft Bedrock Server version ${latestVersion} is available! Server going down for update...`); }
@@ -618,7 +619,7 @@ export async function clearServerLogs() {
         log('WARNING', 'SERVER_DIRECTORY not set. Cannot clear logs.');
         return false;
     }
-    const serverLogPath = pathJoin(SERVER_DIRECTORY, 'server.log');
+    const serverLogPath = path.join(SERVER_DIRECTORY, 'server.log');
     try {
         if (fs.existsSync(serverLogPath)) {
             await fs.promises.writeFile(serverLogPath, '', 'utf8');
@@ -635,7 +636,7 @@ export async function clearServerLogs() {
 }
 
 export async function readServerProperties() {
-    const configPath = pathJoin(SERVER_DIRECTORY, 'server.properties');
+    const configPath = path.join(SERVER_DIRECTORY, 'server.properties');
     if (!SERVER_DIRECTORY || !fs.existsSync(configPath)) { // Check SERVER_DIRECTORY is defined
         log('WARNING', `server.properties not found at ${configPath} (or server directory not set). Returning empty config.`);
         return {};
@@ -662,7 +663,7 @@ export async function writeServerProperties(propertiesToWrite) {
         log('ERROR', 'SERVER_DIRECTORY not set. Cannot write server.properties.');
         throw new Error('Server directory not configured.');
     }
-    const configPath = pathJoin(SERVER_DIRECTORY, 'server.properties');
+    const configPath = path.join(SERVER_DIRECTORY, 'server.properties');
     let content = '';
     for (const key in propertiesToWrite) {
         if (Object.hasOwnProperty.call(propertiesToWrite, key)) {
@@ -673,12 +674,40 @@ export async function writeServerProperties(propertiesToWrite) {
     log('INFO', `Wrote server.properties to ${configPath}`);
 }
 
+export async function createWorld(worldName) {
+    if (!SERVER_DIRECTORY) {
+        log('ERROR', 'SERVER_DIRECTORY not set. Cannot create world.');
+        return { success: false, message: 'Server directory not configured.' };
+    }
+    if (!isValidWorldName(worldName)) {
+        log('ERROR', `Invalid worldName format for creation: ${worldName}`);
+        return { success: false, message: 'Invalid world name format.' };
+    }
+
+    const worldsPath = path.join(SERVER_DIRECTORY, 'worlds');
+    const targetWorldPath = path.join(worldsPath, worldName);
+
+    if (fs.existsSync(targetWorldPath)) {
+        log('WARNING', `World directory '${worldName}' already exists at ${targetWorldPath}.`);
+        return { success: false, message: 'World already exists.' };
+    }
+
+    try {
+        fs.mkdirSync(targetWorldPath, { recursive: true });
+        log('INFO', `Created new world directory: ${worldName}`);
+        return { success: true, message: `World '${worldName}' created successfully.` };
+    } catch (error) {
+        log('ERROR', `Failed to create world '${worldName}': ${error.message}`);
+        return { success: false, message: `Failed to create world: ${error.message}` };
+    }
+}
+
 export async function listWorlds() {
     if (!SERVER_DIRECTORY) {
         log('WARNING', 'SERVER_DIRECTORY not set. Cannot list worlds.');
         return [];
     }
-    const worldsPath = pathJoin(SERVER_DIRECTORY, 'worlds');
+    const worldsPath = path.join(SERVER_DIRECTORY, 'worlds');
     if (!fs.existsSync(worldsPath)) {
         log('WARNING', `Worlds directory not found at ${worldsPath}. Returning empty world list.`);
         return [];
@@ -708,8 +737,8 @@ export async function deleteWorld(worldName) {
             return { success: false, message: 'Cannot delete the currently active world.' };
         }
 
-        const worldsPath = pathJoin(SERVER_DIRECTORY, 'worlds');
-        const targetWorldPath = pathJoin(worldsPath, worldName);
+        const worldsPath = path.join(SERVER_DIRECTORY, 'worlds');
+        const targetWorldPath = path.join(worldsPath, worldName);
 
         if (!fs.existsSync(targetWorldPath)) {
             log('WARNING', `World directory '${worldName}' not found at ${targetWorldPath}.`);
@@ -734,8 +763,8 @@ export async function activateWorld(worldName) {
         log('ERROR', `Invalid worldName format: ${worldName}`);
         return false;
     }
-    const worldsPath = pathJoin(SERVER_DIRECTORY, 'worlds');
-    const targetWorldPath = pathJoin(worldsPath, worldName);
+    const worldsPath = path.join(SERVER_DIRECTORY, 'worlds');
+    const targetWorldPath = path.join(worldsPath, worldName);
     if (!fs.existsSync(targetWorldPath)) {
         log('ERROR', `World directory '${worldName}' not found at ${targetWorldPath}. Cannot activate.`);
         return false;
@@ -767,7 +796,7 @@ export async function restartServer() {
 
 export async function isProcessRunning() {
     if (!serverPID && SERVER_DIRECTORY) {
-        const pidFile = pathJoin(SERVER_DIRECTORY, 'server.pid');
+        const pidFile = path.join(SERVER_DIRECTORY, 'server.pid');
         if (fs.existsSync(pidFile)) {
             try {
                 const pidString = fs.readFileSync(pidFile, 'utf8').trim();
@@ -793,7 +822,7 @@ export async function isProcessRunning() {
     } catch (error) {
         if (error.code === 'ESRCH') {
             log('INFO', `Process with PID ${serverPID} not found (ESRCH).`);
-            const pidFile = pathJoin(SERVER_DIRECTORY, 'server.pid');
+            const pidFile = path.join(SERVER_DIRECTORY, 'server.pid');
             if (fs.existsSync(pidFile)) {
                 try {
                     fs.unlinkSync(pidFile);
@@ -849,7 +878,7 @@ export async function sendWebhookNotification(message) {
 }
 
 export async function readGlobalConfig() {
-    const configPath = pathJoin(__dirnameESM, GLOBAL_CONFIG_FILE);
+    const configPath = path.join(__dirnameESM, GLOBAL_CONFIG_FILE);
     let effectiveConfig = {
         serverName: "Default Minecraft Server", serverPortIPv4: 19132, serverPortIPv6: 19133,
         serverDirectory: "./server_data/default_server", tempDirectory: "./server_data/temp/default_server",
@@ -913,7 +942,7 @@ export async function readGlobalConfig() {
 }
 
 export async function writeGlobalConfig(configToWrite) {
-    const configPath = pathJoin(__dirnameESM, GLOBAL_CONFIG_FILE);
+    const configPath = path.join(__dirnameESM, GLOBAL_CONFIG_FILE);
     try {
         const storeConfig = JSON.parse(JSON.stringify(configToWrite));
         const makeRelativeIfNeeded = (absPath) => {
