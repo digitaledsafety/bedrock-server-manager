@@ -1,5 +1,5 @@
 import express from 'express';
-import path, { dirname, join as pathJoin } from 'path';
+import path, { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
 import * as fs from 'fs';
@@ -11,7 +11,7 @@ const __filenameESM = fileURLToPath(import.meta.url);
 const __dirnameESM = dirname(__filenameESM);
 
 // Ensure temp directory for uploads exists
-const TEMP_UPLOAD_DIR = pathJoin(__dirnameESM, 'temp_uploads');
+const TEMP_UPLOAD_DIR = path.join(__dirnameESM, 'temp_uploads');
 if (!fs.existsSync(TEMP_UPLOAD_DIR)) {
     fs.mkdirSync(TEMP_UPLOAD_DIR, { recursive: true });
 }
@@ -49,11 +49,11 @@ const upload = multer({
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(pathJoin(__dirnameESM, 'public')));
+app.use(express.static(path.join(__dirnameESM, 'public')));
 
 // EJS Setup
 app.set('view engine', 'ejs');
-app.set('views', pathJoin(__dirnameESM, 'views'));
+app.set('views', path.join(__dirnameESM, 'views'));
 
 // --- Input Validation Middleware ---
 const validateWorldName = (req, res, next) => {
@@ -175,6 +175,21 @@ app.get('/api/worlds', async (req, res) => {
     }
 });
 
+app.post('/api/create-world', validateWorldName, async (req, res) => {
+    try {
+        const { worldName } = req.body;
+        const result = await backend.createWorld(worldName);
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        backend.log('ERROR', `Failed to create world: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Failed to create world due to server error.' });
+    }
+});
+
 app.post('/api/delete-world', validateWorldName, async (req, res) => {
     try {
         const { worldName } = req.body;
@@ -232,7 +247,7 @@ app.post('/api/logs/clear', async (req, res) => {
 app.get('/api/logs', async (req, res) => {
     try {
         const config = await backend.readGlobalConfig();
-        const serverLogPath = pathJoin(config.serverDirectory, 'server.log');
+        const serverLogPath = path.join(config.serverDirectory, 'server.log');
 
         if (!fs.existsSync(serverLogPath)) {
             return res.json({ success: true, logs: 'Server log file not found. Start the server to generate logs.' });
@@ -261,6 +276,29 @@ app.get('/api/logs', async (req, res) => {
     } catch (error) {
         backend.log('ERROR', `Error reading server logs: ${error.message}`);
         res.status(500).json({ error: 'Failed to read server logs' });
+    }
+});
+
+app.get('/api/logs/download', async (req, res) => {
+    try {
+        const config = await backend.readGlobalConfig();
+        const serverLogPath = path.join(config.serverDirectory, 'server.log');
+
+        if (!fs.existsSync(serverLogPath)) {
+            return res.status(404).json({ success: false, message: 'Server log file not found.' });
+        }
+
+        res.download(serverLogPath, 'server.log', (err) => {
+            if (err) {
+                backend.log('ERROR', `Error downloading server log: ${err.message}`);
+                if (!res.headersSent) {
+                    res.status(500).json({ error: 'Failed to download server log' });
+                }
+            }
+        });
+    } catch (error) {
+        backend.log('ERROR', `Error in /api/logs/download: ${error.message}`);
+        res.status(500).json({ error: 'Failed to download server log' });
     }
 });
 
