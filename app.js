@@ -3,6 +3,7 @@ import path, { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
 import * as fs from 'fs';
+import os from 'os';
 
 import * as backend from './minecraft_bedrock_installer_nodejs.js';
 import { propertiesMetadata, categories } from './properties_metadata.js';
@@ -96,6 +97,26 @@ app.get('/api/status', async (req, res) => {
     } catch (error) {
         backend.log('ERROR', `Error getting server status: ${error.message}`);
         res.status(500).json({ error: 'Failed to get server status' });
+    }
+});
+
+app.get('/api/system-info', async (req, res) => {
+    try {
+        const info = {
+            platform: process.platform,
+            arch: process.arch,
+            nodeVersion: process.version,
+            uptime: Math.floor(process.uptime()),
+            memoryUsage: process.memoryUsage(),
+            osUptime: Math.floor(os.uptime()),
+            osTotalMem: os.totalmem(),
+            osFreeMem: os.freemem(),
+            osLoadAvg: os.loadavg()
+        };
+        res.json({ success: true, info });
+    } catch (error) {
+        backend.log('ERROR', `Error getting system info: ${error.message}`);
+        res.status(500).json({ error: 'Failed to get system info' });
     }
 });
 

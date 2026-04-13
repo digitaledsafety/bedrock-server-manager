@@ -663,15 +663,48 @@ export async function writeServerProperties(propertiesToWrite) {
         log('ERROR', 'SERVER_DIRECTORY not set. Cannot write server.properties.');
         throw new Error('Server directory not configured.');
     }
-    const configPath = path.join(SERVER_DIRECTORY, 'server.properties');
-    let content = '';
-    for (const key in propertiesToWrite) {
-        if (Object.hasOwnProperty.call(propertiesToWrite, key)) {
-            content += `${key}=${propertiesToWrite[key]}\n`;
-        }
-    }
-    await fs.promises.writeFile(configPath, content, 'utf8');
-    log('INFO', `Wrote server.properties to ${configPath}`);
+    const configPath = path.join(SERVER_DIRECTORY, 'server.properties');
+    let originalLines = [];
+    let lineEnding = '\n';
+    const writtenKeys = new Set();
+
+    if (fs.existsSync(configPath)) {
+        const data = await fs.promises.readFile(configPath, 'utf8');
+        if (data.includes('\r\n')) {
+            lineEnding = '\r\n';
+        }
+        originalLines = data.split(/\r?\n/);
+    }
+
+    const newLines = originalLines.map(line => {
+        const trimmedLine = line.trim();
+        if (trimmedLine && !trimmedLine.startsWith('#')) {
+            const separatorIndex = trimmedLine.indexOf('=');
+            if (separatorIndex !== -1) {
+                const key = trimmedLine.substring(0, separatorIndex).trim();
+                if (key && Object.prototype.hasOwnProperty.call(propertiesToWrite, key)) {
+                    writtenKeys.add(key);
+                    return `${key}=${propertiesToWrite[key]}`;
+                }
+            }
+        }
+        return line;
+    });
+
+    // Append new properties that weren't in the original file
+    for (const key in propertiesToWrite) {
+        if (Object.prototype.hasOwnProperty.call(propertiesToWrite, key) && !writtenKeys.has(key)) {
+            newLines.push(`${key}=${propertiesToWrite[key]}`);
+        }
+    }
+
+    // Filter out potential extra empty line at the end from split if necessary
+    if (originalLines.length > 0 && originalLines[originalLines.length - 1] === '' && newLines[newLines.length - 1] === '') {
+        newLines.pop();
+    }
+
+    await fs.promises.writeFile(configPath, newLines.join(lineEnding) + lineEnding, 'utf8');
+    log('INFO', `Wrote server.properties to ${configPath} (preserved comments and order)`);
 }
 
 export async function createWorld(worldName) {
