@@ -29,6 +29,13 @@
         </div>
         <% } %>
 
+        <div class="section" id="systemInfoSection">
+            <h2>System Information</h2>
+            <div id="systemInfoContent" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <p>Loading system information...</p>
+            </div>
+        </div>
+
         <div class="section">
             <div id="messageBox" class="message-box" role="alert" style="display: none;"></div>
             <h2>Server Status</h2>
@@ -87,7 +94,7 @@
             <div class="world-list">
                 <% if (worlds && worlds.length > 0) { %>
                     <% worlds.forEach(world => { %>
-                        <li class="world-item <%= properties['level-name'] === world ? 'active' : '' %>" data-world-name="<%= world %>">
+                        <div class="world-item <%= properties['level-name'] === world ? 'active' : '' %>" data-world-name="<%= world %>">
                             <span><%= world %></span>
                             <button class="activate-world-button" data-world-name="<%= world %>">
                                 Activate
@@ -97,7 +104,7 @@
                                     Delete
                                 </button>
                             <% } %>
-                        </li>
+                        </div>
                     <% }); %>
                 <% } else { %>
                     <p>No worlds found. Start the server to generate a default world.</p>
@@ -140,6 +147,9 @@
 
         <div class="section">
             <h2>Server Properties</h2>
+            <div id="restartNeededNote" class="info-box" style="display: none; background-color: #fff3cd; border: 1px solid #ffeeba; color: #856404; padding: 10px; margin-bottom: 15px; border-radius: 4px;">
+                <strong>Notice:</strong> Server properties have been updated. A restart is required for these changes to take effect.
+            </div>
             <div class="tabs" id="propertiesTabs">
                 <!-- Tab buttons will be injected by JavaScript -->
             </div>

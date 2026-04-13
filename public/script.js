@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const propertiesContainer = document.getElementById('propertiesContainer');
     const propertiesTabs = document.getElementById('propertiesTabs');
     const consoleOutput = document.getElementById('consoleOutput'); // Get the console textarea
+    const systemInfoContent = document.getElementById('systemInfoContent');
 
     // Auto-Update specific elements
     const autoUpdateConfigForm = document.getElementById('autoUpdateConfigForm');
@@ -20,6 +21,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // World Management specific elements
     const createWorldForm = document.getElementById('createWorldForm');
     const newWorldNameInput = document.getElementById('newWorldName');
+
+    const restartNeededNote = document.getElementById('restartNeededNote');
 
     // Pack Management specific elements
     const uploadPackForm = document.getElementById('uploadPackForm');
@@ -157,6 +160,9 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log(JSON.stringify(data));
             if (data.success) {
                 showMessage(`Server ${command} initiated: ${data.message}`, 'success');
+                if ((command === 'restart' || command === 'stop') && restartNeededNote) {
+                    restartNeededNote.style.display = 'none';
+                }
                 // Give server time to change status, then fetch
                 setTimeout(fetchServerStatus, 5000); // Increased delay for more robust status update
             } else {
@@ -342,6 +348,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.success) {
                 showMessage('Server properties saved successfully!', 'success');
                 currentServerProperties = properties;
+                if (restartNeededNote) restartNeededNote.style.display = 'block';
                 // Refresh worlds list if level-name changed
                 loadWorlds();
             } else {
@@ -613,6 +620,41 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function fetchSystemInfo() {
+        if (!systemInfoContent) return;
+        try {
+            const response = await fetch('/api/system-info');
+            const data = await response.json();
+            if (data.success) {
+                const info = data.info;
+                const formatMem = (bytes) => (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+                const formatUptime = (seconds) => {
+                    const d = Math.floor(seconds / (3600*24));
+                    const h = Math.floor(seconds % (3600*24) / 3600);
+                    const m = Math.floor(seconds % 3600 / 60);
+                    const s = Math.floor(seconds % 60);
+                    return `${d}d ${h}h ${m}m ${s}s`;
+                };
+
+                systemInfoContent.innerHTML = `
+                    <div>
+                        <p><strong>OS:</strong> ${info.platform} (${info.arch})</p>
+                        <p><strong>Node Version:</strong> ${info.nodeVersion}</p>
+                        <p><strong>Manager Uptime:</strong> ${formatUptime(info.uptime)}</p>
+                        <p><strong>OS Uptime:</strong> ${formatUptime(info.osUptime)}</p>
+                    </div>
+                    <div>
+                        <p><strong>OS Memory:</strong> ${formatMem(info.osTotalMem - info.osFreeMem)} / ${formatMem(info.osTotalMem)}</p>
+                        <p><strong>Manager Memory (RSS):</strong> ${(info.memoryUsage.rss / (1024 * 1024)).toFixed(2)} MB</p>
+                        <p><strong>Load Average:</strong> ${info.osLoadAvg.map(l => l.toFixed(2)).join(', ')}</p>
+                    </div>
+                `;
+            }
+        } catch (error) {
+            console.error('Error fetching system info:', error);
+        }
+    }
+
     // Initial load
     fetchServerStatus(); // This will now also set initial button states
     loadServerProperties();
@@ -621,10 +663,12 @@ document.addEventListener('DOMContentLoaded', () => {
     addActivateButtonListeners();
     addDeleteButtonListeners();
     fetchLogs();
+    fetchSystemInfo();
 
     // Refresh status and worlds periodically
     setInterval(fetchServerStatus, 10000); // Every 10 seconds
     setInterval(loadWorlds, 30000); // Every 30 seconds
     setInterval(fetchLogs, 5000); // Every 5 seconds
+    setInterval(fetchSystemInfo, 30000); // Every 30 seconds
 
 });
