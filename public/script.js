@@ -4,9 +4,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const startButton = document.getElementById('startButton');
     const stopButton = document.getElementById('stopButton');
     const restartButton = document.getElementById('restartButton');
+    const backupButton = document.getElementById('backupButton');
     const updateButton = document.getElementById('updateButton');
     const clearLogsButton = document.getElementById('clearLogsButton');
     const downloadLogsButton = document.getElementById('downloadLogsButton');
+    const commandForm = document.getElementById('commandForm');
+    const commandInput = document.getElementById('commandInput');
     const propertiesForm = document.getElementById('propertiesForm');
     const propertiesContainer = document.getElementById('propertiesContainer');
     const propertiesTabs = document.getElementById('propertiesTabs');
@@ -49,16 +52,19 @@ document.addEventListener('DOMContentLoaded', () => {
             startButton.disabled = true;
             stopButton.disabled = false;
             restartButton.disabled = false;
+            if (backupButton) backupButton.disabled = false;
             updateButton.disabled = false;
         } else if (status === 'stopped') {
             startButton.disabled = false;
             stopButton.disabled = true;
             restartButton.disabled = true;
+            if (backupButton) backupButton.disabled = false;
             updateButton.disabled = false; // Allow update even if server is stopped
         } else { // unknown status
             startButton.disabled = false; // Allow starting if unknown, as it might be stopped
             stopButton.disabled = true;
             restartButton.disabled = true;
+            if (backupButton) backupButton.disabled = true;
             updateButton.disabled = true; // Disable update if status is unknown
         }
     }
@@ -153,6 +159,7 @@ document.addEventListener('DOMContentLoaded', () => {
             startButton.disabled = true;
             stopButton.disabled = true;
             restartButton.disabled = true;
+            if (backupButton) backupButton.disabled = true;
             updateButton.disabled = true;
 
             const response = await fetch(`/api/${command}`, { method: 'POST' });
@@ -566,6 +573,7 @@ document.addEventListener('DOMContentLoaded', () => {
     startButton.addEventListener('click', () => sendCommand('start'));
     stopButton.addEventListener('click', () => sendCommand('stop'));
     restartButton.addEventListener('click', () => sendCommand('restart'));
+    if (backupButton) backupButton.addEventListener('click', () => sendCommand('backup'));
     updateButton.addEventListener('click', () => sendCommand('update'));
 
     async function handleClearLogs() {
@@ -588,6 +596,32 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (clearLogsButton) clearLogsButton.addEventListener('click', handleClearLogs);
+
+    async function handleSendCommand(event) {
+        event.preventDefault();
+        const command = commandInput.value.trim();
+        if (!command) return;
+
+        try {
+            const response = await fetch('/api/command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command })
+            });
+            const data = await response.json();
+            if (data.success) {
+                commandInput.value = '';
+                // Optional: show small temporary success indicator
+            } else {
+                showMessage(data.message || 'Failed to send command.', 'error');
+            }
+        } catch (error) {
+            console.error('Error sending command:', error);
+            showMessage('An error occurred while sending the command.', 'error');
+        }
+    }
+
+    if (commandForm) commandForm.addEventListener('submit', handleSendCommand);
     if (createWorldForm) createWorldForm.addEventListener('submit', handleCreateWorld);
     if (downloadLogsButton) {
         downloadLogsButton.addEventListener('click', () => {
