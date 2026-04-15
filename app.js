@@ -151,6 +151,38 @@ app.post('/api/restart', async (req, res) => {
     }
 });
 
+app.post('/api/backup', async (req, res) => {
+    try {
+        const backupDir = await backend.backupServer();
+        if (backupDir) {
+            res.json({ success: true, message: `Backup created successfully at ${backupDir}.` });
+        } else {
+            res.status(500).json({ success: false, message: 'Failed to create backup.' });
+        }
+    } catch (error) {
+        backend.log('ERROR', `Failed to backup server: ${error.message}`);
+        res.status(500).json({ success: false, message: `Failed to create backup: ${error.message}` });
+    }
+});
+
+app.post('/api/command', async (req, res) => {
+    try {
+        const { command } = req.body;
+        if (!command) {
+            return res.status(400).json({ success: false, message: 'Command is required.' });
+        }
+        const result = await backend.sendServerCommand(command);
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        backend.log('ERROR', `Failed to send command: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Failed to send command due to server error.' });
+    }
+});
+
 app.post('/api/update', async (req, res) => {
     try {
         const result = await backend.checkAndInstall();

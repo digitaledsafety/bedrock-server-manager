@@ -22,6 +22,7 @@ let SERVER_DIRECTORY;
 let TEMP_DIRECTORY;
 let BACKUP_DIRECTORY;
 let serverPID = null;
+let runningServerProcess = null;
 
 const LAST_VERSION_FILE = 'last_version.txt';
 const WEBHOOK_URL = process.env.MC_UPDATE_WEBHOOK;
@@ -245,15 +246,17 @@ export function extractFiles(zipPath, extractPath) {
             zip.extractAllTo(extractPath, true); // true for overwrite
             log('INFO', `Extraction completed successfully.`);
 
-            // 2. Set permissions for specific executable files (e.g., a script named 'script.sh')
-            const executableFilePath = path.join(extractPath, getServerExeName());
+            if (os.platform() !== 'win32') {
+                // Set permissions for specific executable files
+                const executableFilePath = path.join(extractPath, getServerExeName());
 
-            try {
-                // Set permissions to 755 (owner can read/write/execute, others can read/execute)
-                fs.chmodSync(executableFilePath, 0o755);
-                log('INFO', `Permissions set to 755 for ${executableFilePath}`);
-            } catch (err) {
-                log('ERROR', `Failed to set permissions for ${executableFilePath}: ${err.message}`);
+                try {
+                    // Set permissions to 755 (owner can read/write/execute, others can read/execute)
+                    fs.chmodSync(executableFilePath, 0o755);
+                    log('INFO', `Permissions set to 755 for ${executableFilePath}`);
+                } catch (err) {
+                    log('ERROR', `Failed to set permissions for ${executableFilePath}: ${err.message}`);
+                }
             }
 
             resolve();
@@ -444,6 +447,11 @@ export async function stopServer() {
         if (fs.existsSync(pidFile)) {
             fs.unlinkSync(pidFile);
         }
+
+        if (runningServerProcess && (runningServerProcess.pid === pidToKill || !pidToKill)) {
+            runningServerProcess = null;
+        }
+
         log('INFO', `Server process ${pidToKill} stopped.`);
     } catch (error) {
         log('ERROR', `Error stopping server with PID ${pidToKill} (process might not exist): ${error.message}`);
@@ -463,6 +471,7 @@ export async function startServer() {
         } else {
             log('INFO', `Stale PID ${serverPID} found. Clearing.`);
             serverPID = null;
+            runningServerProcess = null;
         }
     }
     try {
@@ -474,9 +483,11 @@ export async function startServer() {
         log('INFO', `Starting Minecraft server from ${serverExePath}`);
         const serverProcess = spawn(serverExePath, [], {
             cwd: SERVER_DIRECTORY,
-            stdio: ['ignore', 'pipe', 'pipe'],
+            stdio: ['pipe', 'pipe', 'pipe'],
             detached: false
         });
+        runningServerProcess = serverProcess;
+
         if (serverProcess.pid) {
             serverPID = serverProcess.pid;
             log('INFO', `Server process started with PID: ${serverPID}.`);
@@ -514,12 +525,35 @@ export async function startServer() {
         serverProcess.on('exit', (code, signal) => {
             log('INFO', `Server process PID ${serverProcess.pid} exited with code ${code} and signal ${signal}`);
             if (serverPID === serverProcess.pid) serverPID = null;
+            if (runningServerProcess === serverProcess) runningServerProcess = null;
         });
     } catch (error) {
         log('ERROR', `Error starting server: ${error.message}`);
         if (serverPID) serverPID = null;
+        runningServerProcess = null;
         throw error;
     }
+}
+
+/**
+ * Sends a command to the running Minecraft server's console.
+ * @param {string} command - The command to send.
+ * @returns {Promise<{success: boolean, message: string}>}
+ */
+export async function sendServerCommand(command) {
+    if (!runningServerProcess || !runningServerProcess.stdin || runningServerProcess.stdin.writable === false) {
+        log('WARNING', 'Server process or stdin not available. Command not sent.');
+        return { success: false, message: 'Server is not running or not accepting commands.' };
+    }
+
+    try {
+        log('INFO', `Sending command to server: ${command}`);
+        runningServerProcess.stdin.write(command + '\n');
+        return { success: true, message: 'Command sent to server.' };
+    } catch (error) {
+        log('ERROR', `Failed to send command to server: ${error.message}`);
+        return { success: false, message: `Failed to send command: ${error.message}` };
+    }
 }
 
 export async function checkAndInstall() {

@@ -53,14 +53,21 @@
                     <button id="startButton">Start Server</button>
                     <button id="stopButton">Stop Server</button>
                     <button id="restartButton">Restart Server</button>
+                    <button id="backupButton">Backup Server</button>
                     <button id="updateButton">Check & Install Update</button>
                 </div>
             <% } %>
         </div>
 
         <div class="section">
-            <h2>Server Log</h2>
+            <h2>Server Console</h2>
             <textarea id="consoleOutput" readonly placeholder="Server logs will appear here..."></textarea>
+            <% if (config.serverType !== 'java') { %>
+                <form id="commandForm" style="margin-top: 10px; display: flex; gap: 10px;">
+                    <input type="text" id="commandInput" placeholder="Enter server command (e.g., list, say hello)" style="flex-grow: 1;">
+                    <button type="submit" id="sendCommandButton">Send</button>
+                </form>
+            <% } %>
             <div class="button-group" style="margin-top: 10px;">
                 <button id="clearLogsButton" class="bg-gray-500 hover:bg-gray-700">Clear Logs</button>
                 <button id="downloadLogsButton" class="bg-blue-500 hover:bg-blue-700">Download Full Log</button>
