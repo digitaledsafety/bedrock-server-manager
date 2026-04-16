@@ -91,6 +91,17 @@ button:disabled {
     background-color: #FF5555; /* Bright red */
     color: #1E1E1E; /* Dark text */
 }
+
+/* Common color classes for buttons */
+.bg-blue-500 { background-color: #3b82f6; }
+.bg-blue-500:hover { background-color: #2563eb; }
+.bg-red-500 { background-color: #ef4444; }
+.bg-red-500:hover { background-color: #dc2626; }
+.bg-green-600 { background-color: #16a34a; }
+.bg-green-600:hover { background-color: #15803d; }
+.bg-gray-500 { background-color: #6b7280; }
+.bg-gray-500:hover { background-color: #4b5563; }
+
 .badge-beta {
     background-color: #FFAA00; /* Gold/Orange */
     color: #1E1E1E;
