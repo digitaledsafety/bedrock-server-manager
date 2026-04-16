@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const stopButton = document.getElementById('stopButton');
     const restartButton = document.getElementById('restartButton');
     const updateButton = document.getElementById('updateButton');
+    const backupButton = document.getElementById('backupButton');
     const clearLogsButton = document.getElementById('clearLogsButton');
     const downloadLogsButton = document.getElementById('downloadLogsButton');
     const propertiesForm = document.getElementById('propertiesForm');
@@ -32,6 +33,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const packWorldNameSelect = document.getElementById('packWorldName');
     const uploadPackButton = document.getElementById('uploadPackButton');
 
+    // Console Command specific elements
+    const commandForm = document.getElementById('commandForm');
+    const commandInput = document.getElementById('commandInput');
 
     // --- Utility Functions ---
     function showMessage(message, type = 'success') {
@@ -50,16 +54,22 @@ document.addEventListener('DOMContentLoaded', () => {
             stopButton.disabled = false;
             restartButton.disabled = false;
             updateButton.disabled = false;
+            if (backupButton) backupButton.disabled = false;
+            if (commandInput) commandInput.disabled = false;
         } else if (status === 'stopped') {
             startButton.disabled = false;
             stopButton.disabled = true;
             restartButton.disabled = true;
             updateButton.disabled = false; // Allow update even if server is stopped
+            if (backupButton) backupButton.disabled = false;
+            if (commandInput) commandInput.disabled = true;
         } else { // unknown status
             startButton.disabled = false; // Allow starting if unknown, as it might be stopped
             stopButton.disabled = true;
             restartButton.disabled = true;
             updateButton.disabled = true; // Disable update if status is unknown
+            if (backupButton) backupButton.disabled = true;
+            if (commandInput) commandInput.disabled = true;
         }
     }
 
@@ -567,6 +577,55 @@ document.addEventListener('DOMContentLoaded', () => {
     stopButton.addEventListener('click', () => sendCommand('stop'));
     restartButton.addEventListener('click', () => sendCommand('restart'));
     updateButton.addEventListener('click', () => sendCommand('update'));
+
+    if (backupButton) {
+        backupButton.addEventListener('click', async () => {
+            try {
+                backupButton.disabled = true;
+                showMessage('Creating manual backup...');
+                const response = await fetch('/api/backup', { method: 'POST' });
+                const data = await response.json();
+                if (data.success) {
+                    showMessage(data.message, 'success');
+                } else {
+                    showMessage(data.message || 'Failed to create backup.', 'error');
+                }
+            } catch (error) {
+                console.error('Error creating backup:', error);
+                showMessage('Failed to send backup command.', 'error');
+            } finally {
+                backupButton.disabled = false;
+            }
+        });
+    }
+
+    if (commandForm) {
+        commandForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const command = commandInput.value.trim();
+            if (!command) return;
+
+            try {
+                commandInput.value = ''; // Clear input immediately
+                showMessage(`Sending command: ${command}...`);
+                const response = await fetch('/api/command', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ command })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    showMessage(data.message, 'success');
+                    fetchLogs(); // Refresh logs to see command result
+                } else {
+                    showMessage(data.message || 'Failed to send command.', 'error');
+                }
+            } catch (error) {
+                console.error('Error sending command:', error);
+                showMessage('Failed to send console command.', 'error');
+            }
+        });
+    }
 
     async function handleClearLogs() {
         if (!confirm('Are you sure you want to clear the server logs?')) return;
