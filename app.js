@@ -258,6 +258,27 @@ app.post('/api/delete-world', validateWorldName, async (req, res) => {
     }
 });
 
+app.post('/api/rename-world', async (req, res) => {
+    try {
+        const { oldName, newName } = req.body;
+        if (!oldName || !newName) {
+            return res.status(400).json({ success: false, message: 'Both oldName and newName are required.' });
+        }
+        if (!backend.isValidWorldName(oldName) || !backend.isValidWorldName(newName)) {
+            return res.status(400).json({ success: false, message: 'Invalid world name format.' });
+        }
+        const result = await backend.renameWorld(oldName, newName);
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        backend.log('ERROR', `Failed to rename world: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Failed to rename world due to server error.' });
+    }
+});
+
 app.post('/api/activate-world', validateWorldName, async (req, res) => {
     try {
         const { worldName } = req.body;
@@ -329,6 +350,57 @@ app.get('/api/logs', async (req, res) => {
     } catch (error) {
         backend.log('ERROR', `Error reading server logs: ${error.message}`);
         res.status(500).json({ error: 'Failed to read server logs' });
+    }
+});
+
+app.get('/api/backups', async (req, res) => {
+    try {
+        const backups = await backend.listBackups();
+        res.json({ success: true, backups });
+    } catch (error) {
+        backend.log('ERROR', `Failed to list backups: ${error.message}`);
+        res.status(500).json({ error: 'Failed to list backups' });
+    }
+});
+
+app.delete('/api/backups/:name', async (req, res) => {
+    try {
+        const result = await backend.deleteBackup(req.params.name);
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        backend.log('ERROR', `Failed to delete backup: ${error.message}`);
+        res.status(500).json({ error: 'Failed to delete backup' });
+    }
+});
+
+app.get('/api/backups/:name/download', async (req, res) => {
+    const backupName = req.params.name;
+    // Basic validation to prevent traversal
+    if (backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+        return res.status(400).json({ success: false, message: 'Invalid backup name.' });
+    }
+
+    const zipPath = path.join(TEMP_UPLOAD_DIR, `${backupName}.zip`);
+    try {
+        await backend.zipBackup(backupName, zipPath);
+        res.download(zipPath, `${backupName}.zip`, (err) => {
+            if (err) {
+                backend.log('ERROR', `Error downloading backup ZIP: ${err.message}`);
+            }
+            // Cleanup zip after download
+            if (fs.existsSync(zipPath)) {
+                fs.promises.unlink(zipPath).catch(uErr => {
+                    backend.log('WARNING', `Failed to delete temporary backup ZIP ${zipPath}: ${uErr.message}`);
+                });
+            }
+        });
+    } catch (error) {
+        backend.log('ERROR', `Failed to prepare backup ZIP: ${error.message}`);
+        res.status(500).json({ error: 'Failed to prepare backup for download.' });
     }
 });
 

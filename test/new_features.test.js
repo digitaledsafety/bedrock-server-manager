@@ -22,6 +22,10 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
     getStoredVersion: jest.fn(),
     clearServerLogs: jest.fn(),
     createWorld: jest.fn(),
+    renameWorld: jest.fn(),
+    listBackups: jest.fn(),
+    deleteBackup: jest.fn(),
+    zipBackup: jest.fn(),
     log: jest.fn(),
     isValidWorldName: jest.fn((name) => !/[./\\]/.test(name)),
 }));
@@ -70,6 +74,37 @@ describe('New Features API', () => {
             expect(response.status).toBe(400);
             expect(response.body.success).toBe(false);
             expect(response.body.message).toBe('World already exists.');
+        });
+    });
+
+    describe('POST /api/rename-world', () => {
+        it('should rename a world successfully', async () => {
+            backend.renameWorld.mockResolvedValue({ success: true, message: 'World renamed.' });
+
+            const response = await request(app)
+                .post('/api/rename-world')
+                .send({ oldName: 'world1', newName: 'world2' });
+
+            expect(response.status).toBe(200);
+            expect(response.body.success).toBe(true);
+            expect(backend.renameWorld).toHaveBeenCalledWith('world1', 'world2');
+        });
+    });
+
+    describe('Backup Management API', () => {
+        it('GET /api/backups should list backups', async () => {
+            backend.listBackups.mockResolvedValue(['backup1']);
+            const response = await request(app).get('/api/backups');
+            expect(response.status).toBe(200);
+            expect(response.body.backups).toEqual(['backup1']);
+        });
+
+        it('DELETE /api/backups/:name should delete a backup', async () => {
+            backend.deleteBackup.mockResolvedValue({ success: true, message: 'Deleted.' });
+            const response = await request(app).delete('/api/backups/backup1');
+            expect(response.status).toBe(200);
+            expect(response.body.success).toBe(true);
+            expect(backend.deleteBackup).toHaveBeenCalledWith('backup1');
         });
     });
 });
