@@ -243,7 +243,10 @@ export function extractFiles(zipPath, extractPath) {
         try {
             log('INFO', `Using adm-zip for extraction for ${zipPath} to ${extractPath}.`);
             const zip = new AdmZip(zipPath);
-            zip.extractAllTo(extractPath, true); // true for overwrite
+            zip.getEntries().forEach(entry => {
+                const targetPath = path.join(extractPath, entry.entryName);
+                extractZipEntry(entry, targetPath, extractPath);
+            });
             log('INFO', `Extraction completed successfully.`);
 
             // 2. Set permissions for specific executable files (e.g., a script named 'script.sh')
@@ -353,6 +356,67 @@ export async function backupServer() {
         }
         throw error;
     }
+}
+
+/**
+ * Lists all available backups.
+ * @returns {Promise<Array<string>>} List of backup directory names.
+ */
+export async function listBackups() {
+    if (!BACKUP_DIRECTORY || !fs.existsSync(BACKUP_DIRECTORY)) {
+        return [];
+    }
+    const entries = await fs.promises.readdir(BACKUP_DIRECTORY, { withFileTypes: true });
+    return entries
+        .filter(entry => entry.isDirectory())
+        .map(entry => entry.name)
+        .sort((a, b) => b.localeCompare(a)); // Newest first
+}
+
+/**
+ * Deletes a backup directory.
+ * @param {string} backupName - Name of the backup directory to delete.
+ * @returns {Promise<{success: boolean, message: string}>} Result of the deletion.
+ */
+export async function deleteBackup(backupName) {
+    if (!BACKUP_DIRECTORY) {
+        return { success: false, message: 'Backup directory not configured.' };
+    }
+    // Basic validation to prevent traversal
+    if (backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+        return { success: false, message: 'Invalid backup name.' };
+    }
+
+    const backupPath = path.join(BACKUP_DIRECTORY, backupName);
+    if (!fs.existsSync(backupPath)) {
+        return { success: false, message: 'Backup not found.' };
+    }
+
+    try {
+        await fs.promises.rm(backupPath, { recursive: true, force: true });
+        log('INFO', `Deleted backup: ${backupName}`);
+        return { success: true, message: `Backup '${backupName}' deleted successfully.` };
+    } catch (error) {
+        log('ERROR', `Failed to delete backup '${backupName}': ${error.message}`);
+        return { success: false, message: `Failed to delete backup: ${error.message}` };
+    }
+}
+
+/**
+ * Creates a ZIP of a backup directory for download.
+ * @param {string} backupName - Name of the backup directory.
+ * @param {string} targetZipPath - Path where the ZIP should be created.
+ * @returns {Promise<void>}
+ */
+export async function zipBackup(backupName, targetZipPath) {
+    const backupPath = path.join(BACKUP_DIRECTORY, backupName);
+    if (!fs.existsSync(backupPath)) {
+        throw new Error('Backup not found.');
+    }
+    const zip = new AdmZip();
+    zip.addLocalFolder(backupPath);
+    await zip.writeZipPromise(targetZipPath);
+    log('INFO', `Zipped backup '${backupName}' to ${targetZipPath}`);
 }
 
 export async function copyDir(src, dest) {
@@ -792,6 +856,68 @@ export async function deleteWorld(worldName) {
     }
 }
 
+/**
+ * Renames a world directory and updates server.properties if it's the active world.
+ * @param {string} oldName - Current name of the world.
+ * @param {string} newName - New name for the world.
+ * @returns {Promise<{success: boolean, message: string}>} Result of the rename operation.
+ */
+export async function renameWorld(oldName, newName) {
+    if (!SERVER_DIRECTORY) {
+        return { success: false, message: 'Server directory not configured.' };
+    }
+    if (!isValidWorldName(oldName) || !isValidWorldName(newName)) {
+        return { success: false, message: 'Invalid world name format.' };
+    }
+
+    const worldsPath = path.join(SERVER_DIRECTORY, 'worlds');
+    const oldWorldPath = path.join(worldsPath, oldName);
+    const newWorldPath = path.join(worldsPath, newName);
+
+    if (!fs.existsSync(oldWorldPath)) {
+        return { success: false, message: `World '${oldName}' not found.` };
+    }
+    if (fs.existsSync(newWorldPath)) {
+        return { success: false, message: `World '${newName}' already exists.` };
+    }
+
+    try {
+        const properties = await readServerProperties();
+        const isActiveWorld = properties['level-name'] === oldName;
+        const serverRunning = await isProcessRunning();
+
+        if (isActiveWorld && serverRunning) {
+            log('INFO', `Renaming active world '${oldName}'. Stopping server first for safety.`);
+            await stopServer();
+        }
+
+        // Move directory
+        await fs.promises.rename(oldWorldPath, newWorldPath);
+        log('INFO', `Renamed world directory from '${oldName}' to '${newName}'`);
+
+        // Update server.properties if it was the active world
+        if (isActiveWorld) {
+            properties['level-name'] = newName;
+            await writeServerProperties(properties);
+            log('INFO', `Updated active world name in server.properties to '${newName}'`);
+
+            if (serverRunning) {
+                log('INFO', `Restarting server after renaming active world.`);
+                await startServer();
+            }
+        }
+
+        return {
+            success: true,
+            message: `World renamed from '${oldName}' to '${newName}'.` +
+                     (isActiveWorld && serverRunning ? ' Server was restarted.' : '')
+        };
+    } catch (error) {
+        log('ERROR', `Failed to rename world '${oldName}' to '${newName}': ${error.message}`);
+        return { success: false, message: `Failed to rename world: ${error.message}` };
+    }
+}
+
 export async function activateWorld(worldName) {
     if (!SERVER_DIRECTORY) {
         log('ERROR', 'SERVER_DIRECTORY not set. Cannot activate world.');
@@ -1028,6 +1154,30 @@ export async function writeGlobalConfig(configToWrite) {
 // --- Pack Management ---
 
 /**
+ * Safely extracts a zip entry to a target path, preventing Zip Slip.
+ * @param {object} zipEntry - The AdmZip entry object.
+ * @param {string} targetPath - The absolute target path on the filesystem.
+ * @param {string} baseDir - The base directory that the extraction must stay within.
+ */
+function extractZipEntry(zipEntry, targetPath, baseDir) {
+    if (zipEntry.isDirectory) return;
+
+    const resolvedTargetPath = path.resolve(targetPath);
+    const resolvedBaseDir = path.resolve(baseDir) + path.sep;
+
+    if (!resolvedTargetPath.startsWith(resolvedBaseDir)) {
+        log('WARNING', `Zip Slip attempt detected: ${zipEntry.entryName} tried to extract to ${resolvedTargetPath}`);
+        return;
+    }
+
+    const targetFileDir = path.dirname(targetPath);
+    if (!fs.existsSync(targetFileDir)) {
+        fs.mkdirSync(targetFileDir, { recursive: true });
+    }
+    fs.writeFileSync(targetPath, zipEntry.getData());
+}
+
+/**
  * Extracts specific entries from a zip file to a target directory, with Zip Slip protection.
  * @param {Array} zipEntries - The entries from the AdmZip object.
  * @param {string} packRootInZip - The root directory of the pack within the zip file.
@@ -1065,20 +1215,7 @@ function extractPackEntries(zipEntries, packRootInZip, finalPackPath, allPackRoo
 
         if (isEntryInPack && relativePathInPack) {
             const targetFilePath = path.join(finalPackPath, relativePathInPack);
-
-            // Security: Check for Zip Slip vulnerability
-            const resolvedTargetFilePath = path.resolve(targetFilePath);
-            const resolvedFinalPackPath = path.resolve(finalPackPath) + path.sep;
-            if (!resolvedTargetFilePath.startsWith(resolvedFinalPackPath)) {
-                log('WARNING', `Zip Slip attempt detected: ${zipEntry.entryName}`);
-                return; // Skip this entry
-            }
-
-            const targetFileDir = path.dirname(targetFilePath);
-            if (!fs.existsSync(targetFileDir)) {
-                fs.mkdirSync(targetFileDir, { recursive: true });
-            }
-            fs.writeFileSync(targetFilePath, zipEntry.getData());
+            extractZipEntry(zipEntry, targetFilePath, finalPackPath);
         }
     });
 }

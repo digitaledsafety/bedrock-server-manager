@@ -391,19 +391,25 @@ document.addEventListener('DOMContentLoaded', () => {
                             worldItem.dataset.worldName = world;
                             worldItem.innerHTML = `
                                 <span>${world}</span>
-                                <button class="activate-world-button bg-blue-500 hover:bg-blue-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world}">
-                                    Activate
-                                </button>
-                                ${currentLevelName !== world ? `
-                                <button class="delete-world-button bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world}">
-                                    Delete
-                                </button>
-                                ` : ''}
+                                <div class="button-group">
+                                    <button class="activate-world-button bg-blue-500 hover:bg-blue-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world}">
+                                        Activate
+                                    </button>
+                                    <button class="rename-world-button bg-yellow-500 hover:bg-yellow-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world}">
+                                        Rename
+                                    </button>
+                                    ${currentLevelName !== world ? `
+                                    <button class="delete-world-button bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world}">
+                                        Delete
+                                    </button>
+                                    ` : ''}
+                                </div>
                             `;
                             worldListContainer.appendChild(worldItem);
                         });
                         addActivateButtonListeners(); // Re-add listeners after updating DOM
                         addDeleteButtonListeners(); // Re-add listeners after updating DOM
+                        addRenameButtonListeners(); // Re-add listeners after updating DOM
                     } else {
                         worldListContainer.innerHTML = '<p class="text-gray-600">No worlds found. Start the server to generate a default world.</p>';
                     }
@@ -431,6 +437,38 @@ document.addEventListener('DOMContentLoaded', () => {
             button.removeEventListener('click', handleDeleteWorldClick); // Prevent duplicate listeners
             button.addEventListener('click', handleDeleteWorldClick);
         });
+    }
+
+    function addRenameButtonListeners() {
+        document.querySelectorAll('.rename-world-button').forEach(button => {
+            button.removeEventListener('click', handleRenameWorldClick); // Prevent duplicate listeners
+            button.addEventListener('click', handleRenameWorldClick);
+        });
+    }
+
+    async function handleRenameWorldClick(event) {
+        const oldName = event.target.dataset.worldName;
+        const newName = prompt(`Enter new name for world '${oldName}':`, oldName);
+        if (!newName || newName === oldName) return;
+
+        try {
+            showMessage(`Renaming world '${oldName}' to '${newName}'...`);
+            const response = await fetch('/api/rename-world', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ oldName, newName })
+            });
+            const data = await response.json();
+            if (response.ok && data.success) {
+                showMessage(data.message, 'success');
+                loadWorlds();
+            } else {
+                showMessage(data.message || 'Failed to rename world.', 'error');
+            }
+        } catch (error) {
+            console.error('Error renaming world:', error);
+            showMessage('Failed to rename world.', 'error');
+        }
     }
 
     async function handleDeleteWorldClick(event) {
@@ -679,6 +717,70 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function fetchBackups() {
+        try {
+            const response = await fetch('/api/backups');
+            const data = await response.json();
+            if (data.success) {
+                const backupListContainer = document.getElementById('backupList');
+                if (!backupListContainer) return;
+                backupListContainer.innerHTML = '';
+                if (data.backups && data.backups.length > 0) {
+                    data.backups.forEach(backup => {
+                        const backupItem = document.createElement('div');
+                        backupItem.className = 'world-item';
+                        backupItem.innerHTML = `
+                            <span>${backup}</span>
+                            <div class="button-group">
+                                <button class="download-backup-button bg-blue-500 hover:bg-blue-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-backup-name="${backup}">
+                                    Download
+                                </button>
+                                <button class="delete-backup-button bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-backup-name="${backup}">
+                                    Delete
+                                </button>
+                            </div>
+                        `;
+                        backupListContainer.appendChild(backupItem);
+                    });
+                    addBackupButtonListeners();
+                } else {
+                    backupListContainer.innerHTML = '<p class="text-gray-600">No backups found.</p>';
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching backups:', error);
+        }
+    }
+
+    function addBackupButtonListeners() {
+        document.querySelectorAll('.download-backup-button').forEach(button => {
+            button.onclick = (e) => {
+                const name = e.target.dataset.backupName;
+                window.location.href = `/api/backups/${name}/download`;
+            };
+        });
+        document.querySelectorAll('.delete-backup-button').forEach(button => {
+            button.onclick = async (e) => {
+                const name = e.target.dataset.backupName;
+                if (!confirm(`Are you sure you want to delete backup '${name}'?`)) return;
+                try {
+                    showMessage(`Deleting backup '${name}'...`);
+                    const response = await fetch(`/api/backups/${name}`, { method: 'DELETE' });
+                    const data = await response.json();
+                    if (data.success) {
+                        showMessage(data.message, 'success');
+                        fetchBackups();
+                    } else {
+                        showMessage(data.message || 'Failed to delete backup.', 'error');
+                    }
+                } catch (error) {
+                    console.error('Error deleting backup:', error);
+                    showMessage('Failed to delete backup.', 'error');
+                }
+            };
+        });
+    }
+
     async function fetchSystemInfo() {
         if (!systemInfoContent) return;
         try {
@@ -723,11 +825,13 @@ document.addEventListener('DOMContentLoaded', () => {
     addDeleteButtonListeners();
     fetchLogs();
     fetchSystemInfo();
+    fetchBackups();
 
     // Refresh status and worlds periodically
     setInterval(fetchServerStatus, 10000); // Every 10 seconds
     setInterval(loadWorlds, 30000); // Every 30 seconds
     setInterval(fetchLogs, 5000); // Every 5 seconds
     setInterval(fetchSystemInfo, 30000); // Every 30 seconds
+    setInterval(fetchBackups, 60000); // Every minute
 
 });
