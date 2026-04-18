@@ -80,6 +80,10 @@ const sanitizeServerProperties = (req, res, next) => {
             return res.status(400).json({ error: `Invalid character in server property key: ${key}` });
         }
         const value = properties[key];
+        if (typeof value === 'string' && value.match(/[\n\r]/)) {
+            backend.log('ERROR', `Invalid character in server property value for key: ${key}`);
+            return res.status(400).json({ error: `Invalid character in server property value for key: ${key}` });
+        }
         if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
             properties[key] = String(value);
             backend.log('WARNING', `Property value for key '${key}' was converted to string.`);
@@ -358,6 +362,15 @@ app.get('/api/logs/download', async (req, res) => {
 app.post('/api/config', async (req, res) => {
     try {
         const newSettings = req.body;
+
+        // Basic validation for all settings
+        for (const key in newSettings) {
+            if (typeof newSettings[key] === 'string' && /[\x00-\x1F\x7F]/.test(newSettings[key])) {
+                backend.log('ERROR', `Control characters detected in config key ${key}`);
+                return res.status(400).json({ success: false, message: `Invalid characters in setting: ${key}` });
+            }
+        }
+
         let currentFullConfig = await backend.readGlobalConfig();
         if (newSettings.autoUpdateEnabled !== undefined) {
             currentFullConfig.autoUpdateEnabled = !!newSettings.autoUpdateEnabled;

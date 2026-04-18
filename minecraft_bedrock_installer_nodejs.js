@@ -7,6 +7,8 @@ import { fileURLToPath } from 'url';
 import { URL } from 'url';
 import util from 'util';
 import os from 'os';
+import net from 'net';
+import dgram from 'dgram';
 import AdmZip from 'adm-zip';
 
 const execPromise = util.promisify(childProcessExec);
@@ -457,6 +459,46 @@ export async function stopServer() {
     }
 }
 
+/**
+ * Sanitizes a property value by removing newlines.
+ * @param {any} value
+ * @returns {string}
+ */
+function sanitizePropertyValue(value) {
+    return String(value).replace(/\r?\n/g, '');
+}
+
+/**
+ * Checks if a UDP port is available on the specified host.
+ * @param {number} port
+ * @param {string} host
+ * @returns {Promise<{available: boolean, error?: string}>}
+ */
+function isUDPPortAvailable(port, host) {
+    return new Promise((resolve) => {
+        const socket = dgram.createSocket(host.includes(':') ? 'udp6' : 'udp4');
+        socket.once('error', (err) => {
+            if (err.code === 'EADDRINUSE') {
+                resolve({ available: false, error: 'ADDRINUSE' });
+            } else if (err.code === 'EAFNOSUPPORT' || err.code === 'EADDRNOTAVAIL') {
+                resolve({ available: false, error: err.code });
+            } else {
+                log('DEBUG', `UDP port check error for ${host}:${port}: ${err.message}`);
+                resolve({ available: false, error: err.message });
+            }
+            socket.close();
+        });
+        socket.once('listening', () => {
+            socket.close(() => resolve({ available: true }));
+        });
+        try {
+            socket.bind(port, host);
+        } catch (e) {
+            resolve({ available: false, error: e.message });
+        }
+    });
+}
+
 export async function startServer() {
     if (serverPID) {
         log('INFO', `Server process already has a PID: ${serverPID}. Check if it's running.`);
@@ -474,6 +516,31 @@ export async function startServer() {
             log('WARNING', `Server executable not found at ${serverExePath}. Cannot start server. Run update/install first.`);
             return;
         }
+
+        // Port availability check
+        const ipv4Port = parseInt(config.serverPortIPv4 || 19132, 10);
+        const ipv6Port = parseInt(config.serverPortIPv6 || 19133, 10);
+
+        log('DEBUG', `Checking availability of UDP ports IPv4:${ipv4Port} and IPv6:${ipv6Port}`);
+        const [ipv4Result, ipv6Result] = await Promise.all([
+            isUDPPortAvailable(ipv4Port, '0.0.0.0'),
+            isUDPPortAvailable(ipv6Port, '::')
+        ]);
+
+        if (!ipv4Result.available && ipv4Result.error === 'ADDRINUSE') {
+            throw new Error(`IPv4 UDP port ${ipv4Port} is already in use.`);
+        }
+
+        if (!ipv6Result.available) {
+            if (ipv6Result.error === 'ADDRINUSE') {
+                throw new Error(`IPv6 UDP port ${ipv6Port} is already in use.`);
+            } else if (ipv6Result.error === 'EAFNOSUPPORT' || ipv6Result.error === 'EADDRNOTAVAIL') {
+                log('WARNING', `IPv6 is not supported or port ${ipv6Port} is not available (Error: ${ipv6Result.error}). Continuing with IPv4 only.`);
+            } else {
+                 log('DEBUG', `IPv6 port check returned error: ${ipv6Result.error}. Attempting to continue.`);
+            }
+        }
+
         log('INFO', `Starting Minecraft server from ${serverExePath}`);
         const serverProcess = spawn(serverExePath, [], {
             cwd: SERVER_DIRECTORY,
@@ -627,7 +694,8 @@ export async function clearServerLogs() {
     const serverLogPath = path.join(SERVER_DIRECTORY, 'server.log');
     try {
         if (fs.existsSync(serverLogPath)) {
-            await fs.promises.writeFile(serverLogPath, '', 'utf8');
+            // Using truncate instead of writeFile to better handle potential locks
+            await fs.promises.truncate(serverLogPath, 0);
             log('INFO', `Server log file cleared: ${serverLogPath}`);
             return true;
         } else {
@@ -635,7 +703,11 @@ export async function clearServerLogs() {
             return true;
         }
     } catch (error) {
-        log('ERROR', `Error clearing server logs: ${error.message}`);
+        if (error.code === 'EBUSY' || error.code === 'EPERM') {
+            log('ERROR', `Failed to clear server logs: File is in use or permissions denied (${error.code}).`);
+        } else {
+            log('ERROR', `Error clearing server logs: ${error.message}`);
+        }
         return false;
     }
 }
@@ -689,7 +761,7 @@ export async function writeServerProperties(propertiesToWrite) {
                 const key = trimmedLine.substring(0, separatorIndex).trim();
                 if (key && Object.prototype.hasOwnProperty.call(propertiesToWrite, key)) {
                     writtenKeys.add(key);
-                    return `${key}=${propertiesToWrite[key]}`;
+                    return `${key}=${sanitizePropertyValue(propertiesToWrite[key])}`;
                 }
             }
         }
@@ -699,7 +771,7 @@ export async function writeServerProperties(propertiesToWrite) {
     // Append new properties that weren't in the original file
     for (const key in propertiesToWrite) {
         if (Object.prototype.hasOwnProperty.call(propertiesToWrite, key) && !writtenKeys.has(key)) {
-            newLines.push(`${key}=${propertiesToWrite[key]}`);
+            newLines.push(`${key}=${sanitizePropertyValue(propertiesToWrite[key])}`);
         }
     }
 
