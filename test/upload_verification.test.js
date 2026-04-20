@@ -121,6 +121,6 @@ describe('Upload API Verification', () => {
 
     expect(res.statusCode).toEqual(400);
     expect(res.body.success).toBe(false);
-    expect(res.body.message).toContain('Only .mcpack and .mcaddon files are allowed!');
+    expect(res.body.message).toContain('Only .mcpack, .mcaddon and .zip files are allowed!');
   });
 });
