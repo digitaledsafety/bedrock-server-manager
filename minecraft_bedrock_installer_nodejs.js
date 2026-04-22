@@ -513,8 +513,9 @@ export async function startServer() {
     try {
         const serverExePath = path.join(SERVER_DIRECTORY, getServerExeName());
         if (!fs.existsSync(serverExePath)) {
-            log('WARNING', `Server executable not found at ${serverExePath}. Cannot start server. Run update/install first.`);
-            return;
+            const msg = `Server executable not found at ${serverExePath}. Run update/install first.`;
+            log('WARNING', msg);
+            throw new Error(msg);
         }
 
         // Port availability check
@@ -578,6 +579,37 @@ export async function startServer() {
             log('ERROR', `Server process started but PID was not obtained.`);
         }
         serverProcess.unref();
+
+        // New error detection logic: Wait a bit to see if the process crashes immediately
+        const startupFailure = await new Promise((resolve) => {
+            const errorHandler = (err) => {
+                log('ERROR', `Server process error: ${err.message}`);
+                resolve({ error: err.message });
+            };
+            const exitHandler = (code, signal) => {
+                log('INFO', `Server process PID ${serverProcess.pid} exited with code ${code} and signal ${signal}`);
+                resolve({ code, signal });
+            };
+
+            serverProcess.on('error', errorHandler);
+            serverProcess.on('exit', exitHandler);
+
+            setTimeout(() => {
+                // If we're still here after 5000ms, assume it started okay (or at least didn't crash instantly)
+                serverProcess.removeListener('error', errorHandler);
+                // We keep the exit listener for general tracking, but we add a NEW one for that.
+                // Or rather, we keep these but they won't resolve the initial startup promise.
+                resolve(null);
+            }, 5000);
+        });
+
+        if (startupFailure) {
+            if (serverPID === serverProcess.pid) serverPID = null;
+            if (activeServerProcess === serverProcess) activeServerProcess = null;
+            const reason = startupFailure.error ? startupFailure.error : `Exited with code ${startupFailure.code}${startupFailure.signal ? ' and signal ' + startupFailure.signal : ''}`;
+            throw new Error(`Server failed to start: ${reason}`);
+        }
+
         serverProcess.on('error', (err) => {
             log('ERROR', `Server process error: ${err.message}`);
             if (serverPID === serverProcess.pid) serverPID = null;
@@ -1421,6 +1453,109 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
     } catch (error) {
         log('ERROR', `Error processing pack upload for ${originalFilename}: ${error.message} ${error.stack}`);
         return { success: false, message: `Error processing pack: ${error.message}` };
+    }
+}
+
+/**
+ * Lists all active packs for a given world.
+ * @param {string} worldName
+ * @returns {Promise<{success: boolean, behaviorPacks: Array, resourcePacks: Array, message?: string}>}
+ */
+export async function listPacks(worldName) {
+    if (!SERVER_DIRECTORY) return { success: false, behaviorPacks: [], resourcePacks: [], message: 'Server directory not configured.' };
+    if (!isValidWorldName(worldName)) return { success: false, behaviorPacks: [], resourcePacks: [], message: 'Invalid world name.' };
+
+    const worldPath = path.join(SERVER_DIRECTORY, 'worlds', worldName);
+    if (!fs.existsSync(worldPath)) return { success: false, behaviorPacks: [], resourcePacks: [], message: 'World not found.' };
+
+    const getPacksInfo = async (jsonFile, packDirName) => {
+        const jsonPath = path.join(worldPath, jsonFile);
+        if (!fs.existsSync(jsonPath)) return [];
+        try {
+            const content = await fs.promises.readFile(jsonPath, 'utf8');
+            const packs = JSON.parse(content);
+            const info = [];
+            for (const pack of packs) {
+                // Try to find the pack name in the server's pack directory
+                const name = await findPackNameById(pack.pack_id, packDirName);
+                info.push({
+                    id: pack.pack_id,
+                    version: pack.version,
+                    name: name || 'Unknown Pack'
+                });
+            }
+            return info;
+        } catch (e) {
+            log('ERROR', `Error reading ${jsonFile} for world ${worldName}: ${e.message}`);
+            return [];
+        }
+    };
+
+    const behaviorPacks = await getPacksInfo('world_behavior_packs.json', 'behavior_packs');
+    const resourcePacks = await getPacksInfo('world_resource_packs.json', 'resource_packs');
+
+    return { success: true, behaviorPacks, resourcePacks };
+}
+
+/**
+ * Finds a pack's name by its UUID by searching the server's pack directories.
+ * @param {string} packId
+ * @param {string} packDirName
+ * @returns {Promise<string|null>}
+ */
+async function findPackNameById(packId, packDirName) {
+    const packsPath = path.join(SERVER_DIRECTORY, packDirName);
+    if (!fs.existsSync(packsPath)) return null;
+
+    try {
+        const entries = await fs.promises.readdir(packsPath, { withFileTypes: true });
+        for (const entry of entries) {
+            if (entry.isDirectory()) {
+                const manifest = await readManifest(path.join(packsPath, entry.name));
+                if (manifest && manifest.header && manifest.header.uuid === packId) {
+                    return manifest.header.name;
+                }
+            }
+        }
+    } catch (e) {
+        log('DEBUG', `Error searching for pack ${packId} in ${packDirName}: ${e.message}`);
+    }
+    return null;
+}
+
+/**
+ * Deletes a pack from a world's configuration.
+ * @param {string} worldName
+ * @param {string} packId
+ * @param {string} packType - 'behavior' or 'resource'
+ * @returns {Promise<{success: boolean, message: string}>}
+ */
+export async function deletePack(worldName, packId, packType) {
+    if (!SERVER_DIRECTORY) return { success: false, message: 'Server directory not configured.' };
+    if (!isValidWorldName(worldName)) return { success: false, message: 'Invalid world name.' };
+
+    const worldPath = path.join(SERVER_DIRECTORY, 'worlds', worldName);
+    const jsonFile = packType === 'behavior' ? 'world_behavior_packs.json' : 'world_resource_packs.json';
+    const jsonPath = path.join(worldPath, jsonFile);
+
+    if (!fs.existsSync(jsonPath)) return { success: false, message: 'Pack configuration not found.' };
+
+    try {
+        const content = await fs.promises.readFile(jsonPath, 'utf8');
+        let packs = JSON.parse(content);
+        const originalCount = packs.length;
+        packs = packs.filter(p => p.pack_id !== packId);
+
+        if (packs.length === originalCount) {
+            return { success: false, message: 'Pack not found in world configuration.' };
+        }
+
+        await fs.promises.writeFile(jsonPath, JSON.stringify(packs, null, 2), 'utf8');
+        log('INFO', `Deleted pack ${packId} from ${worldName} (${packType})`);
+        return { success: true, message: `Pack removed from world '${worldName}'.` };
+    } catch (e) {
+        log('ERROR', `Error deleting pack ${packId} from world ${worldName}: ${e.message}`);
+        return { success: false, message: `Error deleting pack: ${e.message}` };
     }
 }
 

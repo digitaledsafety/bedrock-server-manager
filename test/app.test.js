@@ -82,7 +82,7 @@ describe('API Endpoints', () => {
         const res = await request(app).post('/api/start');
 
         expect(res.statusCode).toEqual(200);
-        expect(res.body).toEqual({ success: true, message: 'Server start initiated.' });
+        expect(res.body).toEqual({ success: true, message: 'Server started successfully.' });
         expect(backend.startServer).toHaveBeenCalledTimes(1);
     });
 
@@ -92,7 +92,7 @@ describe('API Endpoints', () => {
         const res = await request(app).post('/api/start');
 
         expect(res.statusCode).toEqual(500);
-        expect(res.body).toEqual({ error: 'Failed to start server' });
+        expect(res.body).toEqual({ success: false, message: 'Failed to launch' });
     });
   });
 

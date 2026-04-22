@@ -32,6 +32,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const packTypeGroup = document.getElementById('packTypeGroup');
     const packWorldNameSelect = document.getElementById('packWorldName');
     const uploadPackButton = document.getElementById('uploadPackButton');
+    const packListWorldSelect = document.getElementById('packListWorldSelect');
+    const packsListContainer = document.getElementById('packsListContainer');
 
     // Console Command specific elements
     const commandForm = document.getElementById('commandForm');
@@ -83,6 +85,93 @@ document.addEventListener('DOMContentLoaded', () => {
                 packTypeGroup.style.display = 'block';
             }
         }
+    }
+
+    async function loadInstalledPacks() {
+        if (!packListWorldSelect) return;
+        const worldName = packListWorldSelect.value;
+        if (!worldName) return;
+
+        packsListContainer.innerHTML = '<p>Loading packs...</p>';
+        try {
+            const response = await fetch(`/api/worlds/${worldName}/packs`);
+            const data = await response.json();
+            if (data.success) {
+                renderPacksList(data);
+            } else {
+                packsListContainer.innerHTML = `<p class="error-text">Error: ${data.message}</p>`;
+            }
+        } catch (error) {
+            console.error('Error loading packs:', error);
+            packsListContainer.innerHTML = '<p class="error-text">Failed to load packs.</p>';
+        }
+    }
+
+    function renderPacksList(data) {
+        packsListContainer.innerHTML = '';
+
+        const createPackSection = (title, packs, type) => {
+            const section = document.createElement('div');
+            section.style.marginBottom = '15px';
+            section.innerHTML = `<h4>${title}</h4>`;
+            if (packs.length === 0) {
+                section.innerHTML += '<p class="text-sm text-gray-500">No packs installed.</p>';
+            } else {
+                const list = document.createElement('div');
+                list.className = 'world-list'; // Reuse world-list styling
+                packs.forEach(pack => {
+                    const item = document.createElement('div');
+                    item.className = 'world-item';
+                    item.style.display = 'flex';
+                    item.style.justifyContent = 'space-between';
+                    item.style.alignItems = 'center';
+                    item.innerHTML = `
+                        <div>
+                            <strong>${pack.name}</strong><br>
+                            <small class="text-xs text-gray-500">${pack.id} (v${pack.version.join('.')})</small>
+                        </div>
+                        <button class="delete-pack-button bg-red-500 hover:bg-red-700 text-white text-xs py-1 px-2 rounded"
+                                data-pack-id="${pack.id}" data-pack-type="${type}">
+                            Remove
+                        </button>
+                    `;
+                    list.appendChild(item);
+                });
+                section.appendChild(list);
+            }
+            return section;
+        };
+
+        packsListContainer.appendChild(createPackSection('Behavior Packs', data.behaviorPacks, 'behavior'));
+        packsListContainer.appendChild(createPackSection('Resource Packs', data.resourcePacks, 'resource'));
+
+        // Add listeners for delete buttons
+        document.querySelectorAll('.delete-pack-button').forEach(btn => {
+            btn.onclick = async () => {
+                const { packId, packType } = btn.dataset;
+                const worldName = packListWorldSelect.value;
+                if (!confirm(`Are you sure you want to remove this pack from world '${worldName}'?`)) return;
+
+                try {
+                    showMessage('Removing pack...');
+                    const response = await fetch('/api/delete-pack', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ worldName, packId, packType })
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                        showMessage(result.message, 'success');
+                        loadInstalledPacks();
+                    } else {
+                        showMessage(result.message, 'error');
+                    }
+                } catch (e) {
+                    console.error('Error deleting pack:', e);
+                    showMessage('Failed to delete pack.', 'error');
+                }
+            };
+        });
     }
 
     async function handleUploadPack(event) {
@@ -169,12 +258,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             console.log(JSON.stringify(data));
             if (data.success) {
-                showMessage(`Server ${command} initiated: ${data.message}`, 'success');
+                showMessage(`Server ${command} completed: ${data.message}`, 'success');
                 if ((command === 'restart' || command === 'stop') && restartNeededNote) {
                     restartNeededNote.style.display = 'none';
                 }
-                // Give server time to change status, then fetch
-                setTimeout(fetchServerStatus, 5000); // Increased delay for more robust status update
+                // Fetch status immediately as backend already waited for startup or initiated stop
+                fetchServerStatus();
             } else {
                 showMessage(`Error ${command}ing server: ${data.message}`, 'error');
                 fetchServerStatus(); // Re-fetch status to reset button states if command failed
@@ -656,8 +745,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (propertiesForm) propertiesForm.addEventListener('submit', saveServerProperties);
     if (autoUpdateConfigForm) autoUpdateConfigForm.addEventListener('submit', saveAutoUpdateConfig);
     if (uploadPackForm) {
-        uploadPackForm.addEventListener('submit', handleUploadPack);
+        uploadPackForm.addEventListener('submit', async (e) => {
+            await handleUploadPack(e);
+            loadInstalledPacks(); // Refresh list after upload
+        });
         packFileInput.addEventListener('change', handlePackFileChange);
+    }
+
+    if (packListWorldSelect) {
+        packListWorldSelect.addEventListener('change', loadInstalledPacks);
     }
 
 
@@ -723,6 +819,7 @@ document.addEventListener('DOMContentLoaded', () => {
     addDeleteButtonListeners();
     fetchLogs();
     fetchSystemInfo();
+    loadInstalledPacks();
 
     // Refresh status and worlds periodically
     setInterval(fetchServerStatus, 10000); // Every 10 seconds
