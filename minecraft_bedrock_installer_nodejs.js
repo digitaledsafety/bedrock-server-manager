@@ -89,6 +89,14 @@ export function isValidWorldName(worldName) {
     return true;
 }
 
+/**
+ * Returns the current configuration from memory.
+ * @returns {object} The current configuration.
+ */
+export function getConfig() {
+    return config;
+}
+
 export function getServerExeName() {
     const platform = os.platform();
     const serverType = config.serverType || 'bedrock';
@@ -303,6 +311,49 @@ export async function changeOwnership(dirPath, user, group) {
         });
     } catch (error) {
         log('ERROR', `Error during changeOwnership setup for ${dirPath}: ${error.message}`);
+        throw error;
+    }
+}
+
+/**
+ * Backs up a specific world directory.
+ * @param {string} worldName - The name of the world to backup.
+ * @returns {Promise<string|null>} The path to the backup directory, or null if failed.
+ */
+export async function backupWorld(worldName) {
+    if (!SERVER_DIRECTORY || !fs.existsSync(SERVER_DIRECTORY)) {
+        log('ERROR', 'SERVER_DIRECTORY not set. Cannot backup world.');
+        return null;
+    }
+    if (!isValidWorldName(worldName)) {
+        log('ERROR', `Invalid world name for backup: ${worldName}`);
+        return null;
+    }
+
+    const worldPath = path.join(SERVER_DIRECTORY, 'worlds', worldName);
+    if (!fs.existsSync(worldPath)) {
+        log('ERROR', `World directory '${worldName}' not found at ${worldPath}.`);
+        return null;
+    }
+
+    const backupSubDir = `world_${worldName}_${new Date().toISOString().replace(/:/g, '-').replace(/\./g, '_')}`;
+    const backupDir = path.join(BACKUP_DIRECTORY, backupSubDir);
+
+    try {
+        fs.mkdirSync(backupDir, { recursive: true });
+        log('INFO', `Creating backup for world '${worldName}' in ${backupDir}`);
+        fs.cpSync(worldPath, path.join(backupDir, worldName), { recursive: true });
+
+        if (os.platform() !== 'win32') {
+            await changeOwnership(backupDir, config.minecraftUser, config.minecraftGroup);
+        }
+        log('INFO', `World backup complete: ${backupDir}`);
+        return backupDir;
+    } catch (error) {
+        log('ERROR', `Error during world backup for '${worldName}': ${error.message}`);
+        if (fs.existsSync(backupDir)) {
+            fs.rmSync(backupDir, { recursive: true, force: true });
+        }
         throw error;
     }
 }
@@ -1035,6 +1086,7 @@ export async function readGlobalConfig() {
         try { fs.writeFileSync(configPath, JSON.stringify(effectiveConfig, null, 2), 'utf8'); log('INFO', `Created default configuration file at ${configPath}`); }
         catch (writeError) { log('ERROR', `Failed to create default configuration file at ${configPath}: ${writeError.message}`); }
     }
+    config = effectiveConfig;
     const args = process.argv.slice(2);
     log('DEBUG', `CLI arguments: ${args.join(' ')}`);
     for (let i = 0; i < args.length; i++) {
@@ -1067,6 +1119,12 @@ export async function readGlobalConfig() {
     effectiveConfig.serverDirectory = resolvePath(effectiveConfig.serverDirectory);
     effectiveConfig.tempDirectory = resolvePath(effectiveConfig.tempDirectory);
     effectiveConfig.backupDirectory = resolvePath(effectiveConfig.backupDirectory);
+
+    config = effectiveConfig;
+    SERVER_DIRECTORY = config.serverDirectory;
+    TEMP_DIRECTORY = config.tempDirectory;
+    BACKUP_DIRECTORY = config.backupDirectory;
+
     log('INFO', 'Configuration loading complete.');
     log('DEBUG', `Final effective configuration: ${JSON.stringify(effectiveConfig, null, 2)}`);
     return effectiveConfig;
