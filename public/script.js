@@ -362,7 +362,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Refresh worlds list if level-name changed
                 loadWorlds();
             } else {
-                showMessage('Failed to save server properties: ' + data.message, 'error');
+                const errorMsg = data.details ? `${data.error}: ${data.details.join(' ')}` : (data.message || data.error || 'Unknown error');
+                showMessage('Failed to save server properties: ' + errorMsg, 'error');
             }
         } catch (error) {
             console.error('Error saving server properties:', error);
@@ -394,6 +395,9 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <button class="activate-world-button bg-blue-500 hover:bg-blue-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world}">
                                     Activate
                                 </button>
+                                <button class="backup-world-button bg-green-600 hover:bg-green-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world}">
+                                    Backup
+                                </button>
                                 ${currentLevelName !== world ? `
                                 <button class="delete-world-button bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world}">
                                     Delete
@@ -403,6 +407,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             worldListContainer.appendChild(worldItem);
                         });
                         addActivateButtonListeners(); // Re-add listeners after updating DOM
+                        addBackupButtonListeners(); // Re-add listeners after updating DOM
                         addDeleteButtonListeners(); // Re-add listeners after updating DOM
                     } else {
                         worldListContainer.innerHTML = '<p class="text-gray-600">No worlds found. Start the server to generate a default world.</p>';
@@ -423,6 +428,13 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.activate-world-button').forEach(button => {
             button.removeEventListener('click', handleActivateWorldClick); // Prevent duplicate listeners
             button.addEventListener('click', handleActivateWorldClick);
+        });
+    }
+
+    function addBackupButtonListeners() {
+        document.querySelectorAll('.backup-world-button').forEach(button => {
+            button.removeEventListener('click', handleBackupWorldClick); // Prevent duplicate listeners
+            button.addEventListener('click', handleBackupWorldClick);
         });
     }
 
@@ -487,6 +499,29 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error('Error creating world:', error);
             showMessage('Failed to create world.', 'error');
+        }
+    }
+
+    async function handleBackupWorldClick(event) {
+        const worldName = event.target.dataset.worldName;
+        try {
+            showMessage(`Creating backup for world '${worldName}'...`);
+            const response = await fetch('/api/backup-world', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ worldName })
+            });
+            const data = await response.json();
+            if (response.ok && data.success) {
+                showMessage(data.message || `Backup for world '${worldName}' created.`, 'success');
+            } else {
+                showMessage(data.message || `Failed to backup world '${worldName}'.`, 'error');
+            }
+        } catch (error) {
+            console.error('Error backing up world:', error);
+            showMessage('Failed to backup world.', 'error');
         }
     }
 
@@ -720,6 +755,7 @@ document.addEventListener('DOMContentLoaded', () => {
     //loadWorlds();
     loadAutoUpdateConfig(); // New: Load auto-update config on page load
     addActivateButtonListeners();
+    addBackupButtonListeners();
     addDeleteButtonListeners();
     fetchLogs();
     fetchSystemInfo();

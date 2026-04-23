@@ -74,21 +74,63 @@ const sanitizeServerProperties = (req, res, next) => {
     if (typeof properties !== 'object' || properties === null) {
         return res.status(400).json({ error: 'Invalid server properties format. Expected an object.' });
     }
+
+    const errors = [];
+
     for (const key in properties) {
         if (typeof key !== 'string' || key.match(/[\n\r]/)) {
             backend.log('ERROR', `Invalid character in server property key: ${key}`);
             return res.status(400).json({ error: `Invalid character in server property key: ${key}` });
         }
-        const value = properties[key];
+
+        let value = properties[key];
+
+        // Basic character validation
         if (typeof value === 'string' && value.match(/[\n\r]/)) {
             backend.log('ERROR', `Invalid character in server property value for key: ${key}`);
             return res.status(400).json({ error: `Invalid character in server property value for key: ${key}` });
         }
-        if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
-            properties[key] = String(value);
+
+        // Schema-based validation
+        const meta = propertiesMetadata[key];
+        if (meta) {
+            if (meta.type === 'number') {
+                const numValue = Number(value);
+                if (isNaN(numValue)) {
+                    errors.push(`Property '${meta.label || key}' must be a number.`);
+                } else {
+                    if (meta.min !== undefined && numValue < meta.min) {
+                        errors.push(`Property '${meta.label || key}' must be at least ${meta.min}.`);
+                    }
+                    if (meta.max !== undefined && numValue > meta.max) {
+                        errors.push(`Property '${meta.label || key}' must be no more than ${meta.max}.`);
+                    }
+                    properties[key] = String(numValue); // Keep as string for storage
+                }
+            } else if (meta.type === 'boolean') {
+                if (typeof value === 'boolean') {
+                    properties[key] = value ? 'true' : 'false';
+                } else if (value !== 'true' && value !== 'false') {
+                    errors.push(`Property '${meta.label || key}' must be a boolean.`);
+                }
+            } else if (meta.type === 'select') {
+                if (meta.options && !meta.options.includes(value)) {
+                    errors.push(`Property '${meta.label || key}' must be one of: ${meta.options.join(', ')}.`);
+                }
+            }
+        }
+
+        // Final type safety
+        if (typeof properties[key] !== 'string' && typeof properties[key] !== 'number' && typeof properties[key] !== 'boolean') {
+            properties[key] = String(properties[key]);
             backend.log('WARNING', `Property value for key '${key}' was converted to string.`);
         }
     }
+
+    if (errors.length > 0) {
+        return res.status(400).json({ error: 'Validation failed', details: errors });
+    }
+
     req.body = properties;
     next();
 };
@@ -277,6 +319,21 @@ app.post('/api/activate-world', validateWorldName, async (req, res) => {
     }
 });
 
+app.post('/api/backup-world', validateWorldName, async (req, res) => {
+    try {
+        const { worldName } = req.body;
+        const backupDir = await backend.backupWorld(worldName);
+        if (backupDir) {
+            res.json({ success: true, message: `Backup for world '${worldName}' created in: ${backupDir}` });
+        } else {
+            res.status(500).json({ success: false, message: `Failed to create backup for world '${worldName}'.` });
+        }
+    } catch (error) {
+        backend.log('ERROR', `Failed to backup world: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Failed to create world backup due to server error.' });
+    }
+});
+
 app.get('/api/config', async (req, res) => {
     try {
         const appConfig = await backend.readGlobalConfig();
@@ -303,7 +360,7 @@ app.post('/api/logs/clear', async (req, res) => {
 
 app.get('/api/logs', async (req, res) => {
     try {
-        const config = await backend.readGlobalConfig();
+        const config = backend.getConfig();
         const serverLogPath = path.join(config.serverDirectory, 'server.log');
 
         if (!fs.existsSync(serverLogPath)) {
@@ -338,7 +395,7 @@ app.get('/api/logs', async (req, res) => {
 
 app.get('/api/logs/download', async (req, res) => {
     try {
-        const config = await backend.readGlobalConfig();
+        const config = backend.getConfig();
         const serverLogPath = path.join(config.serverDirectory, 'server.log');
 
         if (!fs.existsSync(serverLogPath)) {
@@ -478,7 +535,7 @@ app.post('/api/upload-pack', upload.single('packFile'), async (req, res) => {
 // --- Frontend Routes ---
 app.get('/', async (req, res) => {
     try {
-        const currentConfig = await backend.readGlobalConfig();
+        const currentConfig = backend.getConfig();
         const properties = await backend.readServerProperties();
         const worlds = await backend.listWorlds();
         const isRunning = await backend.isProcessRunning();
