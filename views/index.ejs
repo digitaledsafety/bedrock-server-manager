@@ -108,6 +108,9 @@
                             <button class="activate-world-button" data-world-name="<%= world %>">
                                 Activate
                             </button>
+                            <button class="backup-world-button bg-green-600 hover:bg-green-700" data-world-name="<%= world %>">
+                                Backup
+                            </button>
                             <% if (properties['level-name'] !== world) { %>
                                 <button class="delete-world-button bg-red-500 hover:bg-red-700" data-world-name="<%= world %>">
                                     Delete
