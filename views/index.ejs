@@ -60,6 +60,14 @@
         </div>
 
         <div class="section">
+            <h2>Manual Backups</h2>
+            <div id="backupsList" class="world-list">
+                <p>Loading backups...</p>
+            </div>
+            <p>Backups are stored in the backup directory and contain a full copy of the server data at the time of creation.</p>
+        </div>
+
+        <div class="section">
             <h2>Server Log</h2>
             <% if (config.serverType !== 'java') { %>
             <form id="commandForm" style="margin-bottom: 10px;">

@@ -33,11 +33,11 @@ const storage = multer.diskStorage({
 const upload = multer({
     storage: storage,
     fileFilter: function (req, file, cb) {
-        // Validation for .mcpack and .mcaddon files
-        const allowedExtensions = ['.mcpack', '.mcaddon'];
+        // Validation for .mcpack, .mcaddon and .zip files
+        const allowedExtensions = ['.mcpack', '.mcaddon', '.zip'];
         const fileExtension = path.extname(file.originalname).toLowerCase();
         if (!allowedExtensions.includes(fileExtension)) {
-            return cb(new Error('Only .mcpack and .mcaddon files are allowed!'), false);
+            return cb(new Error('Only .mcpack, .mcaddon and .zip files are allowed!'), false);
         }
         cb(null, true);
     },
@@ -226,6 +226,16 @@ app.post('/api/backup', async (req, res) => {
     } catch (error) {
         backend.log('ERROR', `Failed to create manual backup: ${error.message}`);
         res.status(500).json({ success: false, message: 'Failed to create manual backup due to server error.' });
+    }
+});
+
+app.get('/api/backups', async (req, res) => {
+    try {
+        const backups = await backend.listBackups();
+        res.json({ success: true, backups });
+    } catch (error) {
+        backend.log('ERROR', `Failed to list backups: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Failed to list backups.' });
     }
 });
 

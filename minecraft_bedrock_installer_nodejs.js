@@ -408,6 +408,38 @@ export async function backupServer() {
     }
 }
 
+/**
+ * Lists all manual backups in the backup directory.
+ * @returns {Promise<Array<{name: string, date: string, size: number}>>}
+ */
+export async function listBackups() {
+    if (!BACKUP_DIRECTORY || !fs.existsSync(BACKUP_DIRECTORY)) {
+        return [];
+    }
+    try {
+        const entries = await fs.promises.readdir(BACKUP_DIRECTORY, { withFileTypes: true });
+        const backups = [];
+        for (const entry of entries) {
+            if (entry.isDirectory()) {
+                const fullPath = path.join(BACKUP_DIRECTORY, entry.name);
+                const stats = await fs.promises.stat(fullPath);
+                backups.push({
+                    name: entry.name,
+                    date: stats.mtime.toISOString(),
+                    // Size of a directory is not easily obtainable without recursion,
+                    // so we'll just omit it or use 0 for now to keep it simple and fast.
+                    size: 0
+                });
+            }
+        }
+        // Sort by date descending (newest first)
+        return backups.sort((a, b) => b.date.localeCompare(a.date));
+    } catch (error) {
+        log('ERROR', `Error listing backups: ${error.message}`);
+        return [];
+    }
+}
+
 export async function copyDir(src, dest) {
     log('DEBUG', `Using fs.cpSync for copyDir from ${src} to ${dest}`);
     fs.cpSync(src, dest, { recursive: true });
@@ -1002,6 +1034,10 @@ export async function isProcessRunning() {
         log('DEBUG', `Process with PID ${serverPID} is running.`);
         return true;
     } catch (error) {
+        if (error.code === 'EPERM') {
+            log('DEBUG', `Process with PID ${serverPID} is running (EPERM).`);
+            return true;
+        }
         if (error.code === 'ESRCH') {
             log('INFO', `Process with PID ${serverPID} not found (ESRCH).`);
             const pidFile = path.join(SERVER_DIRECTORY, 'server.pid');
@@ -1298,7 +1334,7 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
         return { success: false, message: `World '${worldName}' not found.` };
     }
 
-    const isMcAddon = originalFilename.toLowerCase().endsWith('.mcaddon');
+    const isMcAddon = originalFilename.toLowerCase().endsWith('.mcaddon') || originalFilename.toLowerCase().endsWith('.zip');
     let overallSuccess = true;
     let messages = [];
     let packsProcessedCount = 0;
@@ -1311,13 +1347,17 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
         }
 
         if (isMcAddon) {
-            log('INFO', `Processing .mcaddon file: ${originalFilename}`);
+            log('INFO', `Processing addon file: ${originalFilename}`);
             // Find all manifest.json files to identify individual packs
             const manifestEntries = zipEntries.filter(entry => entry.entryName.endsWith('manifest.json') && !entry.isDirectory);
 
             if (manifestEntries.length === 0) {
-                return { success: false, message: 'No valid packs found within the .mcaddon file.' };
+                // If it's a .zip but no manifests found, try treating as a single .mcpack if it's named like one
+                return { success: false, message: 'No valid packs found within the uploaded archive.' };
             }
+
+            // Optimization: If only ONE manifest is found, it might be a single pack in a zip/mcaddon.
+            // We'll still process it through the addon loop as it's generic.
 
             // Pre-calculate all pack roots in this .mcaddon
             const allPackRoots = manifestEntries.map(entry => {
@@ -1386,9 +1426,9 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
                 }
             }
             if (packsProcessedCount === 0 && !overallSuccess) {
-                 return { success: false, message: "Failed to process any valid packs from the .mcaddon. " + messages.join(" ") };
+                 return { success: false, message: "Failed to process any valid packs from the archive. " + messages.join(" ") };
             }
-            return { success: overallSuccess, message: `.mcaddon processing complete. ${packsProcessedCount} pack(s) processed. Details: ${messages.join(" ")} Restart server if needed.` };
+            return { success: overallSuccess, message: `Archive processing complete. ${packsProcessedCount} pack(s) processed. Details: ${messages.join(" ")} Restart server if needed.` };
 
         } else { // Handle as .mcpack
             log('INFO', `Processing .mcpack file: ${originalFilename} with requested type: ${requestedPackType || 'Auto-detect'}`);

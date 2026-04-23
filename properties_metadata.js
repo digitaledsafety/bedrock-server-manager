@@ -194,5 +194,40 @@ export const propertiesMetadata = {
         category: 'security',
         description: 'Disables skins customized outside of the store assets.',
         type: 'boolean'
+    },
+    'emit-server-telemetry': {
+        label: 'Emit Server Telemetry',
+        category: 'advanced',
+        description: 'If true, enables the server to emit telemetry events.',
+        type: 'boolean'
+    },
+    'compression-threshold': {
+        label: 'Compression Threshold',
+        category: 'performance',
+        description: 'Determines the smallest packet size to compress.',
+        type: 'number',
+        min: 0,
+        max: 65535
+    },
+    'player-movement-score-threshold': {
+        label: 'Movement Score Threshold',
+        category: 'security',
+        description: 'Threshold for movement-related corrections.',
+        type: 'number',
+        min: 0
+    },
+    'player-movement-distance-threshold': {
+        label: 'Movement Distance Threshold',
+        category: 'security',
+        description: 'Max allowed distance between client and server positions.',
+        type: 'number',
+        min: 0
+    },
+    'player-movement-duration-threshold-in-ms': {
+        label: 'Movement Duration Threshold (ms)',
+        category: 'security',
+        description: 'Max time allowed before movement correction is triggered.',
+        type: 'number',
+        min: 0
     }
 };

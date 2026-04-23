@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const propertiesTabs = document.getElementById('propertiesTabs');
     const consoleOutput = document.getElementById('consoleOutput'); // Get the console textarea
     const systemInfoContent = document.getElementById('systemInfoContent');
+    const backupsList = document.getElementById('backupsList');
 
     // Auto-Update specific elements
     const autoUpdateConfigForm = document.getElementById('autoUpdateConfigForm');
@@ -622,6 +623,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const data = await response.json();
                 if (data.success) {
                     showMessage(data.message, 'success');
+                    loadBackups(); // Refresh backup list
                 } else {
                     showMessage(data.message || 'Failed to create backup.', 'error');
                 }
@@ -714,6 +716,35 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function loadBackups() {
+        if (!backupsList) return;
+        try {
+            const response = await fetch('/api/backups');
+            const data = await response.json();
+            if (data.success) {
+                backupsList.innerHTML = '';
+                if (data.backups && data.backups.length > 0) {
+                    data.backups.forEach(backup => {
+                        const backupItem = document.createElement('div');
+                        backupItem.className = 'world-item';
+                        const date = new Date(backup.date).toLocaleString();
+                        backupItem.innerHTML = `
+                            <div style="display: flex; flex-direction: column;">
+                                <strong>${backup.name}</strong>
+                                <span class="text-sm text-gray-500">${date}</span>
+                            </div>
+                        `;
+                        backupsList.appendChild(backupItem);
+                    });
+                } else {
+                    backupsList.innerHTML = '<p class="text-gray-600">No manual backups found.</p>';
+                }
+            }
+        } catch (error) {
+            console.error('Error loading backups:', error);
+        }
+    }
+
     async function fetchSystemInfo() {
         if (!systemInfoContent) return;
         try {
@@ -754,6 +785,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadServerProperties();
     //loadWorlds();
     loadAutoUpdateConfig(); // New: Load auto-update config on page load
+    loadBackups();
     addActivateButtonListeners();
     addBackupButtonListeners();
     addDeleteButtonListeners();
@@ -763,6 +795,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Refresh status and worlds periodically
     setInterval(fetchServerStatus, 10000); // Every 10 seconds
     setInterval(loadWorlds, 30000); // Every 30 seconds
+    setInterval(loadBackups, 60000); // Every 60 seconds
     setInterval(fetchLogs, 5000); // Every 5 seconds
     setInterval(fetchSystemInfo, 30000); // Every 30 seconds
 
