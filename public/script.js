@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const propertiesTabs = document.getElementById('propertiesTabs');
     const consoleOutput = document.getElementById('consoleOutput'); // Get the console textarea
     const systemInfoContent = document.getElementById('systemInfoContent');
+    const backupListContainer = document.getElementById('backupList');
 
     // Auto-Update specific elements
     const autoUpdateConfigForm = document.getElementById('autoUpdateConfigForm');
@@ -376,8 +377,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/worlds');
             const data = await response.json();
             if (data.success) {
-                // Find the existing .world-list element to update
-                const worldListContainer = document.querySelector('.world-list');
+                // Find the existing .world-list element for worlds
+                const worldListContainer = document.querySelector('.world-list:not(#backupList)');
                 if (worldListContainer) {
                     worldListContainer.innerHTML = ''; // Clear current list
                     if (data.worlds && data.worlds.length > 0) {
@@ -410,10 +411,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         addBackupButtonListeners(); // Re-add listeners after updating DOM
                         addDeleteButtonListeners(); // Re-add listeners after updating DOM
                     } else {
-                        worldListContainer.innerHTML = '<p class="text-gray-600">No worlds found. Start the server to generate a default world.</p>';
+                        worldListContainer.innerHTML = '<p class="text-gray-600" style="padding: 10px;">No worlds found. Start the server to generate a default world.</p>';
                     }
-                } else {
-                    console.error('.world-list container not found.');
                 }
             } else {
                 showMessage('Failed to load worlds: ' + data.message, 'error');
@@ -421,6 +420,69 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error('Error loading worlds:', error);
             showMessage('Failed to load worlds.', 'error');
+        }
+    }
+
+    async function loadBackups() {
+        if (!backupListContainer) return;
+        try {
+            const response = await fetch('/api/backups');
+            const data = await response.json();
+            if (data.success) {
+                backupListContainer.innerHTML = '';
+                if (data.backups && data.backups.length > 0) {
+                    data.backups.forEach(backup => {
+                        const backupItem = document.createElement('div');
+                        backupItem.className = 'world-item';
+                        backupItem.innerHTML = `
+                            <div style="flex-grow: 1;">
+                                <strong>${backup.name}</strong><br>
+                                <small>${new Date(backup.date).toLocaleString()}</small>
+                            </div>
+                            <button class="delete-backup-button bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-folder-name="${backup.name}">
+                                Delete
+                            </button>
+                        `;
+                        backupListContainer.appendChild(backupItem);
+                    });
+                    addDeleteBackupButtonListeners();
+                } else {
+                    backupListContainer.innerHTML = '<p class="text-gray-600" style="padding: 10px;">No manual backups found.</p>';
+                }
+            } else {
+                showMessage('Failed to load backups: ' + data.message, 'error');
+            }
+        } catch (error) {
+            console.error('Error loading backups:', error);
+            showMessage('Failed to load backups.', 'error');
+        }
+    }
+
+    function addDeleteBackupButtonListeners() {
+        document.querySelectorAll('.delete-backup-button').forEach(button => {
+            button.addEventListener('click', handleDeleteBackupClick);
+        });
+    }
+
+    async function handleDeleteBackupClick(event) {
+        const folderName = event.target.dataset.folderName;
+        if (!confirm(`Are you sure you want to delete the backup '${folderName}'?`)) return;
+
+        try {
+            showMessage(`Deleting backup '${folderName}'...`);
+            const response = await fetch(`/api/backups/${folderName}`, {
+                method: 'DELETE'
+            });
+            const data = await response.json();
+            if (response.ok && data.success) {
+                showMessage(data.message || `Backup '${folderName}' deleted.`, 'success');
+                loadBackups(); // Refresh list
+            } else {
+                showMessage(data.message || `Failed to delete backup '${folderName}'.`, 'error');
+            }
+        } catch (error) {
+            console.error('Error deleting backup:', error);
+            showMessage('Failed to delete backup.', 'error');
         }
     }
 
@@ -752,7 +814,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initial load
     fetchServerStatus(); // This will now also set initial button states
     loadServerProperties();
-    //loadWorlds();
+    loadWorlds();
+    loadBackups();
     loadAutoUpdateConfig(); // New: Load auto-update config on page load
     addActivateButtonListeners();
     addBackupButtonListeners();
@@ -763,6 +826,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Refresh status and worlds periodically
     setInterval(fetchServerStatus, 10000); // Every 10 seconds
     setInterval(loadWorlds, 30000); // Every 30 seconds
+    setInterval(loadBackups, 60000); // Every 60 seconds
     setInterval(fetchLogs, 5000); // Every 5 seconds
     setInterval(fetchSystemInfo, 30000); // Every 30 seconds
 
