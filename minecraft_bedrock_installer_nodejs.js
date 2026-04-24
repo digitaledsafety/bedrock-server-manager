@@ -384,12 +384,75 @@ export function getStoredVersion() {
     }
 }
 
+/**
+ * Lists all manual backups available in the backup directory.
+ * @returns {Promise<Array<{name: string, date: string}>>}
+ */
+export async function listBackups() {
+    if (!BACKUP_DIRECTORY || !fs.existsSync(BACKUP_DIRECTORY)) {
+        log('WARNING', 'BACKUP_DIRECTORY not set or does not exist. Cannot list backups.');
+        return [];
+    }
+    try {
+        const entries = await fs.promises.readdir(BACKUP_DIRECTORY, { withFileTypes: true });
+        const backups = [];
+        for (const entry of entries) {
+            if (entry.isDirectory()) {
+                const fullPath = path.join(BACKUP_DIRECTORY, entry.name);
+                const stats = await fs.promises.stat(fullPath);
+                backups.push({
+                    name: entry.name,
+                    date: stats.birthtime.toISOString()
+                });
+            }
+        }
+        // Sort by date descending
+        return backups.sort((a, b) => new Date(b.date) - new Date(a.date));
+    } catch (error) {
+        log('ERROR', `Failed to list backups: ${error.message}`);
+        return [];
+    }
+}
+
+/**
+ * Deletes a specific backup folder.
+ * @param {string} folderName - The name of the backup folder to delete.
+ * @returns {Promise<{success: boolean, message: string}>}
+ */
+export async function deleteBackup(folderName) {
+    if (!BACKUP_DIRECTORY) {
+        return { success: false, message: 'Backup directory not configured.' };
+    }
+    // Validation: ensure folderName is a simple directory name, no path traversal
+    if (!folderName || folderName.includes('..') || folderName.includes('/') || folderName.includes('\\')) {
+        log('ERROR', `Invalid backup folder name for deletion: ${folderName}`);
+        return { success: false, message: 'Invalid backup folder name.' };
+    }
+
+    const targetPath = path.join(BACKUP_DIRECTORY, folderName);
+    if (!fs.existsSync(targetPath)) {
+        log('WARNING', `Backup folder not found for deletion: ${targetPath}`);
+        return { success: false, message: 'Backup folder not found.' };
+    }
+
+    try {
+        await fs.promises.rm(targetPath, { recursive: true, force: true });
+        log('INFO', `Deleted backup: ${folderName}`);
+        return { success: true, message: `Backup '${folderName}' deleted successfully.` };
+    } catch (error) {
+        log('ERROR', `Failed to delete backup '${folderName}': ${error.message}`);
+        return { success: false, message: `Failed to delete backup: ${error.message}` };
+    }
+}
+
 export async function backupServer() {
     if (!SERVER_DIRECTORY || !fs.existsSync(SERVER_DIRECTORY)) {
         log('INFO', `Server directory not found or not set. Skipping backup.`);
         return null;
     }
-    const backupDir = path.join(BACKUP_DIRECTORY, new Date().toISOString().replace(/:/g, '-').replace(/\./g, '_'));
+    // Use a simpler date format for folder names to be more filesystem friendly
+    const backupDirName = new Date().toISOString().replace(/:/g, '-').replace(/\./g, '_');
+    const backupDir = path.join(BACKUP_DIRECTORY, backupDirName);
     fs.mkdirSync(backupDir, { recursive: true });
     log('INFO', `Creating backup in ${backupDir}`);
     try {

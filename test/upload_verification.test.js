@@ -79,6 +79,32 @@ describe('Upload API Verification', () => {
     );
   });
 
+  it('should successfully upload a .zip file', async () => {
+    const filePath = path.join(__dirname, 'fixtures', 'test_behavior.mcpack'); // Re-using a zip-based file
+    const zipPath = path.join(__dirname, 'fixtures', 'test_behavior.zip');
+    if (!fs.existsSync(zipPath)) {
+        fs.copyFileSync(filePath, zipPath);
+    }
+
+    const res = await request(app)
+      .post('/api/upload-pack')
+      .field('worldName', 'test_world')
+      .attach('packFile', zipPath);
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body.success).toBe(true);
+    expect(backend.uploadPack).toHaveBeenCalledWith(
+      expect.stringContaining('test_behavior.zip'),
+      'test_behavior.zip',
+      undefined,
+      'test_world'
+    );
+
+    if (fs.existsSync(zipPath)) {
+        fs.unlinkSync(zipPath);
+    }
+  });
+
   it('should successfully upload a .mcpack file without packType (auto-detection)', async () => {
     const filePath = path.join(__dirname, 'fixtures', 'test_behavior.mcpack');
 
@@ -121,6 +147,6 @@ describe('Upload API Verification', () => {
 
     expect(res.statusCode).toEqual(400);
     expect(res.body.success).toBe(false);
-    expect(res.body.message).toContain('Only .mcpack and .mcaddon files are allowed!');
+    expect(res.body.message).toContain('Only .mcpack, .mcaddon, and .zip files are allowed!');
   });
 });

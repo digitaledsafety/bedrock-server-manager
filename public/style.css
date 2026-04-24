@@ -83,6 +83,16 @@ button:disabled {
     margin-left: 10px;
     border: 2px solid #1E1E1E;
 }
+.world-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    border-bottom: 2px solid #1E1E1E;
+}
+.world-item:last-child {
+    border-bottom: none;
+}
 .status-running {
     background-color: #55FF55; /* Bright green */
     color: #1E1E1E; /* Dark text */
