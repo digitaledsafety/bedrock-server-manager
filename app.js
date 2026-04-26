@@ -169,10 +169,10 @@ app.get('/api/system-info', async (req, res) => {
 app.post('/api/start', async (req, res) => {
     try {
         await backend.startServer();
-        res.json({ success: true, message: 'Server start initiated.' });
+        res.json({ success: true, message: 'Server started successfully.' });
     } catch (error) {
         backend.log('ERROR', `Failed to start server: ${error.message}`);
-        res.status(500).json({ error: 'Failed to start server' });
+        res.status(500).json({ success: false, message: error.message });
     }
 });
 
@@ -461,6 +461,39 @@ app.post('/api/config', async (req, res) => {
 });
 
 // --- Pack Management API ---
+app.get('/api/worlds/:worldName/packs', async (req, res) => {
+    try {
+        const { worldName } = req.params;
+        const result = await backend.listPacks(worldName);
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        backend.log('ERROR', `Failed to list packs: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Failed to list packs due to server error.' });
+    }
+});
+
+app.post('/api/delete-pack', async (req, res) => {
+    try {
+        const { worldName, packId, packType } = req.body;
+        if (!worldName || !packId || !packType) {
+            return res.status(400).json({ success: false, message: 'worldName, packId, and packType are required.' });
+        }
+        const result = await backend.deletePack(worldName, packId, packType);
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        backend.log('ERROR', `Failed to delete pack: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Failed to delete pack due to server error.' });
+    }
+});
+
 app.post('/api/upload-pack', upload.single('packFile'), async (req, res) => {
     const { packType, worldName } = req.body;
     const packFile = req.file;
@@ -562,7 +595,11 @@ const start = async () => {
         backend.init(initialConfig);
         if (initialConfig.autoStart) {
             backend.log('INFO', 'autoStart is enabled, attempting to start the server...');
-            await backend.startServer();
+            try {
+                await backend.startServer();
+            } catch (err) {
+                backend.log('ERROR', `autoStart failed: ${err.message}`);
+            }
         }
         await backend.startAutoUpdateScheduler();
 

@@ -127,6 +127,24 @@
 
         <div class="section">
             <h2>Pack Management</h2>
+            <div id="installedPacksSection" style="margin-bottom: 20px;">
+                <h3>Installed Packs</h3>
+                <div class="form-group">
+                    <label for="packListWorldSelect">Show packs for world:</label>
+                    <select id="packListWorldSelect">
+                        <% if (worlds && worlds.length > 0) { %>
+                            <% worlds.forEach(world => { %>
+                                <option value="<%= world %>" <%= properties['level-name'] === world ? 'selected' : '' %>><%= world %></option>
+                            <% }); %>
+                        <% } %>
+                    </select>
+                </div>
+                <div id="packsListContainer">
+                    <p class="text-gray-600">Select a world to view installed packs.</p>
+                </div>
+            </div>
+            <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+            <h3>Upload New Pack</h3>
             <form id="uploadPackForm">
                 <div class="form-group">
                     <label for="packFile">Pack File (.mcpack or .mcaddon):</label>
