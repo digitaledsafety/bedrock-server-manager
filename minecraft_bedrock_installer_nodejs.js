@@ -316,6 +316,58 @@ export async function changeOwnership(dirPath, user, group) {
 }
 
 /**
+ * Lists all available backups in the backup directory.
+ * @returns {Promise<Array<string>>} A list of backup directory names.
+ */
+export async function listBackups() {
+    if (!BACKUP_DIRECTORY || !fs.existsSync(BACKUP_DIRECTORY)) {
+        log('WARNING', 'BACKUP_DIRECTORY not set or not found. Cannot list backups.');
+        return [];
+    }
+    try {
+        const entries = await fs.promises.readdir(BACKUP_DIRECTORY, { withFileTypes: true });
+        const backups = entries
+            .filter(entry => entry.isDirectory())
+            .map(entry => entry.name)
+            .sort((a, b) => b.localeCompare(a)); // Sort latest first
+        log('INFO', `Listed ${backups.length} backups.`);
+        return backups;
+    } catch (error) {
+        log('ERROR', `Error listing backups: ${error.message}`);
+        return [];
+    }
+}
+
+/**
+ * Deletes a specific backup directory.
+ * @param {string} backupName - The name of the backup directory to delete.
+ * @returns {Promise<{success: boolean, message: string}>}
+ */
+export async function deleteBackup(backupName) {
+    if (!BACKUP_DIRECTORY) {
+        return { success: false, message: 'Backup directory not configured.' };
+    }
+    // Simple validation to prevent directory traversal
+    if (backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+        return { success: false, message: 'Invalid backup name.' };
+    }
+
+    const targetBackupPath = path.join(BACKUP_DIRECTORY, backupName);
+    if (!fs.existsSync(targetBackupPath)) {
+        return { success: false, message: 'Backup not found.' };
+    }
+
+    try {
+        await fs.promises.rm(targetBackupPath, { recursive: true, force: true });
+        log('INFO', `Deleted backup: ${backupName}`);
+        return { success: true, message: `Backup '${backupName}' deleted successfully.` };
+    } catch (error) {
+        log('ERROR', `Failed to delete backup '${backupName}': ${error.message}`);
+        return { success: false, message: `Failed to delete backup: ${error.message}` };
+    }
+}
+
+/**
  * Backs up a specific world directory.
  * @param {string} worldName - The name of the world to backup.
  * @returns {Promise<string|null>} The path to the backup directory, or null if failed.
@@ -472,15 +524,27 @@ export async function stopServer() {
     const pidToKill = serverPID;
     try {
         log('INFO', `Attempting to stop Minecraft server process with PID: ${pidToKill}.`);
-        process.kill(pidToKill, 'SIGTERM');
-        log('INFO', `SIGTERM signal sent to PID: ${pidToKill}.`);
+
+        // Attempt graceful shutdown via command if process is available
+        if (activeServerProcess && activeServerProcess.stdin && activeServerProcess.stdin.writable) {
+            log('INFO', 'Sending "stop" command for graceful shutdown.');
+            activeServerProcess.stdin.write('stop\n');
+        } else {
+            log('INFO', 'Server process stdin not available, falling back to SIGTERM.');
+            process.kill(pidToKill, 'SIGTERM');
+        }
 
         // Wait for process to exit
         let isRunning = true;
-        for (let i = 0; i < 50; i++) { // 5 seconds total
+        for (let i = 0; i < 100; i++) { // 10 seconds total for graceful shutdown
             try {
                 process.kill(pidToKill, 0);
                 await new Promise(resolve => setTimeout(resolve, 100));
+                // After 5 seconds, if still running, try SIGTERM if we didn't already
+                if (i === 50 && activeServerProcess && activeServerProcess.stdin && activeServerProcess.stdin.writable) {
+                    log('WARNING', 'Server did not stop via command after 5s. Sending SIGTERM.');
+                    process.kill(pidToKill, 'SIGTERM');
+                }
             } catch (e) {
                 isRunning = false;
                 break;
@@ -488,7 +552,7 @@ export async function stopServer() {
         }
 
         if (isRunning) {
-            log('WARNING', `Server process ${pidToKill} did not exit after 5 seconds. Sending SIGKILL.`);
+            log('WARNING', `Server process ${pidToKill} did not exit after 10 seconds. Sending SIGKILL.`);
             try {
                 process.kill(pidToKill, 'SIGKILL');
             } catch (e) {
@@ -502,7 +566,7 @@ export async function stopServer() {
         }
         log('INFO', `Server process ${pidToKill} stopped.`);
     } catch (error) {
-        log('ERROR', `Error stopping server with PID ${pidToKill} (process might not exist): ${error.message}`);
+        log('ERROR', `Error stopping server with PID ${pidToKill}: ${error.message}`);
     } finally {
         if (serverPID === pidToKill) {
             serverPID = null;
@@ -974,6 +1038,58 @@ export async function sendServerCommand(command) {
         log('ERROR', `Error sending console command: ${error.message}`);
         return { success: false, message: `Failed to send command: ${error.message}` };
     }
+}
+
+/**
+ * Gets the list of online players by parsing the 'list' command output.
+ * @returns {Promise<{count: number, max: number, players: Array<string>}>}
+ */
+export async function getOnlinePlayers() {
+    if (!activeServerProcess || !activeServerProcess.stdin || activeServerProcess.stdin.writable === false) {
+        return { count: 0, max: 0, players: [] };
+    }
+
+    return new Promise((resolve) => {
+        const command = 'list';
+        let output = '';
+
+        const onData = (data) => {
+            output += data.toString();
+            // Bedrock 'list' command typical output: "There are 1/20 players online: Player1, Player2"
+            if (output.includes('players online')) {
+                cleanup();
+                const result = parsePlayerList(output);
+                resolve(result);
+            }
+        };
+
+        const timeout = setTimeout(() => {
+            cleanup();
+            resolve({ count: 0, max: 0, players: [] });
+        }, 2000);
+
+        const cleanup = () => {
+            clearTimeout(timeout);
+            activeServerProcess.stdout.removeListener('data', onData);
+        };
+
+        activeServerProcess.stdout.on('data', onData);
+        activeServerProcess.stdin.write(command + '\n');
+    });
+}
+
+function parsePlayerList(output) {
+    // Example: "There are 1/20 players online:\nPlayer1"
+    // or "There are 0/20 players online:"
+    const match = output.match(/There are (\d+)\/(\d+) players online:?([\s\S]*)/);
+    if (match) {
+        const count = parseInt(match[1], 10);
+        const max = parseInt(match[2], 10);
+        const playersStr = match[3].trim();
+        const players = playersStr ? playersStr.split(/,\s*|\n/).map(p => p.trim()).filter(p => p) : [];
+        return { count, max, players };
+    }
+    return { count: 0, max: 0, players: [] };
 }
 
 export async function isProcessRunning() {

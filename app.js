@@ -146,6 +146,16 @@ app.get('/api/status', async (req, res) => {
     }
 });
 
+app.get('/api/players', async (req, res) => {
+    try {
+        const playersInfo = await backend.getOnlinePlayers();
+        res.json({ success: true, ...playersInfo });
+    } catch (error) {
+        backend.log('ERROR', `Error getting online players: ${error.message}`);
+        res.status(500).json({ success: false, error: 'Failed to get online players' });
+    }
+});
+
 app.get('/api/system-info', async (req, res) => {
     try {
         const info = {
@@ -226,6 +236,31 @@ app.post('/api/backup', async (req, res) => {
     } catch (error) {
         backend.log('ERROR', `Failed to create manual backup: ${error.message}`);
         res.status(500).json({ success: false, message: 'Failed to create manual backup due to server error.' });
+    }
+});
+
+app.get('/api/backups', async (req, res) => {
+    try {
+        const backups = await backend.listBackups();
+        res.json({ success: true, backups });
+    } catch (error) {
+        backend.log('ERROR', `Failed to list backups: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Failed to list backups.' });
+    }
+});
+
+app.delete('/api/backups/:backupName', async (req, res) => {
+    try {
+        const { backupName } = req.params;
+        const result = await backend.deleteBackup(backupName);
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        backend.log('ERROR', `Failed to delete backup: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Failed to delete backup.' });
     }
 });
 

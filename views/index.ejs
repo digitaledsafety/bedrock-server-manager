@@ -40,6 +40,10 @@
             <div id="messageBox" class="message-box" role="alert" style="display: none;"></div>
             <h2>Server Status</h2>
             <p>Current Status: <span id="serverStatus" class="status-indicator status-<%= serverStatus %>"><%= serverStatus.toUpperCase() %></span></p>
+            <div id="playerInfo" style="margin-bottom: 10px; display: none;">
+                <p><strong>Players Online:</strong> <span id="playerCount">0</span> / <span id="maxPlayers">0</span></p>
+                <p id="playerListNames" style="font-size: 0.9em; color: #666;"></p>
+            </div>
             <% if (config.serverType === 'java') { %>
                 <p>Java server support is coming soon!</p>
                 <div class="button-group">
@@ -123,6 +127,14 @@
                 <% } %>
             </div>
             <p>To activate a world, click 'Activate' next to its name. <strong>Note: This will automatically update your server properties and restart the server to apply the change.</strong></p>
+        </div>
+
+        <div class="section">
+            <h2>Backup Management</h2>
+            <div id="backupList" class="world-list">
+                <p>Loading backups...</p>
+            </div>
+            <p>Backups include all server files (worlds, configurations, and packs). Deleting a backup is permanent.</p>
         </div>
 
         <div class="section">

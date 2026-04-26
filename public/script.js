@@ -13,6 +13,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const propertiesTabs = document.getElementById('propertiesTabs');
     const consoleOutput = document.getElementById('consoleOutput'); // Get the console textarea
     const systemInfoContent = document.getElementById('systemInfoContent');
+    const playerInfoDiv = document.getElementById('playerInfo');
+    const playerCountSpan = document.getElementById('playerCount');
+    const maxPlayersSpan = document.getElementById('maxPlayers');
+    const playerListNamesP = document.getElementById('playerListNames');
 
     // Auto-Update specific elements
     const autoUpdateConfigForm = document.getElementById('autoUpdateConfigForm');
@@ -24,6 +28,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const newWorldNameInput = document.getElementById('newWorldName');
 
     const restartNeededNote = document.getElementById('restartNeededNote');
+
+    const backupListContainer = document.getElementById('backupList');
 
     // Pack Management specific elements
     const uploadPackForm = document.getElementById('uploadPackForm');
@@ -149,6 +155,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/status');
             const data = await response.json();
             updateServerStatusDisplay(data.status);
+            if (data.status === 'running') {
+                fetchPlayerList();
+            } else {
+                if (playerInfoDiv) playerInfoDiv.style.display = 'none';
+            }
         } catch (error) {
             console.error('Error fetching server status:', error);
             updateServerStatusDisplay('unknown'); // Set status to unknown on error
@@ -557,6 +568,63 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Auto-Update Configuration Functions ---
+    async function loadBackups() {
+        if (!backupListContainer) return;
+        try {
+            const response = await fetch('/api/backups');
+            const data = await response.json();
+            if (data.success) {
+                backupListContainer.innerHTML = '';
+                if (data.backups && data.backups.length > 0) {
+                    data.backups.forEach(backup => {
+                        const backupItem = document.createElement('div');
+                        backupItem.className = 'world-item';
+                        backupItem.innerHTML = `
+                            <span>${backup}</span>
+                            <div class="button-group">
+                                <button class="delete-backup-button bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-backup-name="${backup}">
+                                    Delete
+                                </button>
+                            </div>
+                        `;
+                        backupListContainer.appendChild(backupItem);
+                    });
+                    addDeleteBackupButtonListeners();
+                } else {
+                    backupListContainer.innerHTML = '<p class="text-gray-600">No backups found.</p>';
+                }
+            }
+        } catch (error) {
+            console.error('Error loading backups:', error);
+        }
+    }
+
+    function addDeleteBackupButtonListeners() {
+        document.querySelectorAll('.delete-backup-button').forEach(button => {
+            button.addEventListener('click', handleDeleteBackupClick);
+        });
+    }
+
+    async function handleDeleteBackupClick(event) {
+        const backupName = event.target.dataset.backupName;
+        if (!confirm(`Are you sure you want to delete the backup '${backupName}'?`)) return;
+
+        try {
+            showMessage(`Deleting backup '${backupName}'...`);
+            const response = await fetch(`/api/backups/${backupName}`, { method: 'DELETE' });
+            const data = await response.json();
+            if (response.ok && data.success) {
+                showMessage(data.message, 'success');
+                loadBackups();
+            } else {
+                showMessage(data.message || 'Failed to delete backup.', 'error');
+            }
+        } catch (error) {
+            console.error('Error deleting backup:', error);
+            showMessage('Failed to delete backup.', 'error');
+        }
+    }
+
     async function loadAutoUpdateConfig() {
         try {
             const response = await fetch('/api/config');
@@ -714,6 +782,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function fetchPlayerList() {
+        if (!playerInfoDiv) return;
+        try {
+            const response = await fetch('/api/players');
+            const data = await response.json();
+            if (data.success) {
+                playerInfoDiv.style.display = 'block';
+                playerCountSpan.textContent = data.count;
+                maxPlayersSpan.textContent = data.max;
+                if (data.players && data.players.length > 0) {
+                    playerListNamesP.textContent = 'Players: ' + data.players.join(', ');
+                } else {
+                    playerListNamesP.textContent = '';
+                }
+            } else {
+                playerInfoDiv.style.display = 'none';
+            }
+        } catch (error) {
+            console.error('Error fetching player list:', error);
+            playerInfoDiv.style.display = 'none';
+        }
+    }
+
     async function fetchSystemInfo() {
         if (!systemInfoContent) return;
         try {
@@ -753,6 +844,7 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchServerStatus(); // This will now also set initial button states
     loadServerProperties();
     //loadWorlds();
+    loadBackups();
     loadAutoUpdateConfig(); // New: Load auto-update config on page load
     addActivateButtonListeners();
     addBackupButtonListeners();
@@ -763,6 +855,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Refresh status and worlds periodically
     setInterval(fetchServerStatus, 10000); // Every 10 seconds
     setInterval(loadWorlds, 30000); // Every 30 seconds
+    setInterval(loadBackups, 60000); // Every minute
     setInterval(fetchLogs, 5000); // Every 5 seconds
     setInterval(fetchSystemInfo, 30000); // Every 30 seconds
 
