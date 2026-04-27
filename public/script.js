@@ -19,6 +19,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const autoUpdateEnabledCheckbox = document.getElementById('autoUpdateEnabled');
     const autoUpdateIntervalMinutesInput = document.getElementById('autoUpdateIntervalMinutes');
 
+    // Auto-Backup specific elements
+    const autoBackupConfigForm = document.getElementById('autoBackupConfigForm');
+    const autoBackupEnabledCheckbox = document.getElementById('autoBackupEnabled');
+    const autoBackupIntervalMinutesInput = document.getElementById('autoBackupIntervalMinutes');
+
     // World Management specific elements
     const createWorldForm = document.getElementById('createWorldForm');
     const newWorldNameInput = document.getElementById('newWorldName');
@@ -388,18 +393,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
                         data.worlds.forEach(world => {
                             const worldItem = document.createElement('div');
-                            worldItem.className = `world-item ${currentLevelName === world ? 'active' : ''}`;
-                            worldItem.dataset.worldName = world;
+                            worldItem.className = `world-item ${currentLevelName === world.name ? 'active' : ''}`;
+                            worldItem.dataset.worldName = world.name;
+                            const sizeMB = (world.size / (1024 * 1024)).toFixed(2);
                             worldItem.innerHTML = `
-                                <span>${world}</span>
-                                <button class="activate-world-button bg-blue-500 hover:bg-blue-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world}">
+                                <span>${world.name} (${sizeMB} MB)</span>
+                                <button class="activate-world-button bg-blue-500 hover:bg-blue-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world.name}">
                                     Activate
                                 </button>
-                                <button class="backup-world-button bg-green-600 hover:bg-green-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world}">
+                                <button class="backup-world-button bg-green-600 hover:bg-green-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world.name}">
                                     Backup
                                 </button>
-                                ${currentLevelName !== world ? `
-                                <button class="delete-world-button bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world}">
+                                ${currentLevelName !== world.name ? `
+                                <button class="rename-world-button bg-yellow-500 hover:bg-yellow-600 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world.name}">
+                                    Rename
+                                </button>
+                                <button class="delete-world-button bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world.name}">
                                     Delete
                                 </button>
                                 ` : ''}
@@ -409,6 +418,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         addActivateButtonListeners(); // Re-add listeners after updating DOM
                         addBackupButtonListeners(); // Re-add listeners after updating DOM
                         addDeleteButtonListeners(); // Re-add listeners after updating DOM
+                        addRenameButtonListeners(); // Re-add listeners after updating DOM
                     } else {
                         worldListContainer.innerHTML = '<p class="text-gray-600">No worlds found. Start the server to generate a default world.</p>';
                     }
@@ -443,6 +453,40 @@ document.addEventListener('DOMContentLoaded', () => {
             button.removeEventListener('click', handleDeleteWorldClick); // Prevent duplicate listeners
             button.addEventListener('click', handleDeleteWorldClick);
         });
+    }
+
+    function addRenameButtonListeners() {
+        document.querySelectorAll('.rename-world-button').forEach(button => {
+            button.removeEventListener('click', handleRenameWorldClick); // Prevent duplicate listeners
+            button.addEventListener('click', handleRenameWorldClick);
+        });
+    }
+
+    async function handleRenameWorldClick(event) {
+        const oldName = event.target.dataset.worldName;
+        const newName = prompt(`Enter a new name for the world '${oldName}':`, oldName);
+        if (!newName || newName === oldName) return;
+
+        try {
+            showMessage(`Renaming world '${oldName}' to '${newName}'...`);
+            const response = await fetch('/api/rename-world', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ oldName, newName })
+            });
+            const data = await response.json();
+            if (response.ok && data.success) {
+                showMessage(data.message || `World '${oldName}' renamed to '${newName}'.`, 'success');
+                loadWorlds(); // Refresh world list
+            } else {
+                showMessage(data.message || `Failed to rename world '${oldName}'.`, 'error');
+            }
+        } catch (error) {
+            console.error('Error renaming world:', error);
+            showMessage('Failed to rename world.', 'error');
+        }
     }
 
     async function handleDeleteWorldClick(event) {
@@ -564,6 +608,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.success) {
                 autoUpdateEnabledCheckbox.checked = data.config.autoUpdateEnabled;
                 autoUpdateIntervalMinutesInput.value = data.config.autoUpdateIntervalMinutes;
+                if (autoBackupEnabledCheckbox) autoBackupEnabledCheckbox.checked = data.config.autoBackupEnabled;
+                if (autoBackupIntervalMinutesInput) autoBackupIntervalMinutesInput.value = data.config.autoBackupIntervalMinutes;
             } else {
                 showMessage('Failed to load auto-update configuration: ' + data.message, 'error');
             }
@@ -603,6 +649,39 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error('Error saving auto-update config:', error);
             showMessage('Failed to save auto-update settings.', 'error');
+        }
+    }
+
+    async function saveAutoBackupConfig(event) {
+        event.preventDefault();
+        const newConfig = {
+            autoBackupEnabled: autoBackupEnabledCheckbox.checked,
+            autoBackupIntervalMinutes: parseInt(autoBackupIntervalMinutesInput.value, 10)
+        };
+
+        if (isNaN(newConfig.autoBackupIntervalMinutes) || newConfig.autoBackupIntervalMinutes < 1) {
+            showMessage('Backup interval must be a positive number.', 'error');
+            return;
+        }
+
+        try {
+            showMessage('Saving auto-backup settings...');
+            const response = await fetch('/api/config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(newConfig)
+            });
+            const data = await response.json();
+            if (data.success) {
+                showMessage('Auto-backup settings saved successfully!', 'success');
+            } else {
+                showMessage('Failed to save auto-backup settings: ' + data.message, 'error');
+            }
+        } catch (error) {
+            console.error('Error saving auto-backup config:', error);
+            showMessage('Failed to save auto-backup settings.', 'error');
         }
     }
 
@@ -690,6 +769,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (propertiesForm) propertiesForm.addEventListener('submit', saveServerProperties);
     if (autoUpdateConfigForm) autoUpdateConfigForm.addEventListener('submit', saveAutoUpdateConfig);
+    if (autoBackupConfigForm) autoBackupConfigForm.addEventListener('submit', saveAutoBackupConfig);
     if (uploadPackForm) {
         uploadPackForm.addEventListener('submit', handleUploadPack);
         packFileInput.addEventListener('change', handlePackFileChange);
@@ -757,6 +837,7 @@ document.addEventListener('DOMContentLoaded', () => {
     addActivateButtonListeners();
     addBackupButtonListeners();
     addDeleteButtonListeners();
+    addRenameButtonListeners();
     fetchLogs();
     fetchSystemInfo();
 

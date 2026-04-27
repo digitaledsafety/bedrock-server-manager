@@ -35,7 +35,7 @@ const backend = await import('../minecraft_bedrock_installer_nodejs.js');
 describe('Upload API Verification', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    backend.listWorlds.mockResolvedValue(['test_world']);
+    backend.listWorlds.mockResolvedValue([{ name: 'test_world', size: 1000 }]);
     backend.readGlobalConfig.mockResolvedValue({ uiPort: 3000 });
   });
 
