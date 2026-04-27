@@ -13,8 +13,12 @@ const __dirnameESM = dirname(__filenameESM);
 
 // Ensure temp directory for uploads exists
 const TEMP_UPLOAD_DIR = path.join(__dirnameESM, 'temp_uploads');
-if (!fs.existsSync(TEMP_UPLOAD_DIR)) {
-    fs.mkdirSync(TEMP_UPLOAD_DIR, { recursive: true });
+try {
+    if (!fs.existsSync(TEMP_UPLOAD_DIR)) {
+        fs.mkdirSync(TEMP_UPLOAD_DIR, { recursive: true });
+    }
+} catch (err) {
+    console.error(`Failed to create TEMP_UPLOAD_DIR: ${err.message}`);
 }
 
 const app = express();
@@ -304,6 +308,27 @@ app.post('/api/delete-world', validateWorldName, async (req, res) => {
     }
 });
 
+app.post('/api/rename-world', async (req, res) => {
+    try {
+        const { oldName, newName } = req.body;
+        if (!oldName || !newName) {
+            return res.status(400).json({ success: false, message: 'Both oldName and newName are required.' });
+        }
+        if (!backend.isValidWorldName(oldName) || !backend.isValidWorldName(newName)) {
+            return res.status(400).json({ success: false, message: 'Invalid world name format.' });
+        }
+        const result = await backend.renameWorld(oldName, newName);
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        backend.log('ERROR', `Failed to rename world: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Failed to rename world due to server error.' });
+    }
+});
+
 app.post('/api/activate-world', validateWorldName, async (req, res) => {
     try {
         const { worldName } = req.body;
@@ -450,9 +475,22 @@ app.post('/api/config', async (req, res) => {
             }
             currentFullConfig.logLevel = level;
         }
+
+        if (newSettings.autoBackupEnabled !== undefined) {
+            currentFullConfig.autoBackupEnabled = !!newSettings.autoBackupEnabled;
+        }
+        if (newSettings.autoBackupIntervalMinutes !== undefined) {
+            const interval = parseInt(newSettings.autoBackupIntervalMinutes, 10);
+            if (isNaN(interval) || interval < 1) {
+                return res.status(400).json({ success: false, message: 'Backup interval must be a positive integer.' });
+            }
+            currentFullConfig.autoBackupIntervalMinutes = interval;
+        }
+
         await backend.writeGlobalConfig(currentFullConfig);
-        backend.init(currentFullConfig);
+        await backend.init(currentFullConfig);
         await backend.startAutoUpdateScheduler();
+        await backend.startAutoBackupScheduler();
         res.json({ success: true, message: 'Global config settings updated successfully.' });
     } catch (error) {
         backend.log('ERROR', `Error setting global config: ${error.message}`);
@@ -499,7 +537,7 @@ app.post('/api/upload-pack', upload.single('packFile'), async (req, res) => {
 
         // More robust: Check if world actually exists
         const existingWorlds = await backend.listWorlds();
-        if (!existingWorlds.includes(worldName)) {
+        if (!existingWorlds.some(w => w.name === worldName)) {
             backend.log('ERROR', `Attempt to upload pack to non-existent world: ${worldName}`);
             return res.status(400).json({ success: false, message: `Target world '${worldName}' does not exist.` });
         }
@@ -537,14 +575,14 @@ app.get('/', async (req, res) => {
     try {
         const currentConfig = backend.getConfig();
         const properties = await backend.readServerProperties();
-        const worlds = await backend.listWorlds();
+        const worldsData = await backend.listWorlds();
         const isRunning = await backend.isProcessRunning();
         const serverStatus = isRunning ? 'running' : 'stopped';
         const currentServerVersion = backend.getStoredVersion(); // Added this line
 
         res.render('index', {
             properties,
-            worlds,
+            worlds: worldsData,
             serverStatus,
             config: currentConfig,
             currentServerVersion // Added to template data
@@ -559,12 +597,13 @@ app.get('/', async (req, res) => {
 const start = async () => {
     try {
         const initialConfig = await backend.readGlobalConfig();
-        backend.init(initialConfig);
+        await backend.init(initialConfig);
         if (initialConfig.autoStart) {
             backend.log('INFO', 'autoStart is enabled, attempting to start the server...');
             await backend.startServer();
         }
         await backend.startAutoUpdateScheduler();
+        await backend.startAutoBackupScheduler();
 
         const port = initialConfig.uiPort ?? PORT;
 
@@ -583,6 +622,8 @@ const start = async () => {
     }
 };
 
-start();
+if (process.env.NODE_ENV !== 'test') {
+    start();
+}
 
 export default app;

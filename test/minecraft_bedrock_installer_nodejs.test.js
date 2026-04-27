@@ -4,12 +4,14 @@ import { jest } from '@jest/globals';
 jest.unstable_mockModule('fs', () => ({
   promises: {
     readFile: jest.fn(),
+    writeFile: jest.fn(),
+    mkdir: jest.fn(),
   },
   existsSync: jest.fn(),
   readFileSync: jest.fn(),
   writeFileSync: jest.fn(),
   createWriteStream: jest.fn(() => ({ write: jest.fn() })),
-  mkdirSync: jest.fn(), // Added mock for mkdirSync
+  mkdirSync: jest.fn(),
 }));
 
 // Dynamically import the modules after mocks are defined
@@ -102,11 +104,11 @@ level-name=World=1
         autoUpdateEnabled: true,
       };
       fs.existsSync.mockReturnValue(true);
-      fs.readFileSync.mockReturnValue(JSON.stringify(mockConfig));
+      fs.promises.readFile.mockResolvedValue(JSON.stringify(mockConfig));
 
       const config = await backend.readGlobalConfig();
 
-      expect(fs.readFileSync).toHaveBeenCalledWith(expect.stringContaining('config.json'), 'utf8');
+      expect(fs.promises.readFile).toHaveBeenCalledWith(expect.stringContaining('config.json'), 'utf8');
       expect(config.serverName).toBe("My Custom Server");
       expect(config.autoUpdateEnabled).toBe(true);
       expect(config.logLevel).toBe("INFO");
@@ -119,13 +121,13 @@ level-name=World=1
 
       expect(config.serverName).toBe("Default Minecraft Server");
       expect(config.autoUpdateEnabled).toBe(false);
-      expect(fs.writeFileSync).toHaveBeenCalled();
+      expect(fs.promises.writeFile).toHaveBeenCalled();
     });
 
     it('should override config with command line arguments', async () => {
         const mockConfig = { serverName: "File Server Name" };
         fs.existsSync.mockReturnValue(true);
-        fs.readFileSync.mockReturnValue(JSON.stringify(mockConfig));
+        fs.promises.readFile.mockResolvedValue(JSON.stringify(mockConfig));
 
         process.argv = ['node', 'script.js', '--serverName', 'CLI Server Name', '--autoUpdateEnabled', 'true'];
 

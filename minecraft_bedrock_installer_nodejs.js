@@ -33,6 +33,7 @@ const WORLD_DIRECTORIES = ['worlds'];
 const GLOBAL_CONFIG_FILE = 'config.json';
 
 let autoUpdateIntervalId = null;
+let autoBackupIntervalId = null;
 
 const logStream = fs.createWriteStream(path.join(__dirnameESM, 'mc_installer.log'), { flags: 'a' });
 const LOG_LEVELS = { DEBUG: 0, INFO: 1, WARNING: 2, ERROR: 3, FATAL: 4 };
@@ -112,7 +113,7 @@ export function getServerExeName() {
     }
 }
 
-export function init(effectiveConfigFromRead) {
+export async function init(effectiveConfigFromRead) {
     config = effectiveConfigFromRead;
     setLogLevel(config.logLevel || "INFO");
     log('INFO', `Initializing with configuration: ${JSON.stringify(config, null, 2)}`);
@@ -124,13 +125,13 @@ export function init(effectiveConfigFromRead) {
     log('INFO', `Using Backup Directory: ${BACKUP_DIRECTORY}`);
     const dirsToCreate = [SERVER_DIRECTORY, TEMP_DIRECTORY, BACKUP_DIRECTORY].filter(Boolean);
     for (const dir of dirsToCreate) {
-        if (!fs.existsSync(dir)) {
-            try {
-                fs.mkdirSync(dir, { recursive: true });
+        try {
+            if (!fs.existsSync(dir)) {
+                await fs.promises.mkdir(dir, { recursive: true });
                 log('INFO', `Created directory: ${dir}`);
-            } catch (e) {
-                log('ERROR', `Failed to create directory ${dir}: ${e.message}.`);
             }
+        } catch (e) {
+            log('ERROR', `Failed to create directory ${dir}: ${e.message}.`);
         }
     }
 }
@@ -248,33 +249,29 @@ export function downloadFile(downloadUrl, downloadPath) {
     });
 }
 
-export function extractFiles(zipPath, extractPath) {
-    return new Promise((resolve, reject) => {
-        try {
-            log('INFO', `Using adm-zip for extraction for ${zipPath} to ${extractPath}.`);
-            const zip = new AdmZip(zipPath);
-            zip.extractAllTo(extractPath, true); // true for overwrite
-            log('INFO', `Extraction completed successfully.`);
+export async function extractFiles(zipPath, extractPath) {
+    try {
+        log('INFO', `Using adm-zip for extraction for ${zipPath} to ${extractPath}.`);
+        const zip = new AdmZip(zipPath);
+        zip.extractAllTo(extractPath, true); // true for overwrite
+        log('INFO', `Extraction completed successfully.`);
 
-            // 2. Set permissions for specific executable files (e.g., a script named 'script.sh')
-            const executableFilePath = path.join(extractPath, getServerExeName());
+        // 2. Set permissions for specific executable files
+        const executableFilePath = path.join(extractPath, getServerExeName());
 
-            if (os.platform() !== 'win32') {
-                try {
-                    // Set permissions to 755 (owner can read/write/execute, others can read/execute)
-                    fs.chmodSync(executableFilePath, 0o755);
-                    log('INFO', `Permissions set to 755 for ${executableFilePath}`);
-                } catch (err) {
-                    log('ERROR', `Failed to set permissions for ${executableFilePath}: ${err.message}`);
-                }
+        if (os.platform() !== 'win32') {
+            try {
+                // Set permissions to 755 (owner can read/write/execute, others can read/execute)
+                await fs.promises.chmod(executableFilePath, 0o755);
+                log('INFO', `Permissions set to 755 for ${executableFilePath}`);
+            } catch (err) {
+                log('ERROR', `Failed to set permissions for ${executableFilePath}: ${err.message}`);
             }
-
-            resolve();
-        } catch (error) {
-            log('ERROR', `Extraction failed for ${zipPath}: ${error.message}`);
-            reject(new Error(`Extraction failed: ${error.message}`));
         }
-    });
+    } catch (error) {
+        log('ERROR', `Extraction failed for ${zipPath}: ${error.message}`);
+        throw new Error(`Extraction failed: ${error.message}`);
+    }
 }
 
 export async function changeOwnership(dirPath, user, group) {
@@ -282,8 +279,9 @@ export async function changeOwnership(dirPath, user, group) {
         log('INFO', 'Skipping changeOwnership on Windows or if user/group is not configured.');
         return;
     }
-    const validBasePaths = [SERVER_DIRECTORY, BACKUP_DIRECTORY].filter(Boolean);
-    if (!validBasePaths.some(base => dirPath.startsWith(base))) {
+    const validBasePaths = [SERVER_DIRECTORY, BACKUP_DIRECTORY].filter(Boolean).map(p => path.resolve(p));
+    const resolvedDirPath = path.resolve(dirPath);
+    if (!validBasePaths.some(base => resolvedDirPath.startsWith(base))) {
         log('ERROR', `changeOwnership attempted on restricted path: ${dirPath}. Expected to be within configured server or backup directories.`);
         throw new Error(`Invalid path for changeOwnership: ${dirPath}. Operation aborted for security.`);
     }
@@ -340,9 +338,9 @@ export async function backupWorld(worldName) {
     const backupDir = path.join(BACKUP_DIRECTORY, backupSubDir);
 
     try {
-        fs.mkdirSync(backupDir, { recursive: true });
+        await fs.promises.mkdir(backupDir, { recursive: true });
         log('INFO', `Creating backup for world '${worldName}' in ${backupDir}`);
-        fs.cpSync(worldPath, path.join(backupDir, worldName), { recursive: true });
+        await fs.promises.cp(worldPath, path.join(backupDir, worldName), { recursive: true });
 
         if (os.platform() !== 'win32') {
             await changeOwnership(backupDir, config.minecraftUser, config.minecraftGroup);
@@ -352,26 +350,26 @@ export async function backupWorld(worldName) {
     } catch (error) {
         log('ERROR', `Error during world backup for '${worldName}': ${error.message}`);
         if (fs.existsSync(backupDir)) {
-            fs.rmSync(backupDir, { recursive: true, force: true });
+            await fs.promises.rm(backupDir, { recursive: true, force: true });
         }
         throw error;
     }
 }
 
-export function storeLatestVersion(version) {
+export async function storeLatestVersion(version) {
     try {
-        fs.writeFileSync(path.join(__dirnameESM, LAST_VERSION_FILE), version);
+        await fs.promises.writeFile(path.join(__dirnameESM, LAST_VERSION_FILE), version);
         log('INFO', `Stored latest version: ${version}`);
     } catch (error) {
         log('ERROR', `Error storing version to file: ${error.message}`);
     }
 }
 
-export function getStoredVersion() {
+export async function getStoredVersion() {
     try {
         const lastVersionFilePath = path.join(__dirnameESM, LAST_VERSION_FILE);
         if (fs.existsSync(lastVersionFilePath)) {
-            const version = fs.readFileSync(lastVersionFilePath, 'utf8').trim();
+            const version = (await fs.promises.readFile(lastVersionFilePath, 'utf8')).trim();
             log('INFO', `Retrieved stored version: ${version}`);
             return version;
         } else {
@@ -390,10 +388,10 @@ export async function backupServer() {
         return null;
     }
     const backupDir = path.join(BACKUP_DIRECTORY, new Date().toISOString().replace(/:/g, '-').replace(/\./g, '_'));
-    fs.mkdirSync(backupDir, { recursive: true });
+    await fs.promises.mkdir(backupDir, { recursive: true });
     log('INFO', `Creating backup in ${backupDir}`);
     try {
-        fs.cpSync(SERVER_DIRECTORY, backupDir, { recursive: true });
+        await fs.promises.cp(SERVER_DIRECTORY, backupDir, { recursive: true });
         if (os.platform() !== 'win32') {
             await changeOwnership(backupDir, config.minecraftUser, config.minecraftGroup);
         }
@@ -402,15 +400,15 @@ export async function backupServer() {
     } catch (error) {
         log('ERROR', `Error during backup: ${error}`);
         if (fs.existsSync(backupDir)) {
-            fs.rmSync(backupDir, { recursive: true, force: true });
+            await fs.promises.rm(backupDir, { recursive: true, force: true });
         }
         throw error;
     }
 }
 
 export async function copyDir(src, dest) {
-    log('DEBUG', `Using fs.cpSync for copyDir from ${src} to ${dest}`);
-    fs.cpSync(src, dest, { recursive: true });
+    log('DEBUG', `Using fs.promises.cp for copyDir from ${src} to ${dest}`);
+    await fs.promises.cp(src, dest, { recursive: true });
 }
 
 export async function copyExistingData(backupDir, newInstallDir) {
@@ -429,7 +427,7 @@ export async function copyExistingData(backupDir, newInstallDir) {
         const destPath = path.join(newInstallDir, dirName);
         if (fs.existsSync(srcPath)) {
             log('INFO', `Copying directory: ${dirName}`);
-            fs.cpSync(srcPath, destPath, { recursive: true });
+            await fs.promises.cp(srcPath, destPath, { recursive: true });
         } else {
             log('INFO', `Backup directory not found (this is okay if not used): ${srcPath}`);
         }
@@ -440,7 +438,7 @@ export async function copyExistingData(backupDir, newInstallDir) {
         const destPath = path.join(newInstallDir, file);
         if (fs.existsSync(srcPath)) {
             log('INFO', `Copying config file: ${file}`);
-            fs.copyFileSync(srcPath, destPath);
+            await fs.promises.copyFile(srcPath, destPath);
         } else {
             log('WARNING', `Backup config file not found: ${srcPath}`);
         }
@@ -453,7 +451,8 @@ export async function stopServer() {
         const pidFile = path.join(SERVER_DIRECTORY, 'server.pid');
         if (fs.existsSync(pidFile)) {
             try {
-                const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
+                const pidContent = await fs.promises.readFile(pidFile, 'utf8');
+                const pid = parseInt(pidContent.trim(), 10);
                 if (!isNaN(pid)) {
                     serverPID = pid;
                     log('INFO', `Recovered server PID from file for stopping: ${serverPID}`);
@@ -498,7 +497,7 @@ export async function stopServer() {
 
         const pidFile = path.join(SERVER_DIRECTORY, 'server.pid');
         if (fs.existsSync(pidFile)) {
-            fs.unlinkSync(pidFile);
+            await fs.promises.unlink(pidFile);
         }
         log('INFO', `Server process ${pidToKill} stopped.`);
     } catch (error) {
@@ -603,7 +602,7 @@ export async function startServer() {
             serverPID = serverProcess.pid;
             log('INFO', `Server process started with PID: ${serverPID}.`);
             try {
-                fs.writeFileSync(path.join(SERVER_DIRECTORY, 'server.pid'), serverPID.toString(), 'utf8');
+                await fs.promises.writeFile(path.join(SERVER_DIRECTORY, 'server.pid'), serverPID.toString(), 'utf8');
             } catch (error) {
                 log('ERROR', `Failed to write PID file: ${error.message}`);
             }
@@ -654,7 +653,7 @@ export async function checkAndInstall() {
     }
     const { latestVersion, downloadUrl: apiDownloadUrl } = versionInfo;
 
-    const lastVersion = getStoredVersion();
+    const lastVersion = await getStoredVersion();
     if (lastVersion && latestVersion === lastVersion) {
         log('INFO', 'No new version found. Server is up to date.');
         return { success: true, message: 'Server is already up to date.' };
@@ -674,14 +673,14 @@ export async function checkAndInstall() {
         if (fs.existsSync(tempInstallPath)) {
             log('INFO', `Version ${latestVersion} already exists in temporary directory: ${tempInstallPath}. Skipping download and extraction.`);
         } else {
-            fs.mkdirSync(tempInstallPath, { recursive: true });
+            await fs.promises.mkdir(tempInstallPath, { recursive: true });
             log('INFO', `Created temporary installation directory: ${tempInstallPath}`);
             log('INFO', `Downloading server files from ${apiDownloadUrl} to ${downloadPath}`);
             await downloadFile(apiDownloadUrl, downloadPath);
             log('INFO', 'Download complete.');
             log('INFO', `Extracting files to ${tempInstallPath}`);
             await extractFiles(downloadPath, tempInstallPath);
-            fs.unlinkSync(downloadPath);
+            await fs.promises.unlink(downloadPath);
             log('INFO', 'Extraction complete.');
         }
 
@@ -692,23 +691,23 @@ export async function checkAndInstall() {
 
         if (SERVER_DIRECTORY && fs.existsSync(SERVER_DIRECTORY)) { // Check if SERVER_DIRECTORY is defined
             log('INFO', `Removing existing server directory: ${SERVER_DIRECTORY}`);
-            fs.rmSync(SERVER_DIRECTORY, { recursive: true, force: true });
+            await fs.promises.rm(SERVER_DIRECTORY, { recursive: true, force: true });
             log('INFO', `Removed existing server directory ${SERVER_DIRECTORY}`);
         }
         log('INFO', `Moving new server files from ${tempInstallPath} to ${SERVER_DIRECTORY}`);
         try {
-            fs.renameSync(tempInstallPath, SERVER_DIRECTORY);
+            await fs.promises.rename(tempInstallPath, SERVER_DIRECTORY);
         } catch (renameError) {
-            log('WARNING', `fs.renameSync failed (${renameError.message}). Attempting copy-and-remove fallback.`);
+            log('WARNING', `fs.promises.rename failed (${renameError.message}). Attempting copy-and-remove fallback.`);
             fs.cpSync(tempInstallPath, SERVER_DIRECTORY, { recursive: true });
-            fs.rmSync(tempInstallPath, { recursive: true, force: true });
+            await fs.promises.rm(tempInstallPath, { recursive: true, force: true });
         }
         log('INFO', 'Successfully moved new server files to SERVER_DIRECTORY.');
         if (backupDir) {
             await copyExistingData(backupDir, SERVER_DIRECTORY);
             log('INFO', `Copied existing data from backup to new server directory.`);
         }
-        storeLatestVersion(latestVersion);
+        await storeLatestVersion(latestVersion);
         log('INFO', `Successfully installed/updated to version ${latestVersion}`);
         await changeOwnership(SERVER_DIRECTORY, config.minecraftUser, config.minecraftGroup);
         log('INFO', `Changed ownership to ${config.minecraftUser}:${config.minecraftGroup} (if applicable).`);
@@ -731,9 +730,9 @@ export async function checkAndInstall() {
  * Removes a directory recursively. Cross-platform compatible.
  * @param {string} dirPath The path to the directory to remove.
  */
-function removeDir(dirPath) {
-    log('DEBUG', `Using fs.rmSync for removeDir: ${dirPath}`);
-    fs.rmSync(dirPath, { recursive: true, force: true });
+async function removeDir(dirPath) {
+    log('DEBUG', `Using fs.promises.rm for removeDir: ${dirPath}`);
+    await fs.promises.rm(dirPath, { recursive: true, force: true });
 }
 
 
@@ -854,13 +853,37 @@ export async function createWorld(worldName) {
     }
 
     try {
-        fs.mkdirSync(targetWorldPath, { recursive: true });
+        await fs.promises.mkdir(targetWorldPath, { recursive: true });
         log('INFO', `Created new world directory: ${worldName}`);
         return { success: true, message: `World '${worldName}' created successfully.` };
     } catch (error) {
         log('ERROR', `Failed to create world '${worldName}': ${error.message}`);
         return { success: false, message: `Failed to create world: ${error.message}` };
     }
+}
+
+/**
+ * Calculates the size of a directory recursively.
+ * @param {string} dirPath - The path to the directory.
+ * @returns {Promise<number>} Total size in bytes.
+ */
+async function getDirectorySize(dirPath) {
+    let totalSize = 0;
+    try {
+        const files = await fs.promises.readdir(dirPath, { withFileTypes: true });
+        for (const file of files) {
+            const filePath = path.join(dirPath, file.name);
+            if (file.isDirectory()) {
+                totalSize += await getDirectorySize(filePath);
+            } else {
+                const stats = await fs.promises.stat(filePath);
+                totalSize += stats.size;
+            }
+        }
+    } catch (error) {
+        log('WARNING', `Error calculating size for ${dirPath}: ${error.message}`);
+    }
+    return totalSize;
 }
 
 export async function listWorlds() {
@@ -874,11 +897,16 @@ export async function listWorlds() {
         return [];
     }
     const entries = await fs.promises.readdir(worldsPath, { withFileTypes: true });
-    const worldNames = entries
-        .filter(entry => entry.isDirectory())
-        .map(entry => entry.name);
-    log('INFO', `Listed worlds: ${worldNames.join(', ')}`);
-    return worldNames;
+    const worlds = [];
+    for (const entry of entries) {
+        if (entry.isDirectory()) {
+            const worldName = entry.name;
+            const worldSize = await getDirectorySize(path.join(worldsPath, worldName));
+            worlds.push({ name: worldName, size: worldSize });
+        }
+    }
+    log('INFO', `Listed worlds: ${worlds.map(w => w.name).join(', ')}`);
+    return worlds;
 }
 
 export async function deleteWorld(worldName) {
@@ -912,6 +940,52 @@ export async function deleteWorld(worldName) {
     } catch (error) {
         log('ERROR', `Failed to delete world '${worldName}': ${error.message}`);
         return { success: false, message: `Failed to delete world: ${error.message}` };
+    }
+}
+
+/**
+ * Renames a world directory.
+ * @param {string} oldName - The current name of the world.
+ * @param {string} newName - The new name for the world.
+ * @returns {Promise<{success: boolean, message: string}>}
+ */
+export async function renameWorld(oldName, newName) {
+    if (!SERVER_DIRECTORY) {
+        log('ERROR', 'SERVER_DIRECTORY not set. Cannot rename world.');
+        return { success: false, message: 'Server directory not configured.' };
+    }
+    if (!isValidWorldName(oldName) || !isValidWorldName(newName)) {
+        log('ERROR', `Invalid worldName format for renaming: ${oldName} -> ${newName}`);
+        return { success: false, message: 'Invalid world name format.' };
+    }
+
+    try {
+        const properties = await readServerProperties();
+        if (properties['level-name'] === oldName) {
+            log('WARNING', `Attempted to rename active world: ${oldName}`);
+            return { success: false, message: 'Cannot rename the currently active world.' };
+        }
+
+        const worldsPath = path.join(SERVER_DIRECTORY, 'worlds');
+        const oldWorldPath = path.join(worldsPath, oldName);
+        const newWorldPath = path.join(worldsPath, newName);
+
+        if (!fs.existsSync(oldWorldPath)) {
+            log('WARNING', `Source world directory '${oldName}' not found at ${oldWorldPath}.`);
+            return { success: false, message: 'Source world not found.' };
+        }
+
+        if (fs.existsSync(newWorldPath)) {
+            log('WARNING', `Target world directory '${newName}' already exists at ${newWorldPath}.`);
+            return { success: false, message: 'A world with the new name already exists.' };
+        }
+
+        await fs.promises.rename(oldWorldPath, newWorldPath);
+        log('INFO', `Renamed world from '${oldName}' to '${newName}'.`);
+        return { success: true, message: `World renamed to '${newName}' successfully.` };
+    } catch (error) {
+        log('ERROR', `Failed to rename world from '${oldName}' to '${newName}': ${error.message}`);
+        return { success: false, message: `Failed to rename world: ${error.message}` };
     }
 }
 
@@ -981,7 +1055,8 @@ export async function isProcessRunning() {
         const pidFile = path.join(SERVER_DIRECTORY, 'server.pid');
         if (fs.existsSync(pidFile)) {
             try {
-                const pidString = fs.readFileSync(pidFile, 'utf8').trim();
+                const pidContent = await fs.promises.readFile(pidFile, 'utf8');
+                const pidString = pidContent.trim();
                 const pid = parseInt(pidString, 10);
                 if (!isNaN(pid)) {
                     serverPID = pid;
@@ -1007,7 +1082,7 @@ export async function isProcessRunning() {
             const pidFile = path.join(SERVER_DIRECTORY, 'server.pid');
             if (fs.existsSync(pidFile)) {
                 try {
-                    fs.unlinkSync(pidFile);
+                    await fs.promises.unlink(pidFile);
                     log('INFO', `Removed stale PID file: ${pidFile}`);
                 } catch (unlinkError) {
                     log('ERROR', `Failed to remove stale PID file: ${unlinkError.message}`);
@@ -1065,25 +1140,27 @@ export async function readGlobalConfig() {
         serverName: "Default Minecraft Server", serverPortIPv4: 19132, serverPortIPv6: 19133,
         serverDirectory: "./server_data/default_server", tempDirectory: "./server_data/temp/default_server",
         backupDirectory: "./server_data/backup/default_server", worldName: "Bedrock level",
-        autoStart: true, autoUpdateEnabled: false, autoUpdateIntervalMinutes: 60, logLevel: "INFO",
+        autoStart: true, autoUpdateEnabled: false, autoUpdateIntervalMinutes: 60,
+        autoBackupEnabled: false, autoBackupIntervalMinutes: 1440, // Default 1 day
+        logLevel: "INFO",
         minecraftUser: "minecraft", minecraftGroup: "minecraft", serverType: "bedrock"
     };
     setLogLevel(effectiveConfig.logLevel);
     if (fs.existsSync(configPath)) {
         try {
-            const data = fs.readFileSync(configPath, 'utf8');
+            const data = await fs.promises.readFile(configPath, 'utf8');
             const configFromFile = JSON.parse(data);
             effectiveConfig = { ...effectiveConfig, ...configFromFile };
             if (configFromFile.logLevel) setLogLevel(configFromFile.logLevel);
             log('INFO', `Configuration loaded from ${configPath}`);
         } catch (error) {
             log('ERROR', `Error reading/parsing ${configPath}: ${error.message}. Using/creating default config.`);
-            try { fs.writeFileSync(configPath, JSON.stringify(effectiveConfig, null, 2), 'utf8'); log('INFO', `Wrote default configuration to ${configPath}.`); }
+            try { await fs.promises.writeFile(configPath, JSON.stringify(effectiveConfig, null, 2), 'utf8'); log('INFO', `Wrote default configuration to ${configPath}.`); }
             catch (writeError) { log('ERROR', `Failed to write default configuration to ${configPath}: ${writeError.message}`); }
         }
     } else {
         log('WARNING', `${configPath} not found. Creating with default values.`);
-        try { fs.writeFileSync(configPath, JSON.stringify(effectiveConfig, null, 2), 'utf8'); log('INFO', `Created default configuration file at ${configPath}`); }
+        try { await fs.promises.writeFile(configPath, JSON.stringify(effectiveConfig, null, 2), 'utf8'); log('INFO', `Created default configuration file at ${configPath}`); }
         catch (writeError) { log('ERROR', `Failed to create default configuration file at ${configPath}: ${writeError.message}`); }
     }
     config = effectiveConfig;
@@ -1103,16 +1180,18 @@ export async function readGlobalConfig() {
             case '--uiPort': if(valueConsumed) effectiveConfig.uiPort = parseInt(value, 10); break;
             case '--autoStart': effectiveConfig.autoStart = (valueConsumed ? (value === 'true') : true); break;
             case '--autoUpdateEnabled': effectiveConfig.autoUpdateEnabled = (valueConsumed ? (value === 'true') : true); break;
+            case '--autoBackupEnabled': effectiveConfig.autoBackupEnabled = (valueConsumed ? (value === 'true') : true); break;
             case '--logLevel': if(valueConsumed) effectiveConfig.logLevel = value.toUpperCase(); break;
             case '--serverType': if(valueConsumed) effectiveConfig.serverType = value; break;
             default: valueConsumed = false;
         }
         if (valueConsumed) { log('DEBUG', `CLI Override: ${arg} = ${args[i+1]}`); i++; }
-        else if (arg === '--autoStart' || arg === '--autoUpdateEnabled') {
+        else if (arg === '--autoStart' || arg === '--autoUpdateEnabled' || arg === '--autoBackupEnabled') {
              const key = arg.substring(2).replace(/-([a-z])/g, g => g[1].toUpperCase());
              effectiveConfig[key] = true; log('DEBUG', `CLI Override (boolean flag): ${arg} = true`);
         } else if (arg === '--no-autoStart') { effectiveConfig.autoStart = false; log('DEBUG', `CLI Override (boolean flag): ${arg} = false`);
-        } else if (arg === '--no-autoUpdateEnabled') { effectiveConfig.autoUpdateEnabled = false; log('DEBUG', `CLI Override (boolean flag): ${arg} = false`); }
+        } else if (arg === '--no-autoUpdateEnabled') { effectiveConfig.autoUpdateEnabled = false; log('DEBUG', `CLI Override (boolean flag): ${arg} = false`);
+        } else if (arg === '--no-autoBackupEnabled') { effectiveConfig.autoBackupEnabled = false; log('DEBUG', `CLI Override (boolean flag): ${arg} = false`); }
     }
     setLogLevel(effectiveConfig.logLevel || "INFO");
     const resolvePath = (p) => path.isAbsolute(p) ? p : path.resolve(__dirnameESM, p);
@@ -1164,9 +1243,9 @@ export async function writeGlobalConfig(configToWrite) {
  * @param {string} finalPackPath - The absolute target path on the filesystem.
  * @param {Array} [allPackRoots=[]] - (Optional) Other pack roots to exclude if packRootInZip is empty.
  */
-function extractPackEntries(zipEntries, packRootInZip, finalPackPath, allPackRoots = []) {
-    zipEntries.forEach(zipEntry => {
-        if (zipEntry.isDirectory) return;
+async function extractPackEntries(zipEntries, packRootInZip, finalPackPath, allPackRoots = []) {
+    for (const zipEntry of zipEntries) {
+        if (zipEntry.isDirectory) continue;
 
         let isEntryInPack = false;
         let relativePathInPack = '';
@@ -1201,16 +1280,17 @@ function extractPackEntries(zipEntries, packRootInZip, finalPackPath, allPackRoo
             const resolvedFinalPackPath = path.resolve(finalPackPath) + path.sep;
             if (!resolvedTargetFilePath.startsWith(resolvedFinalPackPath)) {
                 log('WARNING', `Zip Slip attempt detected: ${zipEntry.entryName}`);
-                return; // Skip this entry
+                continue; // Skip this entry
             }
 
             const targetFileDir = path.dirname(targetFilePath);
             if (!fs.existsSync(targetFileDir)) {
-                fs.mkdirSync(targetFileDir, { recursive: true });
+                await fs.promises.mkdir(targetFileDir, { recursive: true });
             }
-            fs.writeFileSync(targetFilePath, zipEntry.getData());
+            // getData() is synchronous anyway
+            await fs.promises.writeFile(targetFilePath, zipEntry.getData());
         }
-    });
+    }
 }
 
 /**
@@ -1364,15 +1444,15 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
                 const finalPackPath = path.join(finalPackDirPathBase, packDirNameInFilesystem);
 
                 if (!fs.existsSync(finalPackDirPathBase)) {
-                    fs.mkdirSync(finalPackDirPathBase, { recursive: true });
+                    await fs.promises.mkdir(finalPackDirPathBase, { recursive: true });
                 }
                 if (fs.existsSync(finalPackPath)) {
                     log('INFO', `Removing existing directory for pack '${packName}': ${finalPackPath}`);
-                    fs.rmSync(finalPackPath, { recursive: true, force: true });
+                    await fs.promises.rm(finalPackPath, { recursive: true, force: true });
                 }
-                fs.mkdirSync(finalPackPath, { recursive: true });
+                await fs.promises.mkdir(finalPackPath, { recursive: true });
 
-                extractPackEntries(zipEntries, packRootInZip, finalPackPath, allPackRoots);
+                await extractPackEntries(zipEntries, packRootInZip, finalPackPath, allPackRoots);
                 log('INFO', `Extracted pack '${packName}' to ${finalPackPath}`);
 
                 const updateSuccess = await updateWorldPackJson(worldPath, currentWorldPackJsonFile, packId, packVersion);
@@ -1382,7 +1462,7 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
                 } else {
                     messages.push(`Failed to apply pack '${packName}' to world JSON.`);
                     overallSuccess = false;
-                    fs.rmSync(finalPackPath, { recursive: true, force: true }); // Clean up extracted pack
+                    await fs.promises.rm(finalPackPath, { recursive: true, force: true }); // Clean up extracted pack
                 }
             }
             if (packsProcessedCount === 0 && !overallSuccess) {
@@ -1450,7 +1530,7 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
 
             const finalPackDirPathBase = path.join(SERVER_DIRECTORY, targetPackDirName);
             if (!fs.existsSync(finalPackDirPathBase)) {
-                fs.mkdirSync(finalPackDirPathBase, { recursive: true });
+                await fs.promises.mkdir(finalPackDirPathBase, { recursive: true });
             }
             const packId = manifestData.header.uuid;
             const packVersion = manifestData.header.version;
@@ -1461,16 +1541,16 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
 
             if (fs.existsSync(finalPackPath)) {
                 log('INFO', `Removing existing directory for pack '${packName}': ${finalPackPath}`);
-                fs.rmSync(finalPackPath, { recursive: true, force: true });
+                await fs.promises.rm(finalPackPath, { recursive: true, force: true });
             }
-            fs.mkdirSync(finalPackPath, { recursive: true });
+            await fs.promises.mkdir(finalPackPath, { recursive: true });
 
-            extractPackEntries(zipEntries, packRootInZip, finalPackPath);
+            await extractPackEntries(zipEntries, packRootInZip, finalPackPath);
             log('INFO', `Extracted .mcpack '${packName}' to ${finalPackPath}`);
 
             const updateSuccess = await updateWorldPackJson(worldPath, worldPackJsonFile, packId, packVersion);
             if (!updateSuccess) {
-                fs.rmSync(finalPackPath, { recursive: true, force: true });
+                await fs.promises.rm(finalPackPath, { recursive: true, force: true });
                 return { success: false, message: `Failed to update ${worldPackJsonFile} for .mcpack '${packName}'.` };
             }
             return { success: true, message: `Pack '${packName}' uploaded and applied to ${worldName}. Restart server if needed.` };
@@ -1506,5 +1586,30 @@ export async function startAutoUpdateScheduler() {
         }, intervalMs);
     } else {
         log('INFO', 'Auto-update is disabled or interval is invalid. Scheduler not started.');
+    }
+}
+
+export async function startAutoBackupScheduler() {
+    const currentConfig = await readGlobalConfig();
+    if (autoBackupIntervalId) {
+        clearInterval(autoBackupIntervalId);
+        autoBackupIntervalId = null;
+        log('INFO', 'Cleared existing auto-backup scheduler.');
+    }
+    if (currentConfig.autoBackupEnabled && currentConfig.autoBackupIntervalMinutes > 0) {
+        const intervalMs = currentConfig.autoBackupIntervalMinutes * 60 * 1000;
+        log('INFO', `Starting auto-backup scheduler to run every ${currentConfig.autoBackupIntervalMinutes} minutes.`);
+
+        autoBackupIntervalId = setInterval(async () => {
+            log('INFO', 'Auto-backup initiated by scheduler.');
+            try {
+                await backupServer();
+            } catch (error) {
+                log('ERROR', `Auto-backup failed: ${error.message}`);
+            }
+        }, intervalMs);
+        autoBackupIntervalId.unref();
+    } else {
+        log('INFO', 'Auto-backup is disabled or interval is invalid. Scheduler not started.');
     }
 }

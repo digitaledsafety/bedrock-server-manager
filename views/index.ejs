@@ -77,18 +77,36 @@
         </div>
 
         <div class="section">
-            <h2>Auto-Update Configuration</h2>
-            <form id="autoUpdateConfigForm">
-                <div class="form-group">
-                    <input type="checkbox" id="autoUpdateEnabled" name="autoUpdateEnabled" <%= config.autoUpdateEnabled ? 'checked' : '' %>>
-                    <label for="autoUpdateEnabled">Enable Automatic Updates</label>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div>
+                    <h2>Auto-Update Configuration</h2>
+                    <form id="autoUpdateConfigForm">
+                        <div class="form-group">
+                            <input type="checkbox" id="autoUpdateEnabled" name="autoUpdateEnabled" <%= config.autoUpdateEnabled ? 'checked' : '' %>>
+                            <label for="autoUpdateEnabled">Enable Automatic Updates</label>
+                        </div>
+                        <div class="form-group">
+                            <label for="autoUpdateIntervalMinutes">Update Check Interval (minutes):</label>
+                            <input type="number" id="autoUpdateIntervalMinutes" name="autoUpdateIntervalMinutes" value="<%= config.autoUpdateIntervalMinutes %>" min="1">
+                        </div>
+                        <button type="submit">Save Auto-Update Settings</button>
+                    </form>
                 </div>
-                <div class="form-group">
-                    <label for="autoUpdateIntervalMinutes">Update Check Interval (minutes):</label>
-                    <input type="number" id="autoUpdateIntervalMinutes" name="autoUpdateIntervalMinutes" value="<%= config.autoUpdateIntervalMinutes %>" min="1">
+                <div>
+                    <h2>Auto-Backup Configuration</h2>
+                    <form id="autoBackupConfigForm">
+                        <div class="form-group">
+                            <input type="checkbox" id="autoBackupEnabled" name="autoBackupEnabled" <%= config.autoBackupEnabled ? 'checked' : '' %>>
+                            <label for="autoBackupEnabled">Enable Automatic Backups</label>
+                        </div>
+                        <div class="form-group">
+                            <label for="autoBackupIntervalMinutes">Backup Interval (minutes):</label>
+                            <input type="number" id="autoBackupIntervalMinutes" name="autoBackupIntervalMinutes" value="<%= config.autoBackupIntervalMinutes %>" min="1">
+                        </div>
+                        <button type="submit">Save Auto-Backup Settings</button>
+                    </form>
                 </div>
-                <button type="submit">Save Auto-Update Settings</button>
-            </form>
+            </div>
         </div>
 
         <div class="section">
@@ -103,16 +121,16 @@
             <div class="world-list">
                 <% if (worlds && worlds.length > 0) { %>
                     <% worlds.forEach(world => { %>
-                        <div class="world-item <%= properties['level-name'] === world ? 'active' : '' %>" data-world-name="<%= world %>">
-                            <span><%= world %></span>
-                            <button class="activate-world-button" data-world-name="<%= world %>">
+                        <div class="world-item <%= properties['level-name'] === world.name ? 'active' : '' %>" data-world-name="<%= world.name %>">
+                            <span><%= world.name %> (<%= (world.size / (1024 * 1024)).toFixed(2) %> MB)</span>
+                            <button class="activate-world-button" data-world-name="<%= world.name %>">
                                 Activate
                             </button>
-                            <button class="backup-world-button bg-green-600 hover:bg-green-700" data-world-name="<%= world %>">
+                            <button class="backup-world-button bg-green-600 hover:bg-green-700" data-world-name="<%= world.name %>">
                                 Backup
                             </button>
-                            <% if (properties['level-name'] !== world) { %>
-                                <button class="delete-world-button bg-red-500 hover:bg-red-700" data-world-name="<%= world %>">
+                            <% if (properties['level-name'] !== world.name) { %>
+                                <button class="delete-world-button bg-red-500 hover:bg-red-700" data-world-name="<%= world.name %>">
                                     Delete
                                 </button>
                             <% } %>
@@ -146,7 +164,7 @@
                     <select id="packWorldName" name="worldName">
                         <% if (worlds && worlds.length > 0) { %>
                             <% worlds.forEach(world => { %>
-                                <option value="<%= world %>" <%= properties['level-name'] === world ? 'selected' : '' %>><%= world %></option>
+                                <option value="<%= world.name %>" <%= properties['level-name'] === world.name ? 'selected' : '' %>><%= world.name %></option>
                             <% }); %>
                         <% } else { %>
                             <option value="" disabled>No worlds available. Start server or check configuration.</option>
