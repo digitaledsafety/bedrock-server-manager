@@ -194,5 +194,45 @@ export const propertiesMetadata = {
         category: 'security',
         description: 'Disables skins customized outside of the store assets.',
         type: 'boolean'
+    },
+    'emit-server-telemetry': {
+        label: 'Emit Server Telemetry',
+        category: 'advanced',
+        description: 'If true, server telemetry data will be sent to Mojang.',
+        type: 'boolean'
+    },
+    'compression-threshold': {
+        label: 'Compression Threshold',
+        category: 'performance',
+        description: 'Determines the minimum size of a packet before it is compressed.',
+        type: 'number',
+        min: 0
+    },
+    'server-authoritative-block-breaking': {
+        label: 'Authoritative Block Breaking',
+        category: 'security',
+        description: 'Determines whether the server should be authoritative over block breaking.',
+        type: 'boolean'
+    },
+    'player-movement-score-threshold': {
+        label: 'Movement Score Threshold',
+        category: 'security',
+        description: 'The number of anomalous movement packets required before movement correction is triggered.',
+        type: 'number',
+        min: 1
+    },
+    'player-movement-distance-threshold': {
+        label: 'Movement Distance Threshold',
+        category: 'security',
+        description: 'The amount of movement discrepancy allowed before movement correction is triggered.',
+        type: 'number',
+        min: 0
+    },
+    'player-movement-duration-threshold-in-ms': {
+        label: 'Movement Duration Threshold (ms)',
+        category: 'security',
+        description: 'The duration of time that anomalous movement must be detected before movement correction is triggered.',
+        type: 'number',
+        min: 0
     }
 };
