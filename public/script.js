@@ -25,6 +25,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const restartNeededNote = document.getElementById('restartNeededNote');
 
+    // Backup management elements
+    const backupListContainer = document.getElementById('backupList');
+
     // Pack Management specific elements
     const uploadPackForm = document.getElementById('uploadPackForm');
     const packFileInput = document.getElementById('packFile');
@@ -606,6 +609,64 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function loadBackups() {
+        if (!backupListContainer) return;
+        try {
+            const response = await fetch('/api/backups');
+            const data = await response.json();
+            if (data.success) {
+                backupListContainer.innerHTML = '';
+                if (data.backups && data.backups.length > 0) {
+                    data.backups.forEach(backup => {
+                        const backupItem = document.createElement('div');
+                        backupItem.className = 'world-item';
+                        backupItem.innerHTML = `
+                            <div>
+                                <strong>${backup.name}</strong><br>
+                                <small>${new Date(backup.date).toLocaleString()}</small>
+                            </div>
+                            <button class="delete-backup-button bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-folder-name="${backup.name}">
+                                Delete
+                            </button>
+                        `;
+                        backupListContainer.appendChild(backupItem);
+                    });
+                    addDeleteBackupButtonListeners();
+                } else {
+                    backupListContainer.innerHTML = '<p class="text-gray-600">No manual backups found.</p>';
+                }
+            }
+        } catch (error) {
+            console.error('Error loading backups:', error);
+        }
+    }
+
+    function addDeleteBackupButtonListeners() {
+        document.querySelectorAll('.delete-backup-button').forEach(button => {
+            button.addEventListener('click', handleDeleteBackupClick);
+        });
+    }
+
+    async function handleDeleteBackupClick(event) {
+        const folderName = event.currentTarget.dataset.folderName;
+        if (!confirm(`Are you sure you want to delete the backup '${folderName}'?`)) return;
+
+        try {
+            showMessage(`Deleting backup '${folderName}'...`);
+            const response = await fetch(`/api/backups/${folderName}`, { method: 'DELETE' });
+            const data = await response.json();
+            if (data.success) {
+                showMessage(data.message, 'success');
+                loadBackups();
+            } else {
+                showMessage(data.message || 'Failed to delete backup.', 'error');
+            }
+        } catch (error) {
+            console.error('Error deleting backup:', error);
+            showMessage('Failed to delete backup.', 'error');
+        }
+    }
+
 
     // --- Event Listeners ---
     startButton.addEventListener('click', () => sendCommand('start'));
@@ -752,17 +813,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initial load
     fetchServerStatus(); // This will now also set initial button states
     loadServerProperties();
-    //loadWorlds();
+    loadWorlds();
+    loadBackups();
     loadAutoUpdateConfig(); // New: Load auto-update config on page load
-    addActivateButtonListeners();
-    addBackupButtonListeners();
-    addDeleteButtonListeners();
     fetchLogs();
     fetchSystemInfo();
 
     // Refresh status and worlds periodically
     setInterval(fetchServerStatus, 10000); // Every 10 seconds
     setInterval(loadWorlds, 30000); // Every 30 seconds
+    setInterval(loadBackups, 60000); // Every 60 seconds
     setInterval(fetchLogs, 5000); // Every 5 seconds
     setInterval(fetchSystemInfo, 30000); // Every 30 seconds
 

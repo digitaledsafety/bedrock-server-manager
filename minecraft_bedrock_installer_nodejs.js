@@ -248,20 +248,47 @@ export function downloadFile(downloadUrl, downloadPath) {
     });
 }
 
+/**
+ * Extracts a single entry from a zip file to a target path, with Zip Slip protection.
+ * @param {object} zipEntry - The AdmZip entry object.
+ * @param {string} extractPath - The base extraction path.
+ */
+function extractZipEntry(zipEntry, extractPath) {
+    if (zipEntry.isDirectory) return;
+
+    const targetPath = path.join(extractPath, zipEntry.entryName);
+    const resolvedTargetPath = path.resolve(targetPath);
+    const resolvedExtractPath = path.resolve(extractPath) + path.sep;
+
+    if (!resolvedTargetPath.startsWith(resolvedExtractPath)) {
+        log('WARNING', `Zip Slip attempt detected for entry: ${zipEntry.entryName}`);
+        return;
+    }
+
+    const targetDir = path.dirname(targetPath);
+    if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+    }
+    fs.writeFileSync(targetPath, zipEntry.getData());
+}
+
 export function extractFiles(zipPath, extractPath) {
     return new Promise((resolve, reject) => {
         try {
-            log('INFO', `Using adm-zip for extraction for ${zipPath} to ${extractPath}.`);
+            log('INFO', `Extracting ${zipPath} to ${extractPath} with Zip Slip protection.`);
             const zip = new AdmZip(zipPath);
-            zip.extractAllTo(extractPath, true); // true for overwrite
+            const zipEntries = zip.getEntries();
+
+            zipEntries.forEach(entry => {
+                extractZipEntry(entry, extractPath);
+            });
+
             log('INFO', `Extraction completed successfully.`);
 
-            // 2. Set permissions for specific executable files (e.g., a script named 'script.sh')
+            // Set permissions for the server executable
             const executableFilePath = path.join(extractPath, getServerExeName());
-
-            if (os.platform() !== 'win32') {
+            if (os.platform() !== 'win32' && fs.existsSync(executableFilePath)) {
                 try {
-                    // Set permissions to 755 (owner can read/write/execute, others can read/execute)
                     fs.chmodSync(executableFilePath, 0o755);
                     log('INFO', `Permissions set to 755 for ${executableFilePath}`);
                 } catch (err) {
@@ -389,7 +416,8 @@ export async function backupServer() {
         log('INFO', `Server directory not found or not set. Skipping backup.`);
         return null;
     }
-    const backupDir = path.join(BACKUP_DIRECTORY, new Date().toISOString().replace(/:/g, '-').replace(/\./g, '_'));
+    const backupDirName = new Date().toISOString().replace(/:/g, '-').replace(/\./g, '_');
+    const backupDir = path.join(BACKUP_DIRECTORY, backupDirName);
     fs.mkdirSync(backupDir, { recursive: true });
     log('INFO', `Creating backup in ${backupDir}`);
     try {
@@ -405,6 +433,69 @@ export async function backupServer() {
             fs.rmSync(backupDir, { recursive: true, force: true });
         }
         throw error;
+    }
+}
+
+/**
+ * Lists all manual backups in the backup directory.
+ * @returns {Promise<Array<{name: string, date: string}>>}
+ */
+export async function listBackups() {
+    if (!BACKUP_DIRECTORY || !fs.existsSync(BACKUP_DIRECTORY)) {
+        return [];
+    }
+    try {
+        const entries = await fs.promises.readdir(BACKUP_DIRECTORY, { withFileTypes: true });
+        const backups = [];
+        for (const entry of entries) {
+            if (entry.isDirectory()) {
+                const stats = await fs.promises.stat(path.join(BACKUP_DIRECTORY, entry.name));
+                backups.push({
+                    name: entry.name,
+                    date: stats.mtime.toISOString()
+                });
+            }
+        }
+        // Sort by date, newest first
+        return backups.sort((a, b) => new Date(b.date) - new Date(a.date));
+    } catch (error) {
+        log('ERROR', `Error listing backups: ${error.message}`);
+        return [];
+    }
+}
+
+/**
+ * Deletes a specific backup folder.
+ * @param {string} folderName - The name of the backup folder to delete.
+ * @returns {Promise<{success: boolean, message: string}>}
+ */
+export async function deleteBackup(folderName) {
+    if (!BACKUP_DIRECTORY) {
+        return { success: false, message: 'Backup directory not configured.' };
+    }
+    // Validation: ensure folderName is just a name and doesn't contain path separators
+    if (folderName.includes('/') || folderName.includes('\\') || folderName === '..') {
+        return { success: false, message: 'Invalid backup folder name.' };
+    }
+    const targetPath = path.join(BACKUP_DIRECTORY, folderName);
+    // Security check: ensure targetPath is within BACKUP_DIRECTORY
+    const resolvedTargetPath = path.resolve(targetPath);
+    const resolvedBackupDir = path.resolve(BACKUP_DIRECTORY);
+    if (!resolvedTargetPath.startsWith(resolvedBackupDir)) {
+        log('ERROR', `Attempted to delete backup outside of backup directory: ${folderName}`);
+        return { success: false, message: 'Invalid backup folder path.' };
+    }
+
+    try {
+        if (!fs.existsSync(targetPath)) {
+            return { success: false, message: 'Backup folder not found.' };
+        }
+        fs.rmSync(targetPath, { recursive: true, force: true });
+        log('INFO', `Deleted backup folder: ${folderName}`);
+        return { success: true, message: `Backup '${folderName}' deleted successfully.` };
+    } catch (error) {
+        log('ERROR', `Failed to delete backup ${folderName}: ${error.message}`);
+        return { success: false, message: `Failed to delete backup: ${error.message}` };
     }
 }
 

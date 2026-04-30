@@ -33,11 +33,11 @@ const storage = multer.diskStorage({
 const upload = multer({
     storage: storage,
     fileFilter: function (req, file, cb) {
-        // Validation for .mcpack and .mcaddon files
-        const allowedExtensions = ['.mcpack', '.mcaddon'];
+        // Validation for .mcpack, .mcaddon and .zip files
+        const allowedExtensions = ['.mcpack', '.mcaddon', '.zip'];
         const fileExtension = path.extname(file.originalname).toLowerCase();
         if (!allowedExtensions.includes(fileExtension)) {
-            return cb(new Error('Only .mcpack and .mcaddon files are allowed!'), false);
+            return cb(new Error('Only .mcpack, .mcaddon and .zip files are allowed!'), false);
         }
         cb(null, true);
     },
@@ -215,6 +215,16 @@ app.post('/api/command', async (req, res) => {
     }
 });
 
+app.get('/api/backups', async (req, res) => {
+    try {
+        const backups = await backend.listBackups();
+        res.json({ success: true, backups });
+    } catch (error) {
+        backend.log('ERROR', `Failed to list backups: ${error.message}`);
+        res.status(500).json({ error: 'Failed to list backups' });
+    }
+});
+
 app.post('/api/backup', async (req, res) => {
     try {
         const backupDir = await backend.backupServer();
@@ -226,6 +236,21 @@ app.post('/api/backup', async (req, res) => {
     } catch (error) {
         backend.log('ERROR', `Failed to create manual backup: ${error.message}`);
         res.status(500).json({ success: false, message: 'Failed to create manual backup due to server error.' });
+    }
+});
+
+app.delete('/api/backups/:folderName', async (req, res) => {
+    try {
+        const { folderName } = req.params;
+        const result = await backend.deleteBackup(folderName);
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        backend.log('ERROR', `Failed to delete backup: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Failed to delete backup due to server error.' });
     }
 });
 
