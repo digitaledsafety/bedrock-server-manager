@@ -1,0 +1,30 @@
+{
+  "name": "Bedrock Server Manager",
+  "short_name": "BSM",
+  "description": "Web-based interface to manage a Minecraft Bedrock Dedicated Server",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#373737",
+  "theme_color": "#555555",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "96x96",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon.ico",
+      "sizes": "16x16 32x32",
+      "type": "image/x-icon"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/mbsm-screen.PNG",
+      "sizes": "1019x840",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Bedrock Server Manager Desktop View"
+    }
+  ]
+}
