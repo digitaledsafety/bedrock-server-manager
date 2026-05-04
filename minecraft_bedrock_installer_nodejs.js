@@ -1160,46 +1160,47 @@ export async function writeGlobalConfig(configToWrite) {
 /**
  * Extracts specific entries from a zip file to a target directory, with Zip Slip protection.
  * @param {Array} zipEntries - The entries from the AdmZip object.
- * @param {string} packRootInZip - The root directory of the pack within the zip file.
- * @param {string} finalPackPath - The absolute target path on the filesystem.
- * @param {Array} [allPackRoots=[]] - (Optional) Other pack roots to exclude if packRootInZip is empty.
+ * @param {string} rootInZip - The root directory within the zip file to extract from.
+ * @param {string} targetPath - The absolute target path on the filesystem.
+ * @param {Array} [excludeRoots=[]] - (Optional) Other roots to exclude if rootInZip is empty.
  */
-function extractPackEntries(zipEntries, packRootInZip, finalPackPath, allPackRoots = []) {
+function extractZipSubdir(zipEntries, rootInZip, targetPath, excludeRoots = []) {
+    const normalizedRoot = rootInZip === '.' ? '' : rootInZip;
+    const resolvedTargetPath = path.resolve(targetPath) + path.sep;
+
     zipEntries.forEach(zipEntry => {
         if (zipEntry.isDirectory) return;
 
-        let isEntryInPack = false;
-        let relativePathInPack = '';
+        let shouldExtract = false;
+        let relativePath = '';
 
-        if (packRootInZip === '') {
-            // If this pack is at the root, it owns all files EXCEPT those that belong to other packs
-            // (which are in subdirectories identified as pack roots).
+        if (normalizedRoot === '') {
+            // If we're at the root, we own all files EXCEPT those that belong to excluded subdirectories
             const entryName = zipEntry.entryName;
-            const belongsToOtherPack = allPackRoots.some(otherRoot => {
-                if (otherRoot === '') return false; // Don't compare with self
+            const isExcluded = excludeRoots.some(otherRoot => {
+                if (otherRoot === '') return false;
                 return entryName.startsWith(otherRoot + '/');
             });
 
-            if (!belongsToOtherPack) {
-                isEntryInPack = true;
-                relativePathInPack = entryName;
+            if (!isExcluded) {
+                shouldExtract = true;
+                relativePath = entryName;
             }
         } else {
-            // If this pack is in a subdirectory, it owns everything under that prefix
-            const prefix = packRootInZip + '/';
+            // If we're in a subdirectory, we own everything under that prefix
+            const prefix = normalizedRoot + '/';
             if (zipEntry.entryName.startsWith(prefix)) {
-                isEntryInPack = true;
-                relativePathInPack = path.relative(packRootInZip, zipEntry.entryName);
+                shouldExtract = true;
+                relativePath = path.relative(normalizedRoot, zipEntry.entryName);
             }
         }
 
-        if (isEntryInPack && relativePathInPack) {
-            const targetFilePath = path.join(finalPackPath, relativePathInPack);
+        if (shouldExtract && relativePath) {
+            const targetFilePath = path.join(targetPath, relativePath);
 
             // Security: Check for Zip Slip vulnerability
             const resolvedTargetFilePath = path.resolve(targetFilePath);
-            const resolvedFinalPackPath = path.resolve(finalPackPath) + path.sep;
-            if (!resolvedTargetFilePath.startsWith(resolvedFinalPackPath)) {
+            if (!resolvedTargetFilePath.startsWith(resolvedTargetPath)) {
                 log('WARNING', `Zip Slip attempt detected: ${zipEntry.entryName}`);
                 return; // Skip this entry
             }
@@ -1282,6 +1283,81 @@ async function updateWorldPackJson(worldPath, packTypeJsonFile, packId, packVers
  * @param {string} worldName - Name of the world to apply the pack(s) to.
  * @returns {Promise<{success: boolean, message: string}>} Result object.
  */
+/**
+ * Uploads and extracts a world from a .mcworld or .zip file.
+ * @param {string} tempFilePath - Path to the temporary uploaded file.
+ * @param {string} originalFilename - The original name of the uploaded file.
+ * @returns {Promise<{success: boolean, message: string, worldName?: string}>} Result object.
+ */
+export async function uploadWorld(tempFilePath, originalFilename) {
+    if (!SERVER_DIRECTORY) {
+        return { success: false, message: 'Server directory not configured.' };
+    }
+
+    try {
+        const zip = new AdmZip(tempFilePath);
+        const zipEntries = zip.getEntries();
+
+        // 1. Find the world root by looking for level.dat
+        const levelDatEntry = zipEntries.find(entry => entry.entryName.endsWith('level.dat') && !entry.isDirectory);
+        if (!levelDatEntry) {
+            return { success: false, message: 'Invalid world file: level.dat not found.' };
+        }
+
+        const worldRootInZip = path.dirname(levelDatEntry.entryName);
+        const normalizedWorldRoot = worldRootInZip === '.' ? '' : worldRootInZip;
+
+        // 2. Determine world name
+        let worldName = '';
+        const levelnameEntry = zipEntries.find(entry => {
+            const entryDir = path.dirname(entry.entryName);
+            const normalizedEntryDir = entryDir === '.' ? '' : entryDir;
+            return normalizedEntryDir === normalizedWorldRoot && entry.entryName.endsWith('levelname.txt');
+        });
+
+        if (levelnameEntry) {
+            worldName = zip.readAsText(levelnameEntry).trim();
+            log('INFO', `Found world name in levelname.txt: ${worldName}`);
+        }
+
+        if (!worldName) {
+            worldName = path.parse(originalFilename).name;
+            log('INFO', `levelname.txt not found, using filename as world name: ${worldName}`);
+        }
+
+        // 3. Sanitize world name for filesystem
+        let sanitizedWorldName = worldName.replace(/[^a-zA-Z0-9_ -]/g, '_').trim();
+        if (!sanitizedWorldName) sanitizedWorldName = 'Uploaded_World';
+
+        // 4. Handle name collisions
+        const worldsPath = path.join(SERVER_DIRECTORY, 'worlds');
+        if (!fs.existsSync(worldsPath)) {
+            fs.mkdirSync(worldsPath, { recursive: true });
+        }
+
+        let finalWorldName = sanitizedWorldName;
+        let counter = 1;
+        while (fs.existsSync(path.join(worldsPath, finalWorldName))) {
+            finalWorldName = `${sanitizedWorldName} (${counter})`;
+            counter++;
+        }
+
+        const targetWorldPath = path.join(worldsPath, finalWorldName);
+        fs.mkdirSync(targetWorldPath, { recursive: true });
+
+        // 5. Extract files from world root
+        log('INFO', `Extracting world '${worldName}' to ${targetWorldPath}`);
+        extractZipSubdir(zipEntries, normalizedWorldRoot, targetWorldPath);
+
+        log('INFO', `Successfully uploaded world: ${finalWorldName}`);
+        return { success: true, message: `World '${finalWorldName}' uploaded successfully.`, worldName: finalWorldName };
+
+    } catch (error) {
+        log('ERROR', `Error uploading world: ${error.message} ${error.stack}`);
+        return { success: false, message: `Error processing world file: ${error.message}` };
+    }
+}
+
 export async function uploadPack(tempFilePath, originalFilename, requestedPackType, worldName) {
     if (!SERVER_DIRECTORY) {
         return { success: false, message: 'Server directory not configured.' };
@@ -1372,7 +1448,7 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
                 }
                 fs.mkdirSync(finalPackPath, { recursive: true });
 
-                extractPackEntries(zipEntries, packRootInZip, finalPackPath, allPackRoots);
+                extractZipSubdir(zipEntries, packRootInZip, finalPackPath, allPackRoots);
                 log('INFO', `Extracted pack '${packName}' to ${finalPackPath}`);
 
                 const updateSuccess = await updateWorldPackJson(worldPath, currentWorldPackJsonFile, packId, packVersion);
@@ -1465,7 +1541,7 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
             }
             fs.mkdirSync(finalPackPath, { recursive: true });
 
-            extractPackEntries(zipEntries, packRootInZip, finalPackPath);
+            extractZipSubdir(zipEntries, packRootInZip, finalPackPath);
             log('INFO', `Extracted .mcpack '${packName}' to ${finalPackPath}`);
 
             const updateSuccess = await updateWorldPackJson(worldPath, worldPackJsonFile, packId, packVersion);
