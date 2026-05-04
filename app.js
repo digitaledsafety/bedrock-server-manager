@@ -47,7 +47,7 @@ const createMulterUpload = (allowedExtensions) => {
 };
 
 const upload = createMulterUpload(['.mcpack', '.mcaddon']);
-const worldUpload = createMulterUpload(['.mcworld', '.zip']);
+const worldUpload = createMulterUpload(['.mcworld']);
 
 
 // Middleware

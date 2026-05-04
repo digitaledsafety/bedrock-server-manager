@@ -477,7 +477,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function handleUploadWorld(event) {
         event.preventDefault();
         if (!worldFileInput.files || worldFileInput.files.length === 0) {
-            showMessage('Please select a .mcworld or .zip file to upload.', 'error');
+            showMessage('Please select a .mcworld file to upload.', 'error');
             return;
         }
 
