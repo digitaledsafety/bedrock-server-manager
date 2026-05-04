@@ -30,21 +30,24 @@ const storage = multer.diskStorage({
         cb(null, Date.now() + '-' + file.originalname.replace(/[^a-zA-Z0-9._-]/g, ''));
     }
 });
-const upload = multer({
-    storage: storage,
-    fileFilter: function (req, file, cb) {
-        // Validation for .mcpack and .mcaddon files
-        const allowedExtensions = ['.mcpack', '.mcaddon'];
-        const fileExtension = path.extname(file.originalname).toLowerCase();
-        if (!allowedExtensions.includes(fileExtension)) {
-            return cb(new Error('Only .mcpack and .mcaddon files are allowed!'), false);
+const createMulterUpload = (allowedExtensions) => {
+    return multer({
+        storage: storage,
+        fileFilter: function (req, file, cb) {
+            const fileExtension = path.extname(file.originalname).toLowerCase();
+            if (!allowedExtensions.includes(fileExtension)) {
+                return cb(new Error(`Only ${allowedExtensions.join(', ')} files are allowed!`), false);
+            }
+            cb(null, true);
+        },
+        limits: {
+            fileSize: 100 * 1024 * 1024 // 100 MB limit
         }
-        cb(null, true);
-    },
-    limits: {
-        fileSize: 100 * 1024 * 1024 // 100 MB limit for pack files
-    }
-});
+    });
+};
+
+const upload = createMulterUpload(['.mcpack', '.mcaddon']);
+const worldUpload = createMulterUpload(['.mcworld']);
 
 
 // Middleware
@@ -458,6 +461,47 @@ app.post('/api/config', async (req, res) => {
         backend.log('ERROR', `Error setting global config: ${error.message}`);
         res.status(500).json({ error: 'Failed to set global config' });
     }
+});
+
+// --- World Upload API ---
+app.post('/api/upload-world', worldUpload.single('worldFile'), async (req, res) => {
+    const worldFile = req.file;
+
+    if (!worldFile) {
+        return res.status(400).json({ success: false, message: 'No world file uploaded.' });
+    }
+
+    const cleanup = () => {
+        if (fs.existsSync(worldFile.path)) {
+            fs.promises.unlink(worldFile.path).catch(err => {
+                backend.log('WARNING', `Failed to delete upload ${worldFile.path}: ${err.message}`);
+            });
+        }
+    };
+
+    try {
+        backend.log('INFO', `Processing world upload: File=${worldFile.path}, OriginalName=${worldFile.originalname}`);
+        const result = await backend.uploadWorld(worldFile.path, worldFile.originalname);
+        if (result.success) {
+            res.json({ success: true, message: result.message, worldName: result.worldName });
+        } else {
+            res.status(400).json({ success: false, message: result.message });
+        }
+    } catch (error) {
+        backend.log('ERROR', `Error uploading world: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Failed to upload world due to server error.' });
+    } finally {
+        cleanup();
+    }
+}, (error, req, res, next) => {
+    if (error instanceof multer.MulterError) {
+        backend.log('ERROR', `Multer error during world upload: ${error.message}`);
+        return res.status(400).json({ success: false, message: `Upload error: ${error.message}` });
+    } else if (error) {
+        backend.log('ERROR', `Generic error during world upload (fileFilter): ${error.message}`);
+        return res.status(400).json({ success: false, message: error.message });
+    }
+    next();
 });
 
 // --- Pack Management API ---

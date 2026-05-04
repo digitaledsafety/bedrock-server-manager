@@ -22,6 +22,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // World Management specific elements
     const createWorldForm = document.getElementById('createWorldForm');
     const newWorldNameInput = document.getElementById('newWorldName');
+    const uploadWorldForm = document.getElementById('uploadWorldForm');
+    const worldFileInput = document.getElementById('worldFile');
+    const uploadWorldButton = document.getElementById('uploadWorldButton');
 
     const restartNeededNote = document.getElementById('restartNeededNote');
 
@@ -471,6 +474,41 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function handleUploadWorld(event) {
+        event.preventDefault();
+        if (!worldFileInput.files || worldFileInput.files.length === 0) {
+            showMessage('Please select a .mcworld file to upload.', 'error');
+            return;
+        }
+
+        const worldFile = worldFileInput.files[0];
+        const formData = new FormData();
+        formData.append('worldFile', worldFile);
+
+        uploadWorldButton.disabled = true;
+        showMessage('Uploading world...', 'success');
+
+        try {
+            const response = await fetch('/api/upload-world', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+            if (response.ok && data.success) {
+                showMessage(data.message || 'World uploaded successfully!', 'success');
+                uploadWorldForm.reset();
+                loadWorlds(); // Refresh world list
+            } else {
+                showMessage(data.message || 'Failed to upload world.', 'error');
+            }
+        } catch (error) {
+            console.error('Error uploading world:', error);
+            showMessage('An error occurred while uploading the world.', 'error');
+        } finally {
+            uploadWorldButton.disabled = false;
+        }
+    }
+
     async function handleCreateWorld(event) {
         event.preventDefault();
         const worldName = newWorldNameInput.value.trim();
@@ -683,6 +721,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (clearLogsButton) clearLogsButton.addEventListener('click', handleClearLogs);
     if (createWorldForm) createWorldForm.addEventListener('submit', handleCreateWorld);
+    if (uploadWorldForm) uploadWorldForm.addEventListener('submit', handleUploadWorld);
     if (downloadLogsButton) {
         downloadLogsButton.addEventListener('click', () => {
             window.location.href = '/api/logs/download';
