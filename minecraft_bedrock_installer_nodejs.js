@@ -25,6 +25,7 @@ let TEMP_DIRECTORY;
 let BACKUP_DIRECTORY;
 let serverPID = null;
 let activeServerProcess = null;
+let lastPlayerInfo = { count: 0, max: 0, list: [], lastUpdated: 0 };
 
 const LAST_VERSION_FILE = 'last_version.txt';
 const WEBHOOK_URL = process.env.MC_UPDATE_WEBHOOK;
@@ -408,6 +409,60 @@ export async function backupServer() {
     }
 }
 
+/**
+ * Lists all backups in the backup directory.
+ * @returns {Promise<Array<string>>} A list of backup directory names.
+ */
+export async function listBackups() {
+    if (!BACKUP_DIRECTORY || !fs.existsSync(BACKUP_DIRECTORY)) {
+        log('WARNING', 'BACKUP_DIRECTORY not set or does not exist. Returning empty list.');
+        return [];
+    }
+    try {
+        const entries = await fs.promises.readdir(BACKUP_DIRECTORY, { withFileTypes: true });
+        const backups = entries
+            .filter(entry => entry.isDirectory())
+            .map(entry => entry.name)
+            .sort((a, b) => b.localeCompare(a)); // Sort descending (newest first)
+        log('INFO', `Listed ${backups.length} backups.`);
+        return backups;
+    } catch (error) {
+        log('ERROR', `Failed to list backups: ${error.message}`);
+        return [];
+    }
+}
+
+/**
+ * Deletes a specific backup directory.
+ * @param {string} backupName - The name of the backup to delete.
+ * @returns {Promise<{success: boolean, message: string}>}
+ */
+export async function deleteBackup(backupName) {
+    if (!BACKUP_DIRECTORY) {
+        return { success: false, message: 'Backup directory not configured.' };
+    }
+    // Validation: backupName should only contain safe characters and not be a path traversal
+    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+        log('ERROR', `Invalid backup name for deletion: ${backupName}`);
+        return { success: false, message: 'Invalid backup name.' };
+    }
+
+    const targetPath = path.join(BACKUP_DIRECTORY, backupName);
+    if (!fs.existsSync(targetPath)) {
+        log('WARNING', `Backup not found: ${targetPath}`);
+        return { success: false, message: 'Backup not found.' };
+    }
+
+    try {
+        await fs.promises.rm(targetPath, { recursive: true, force: true });
+        log('INFO', `Deleted backup: ${backupName}`);
+        return { success: true, message: `Backup '${backupName}' deleted successfully.` };
+    } catch (error) {
+        log('ERROR', `Failed to delete backup '${backupName}': ${error.message}`);
+        return { success: false, message: `Failed to delete backup: ${error.message}` };
+    }
+}
+
 export async function copyDir(src, dest) {
     log('DEBUG', `Using fs.cpSync for copyDir from ${src} to ${dest}`);
     fs.cpSync(src, dest, { recursive: true });
@@ -472,8 +527,16 @@ export async function stopServer() {
     const pidToKill = serverPID;
     try {
         log('INFO', `Attempting to stop Minecraft server process with PID: ${pidToKill}.`);
-        process.kill(pidToKill, 'SIGTERM');
-        log('INFO', `SIGTERM signal sent to PID: ${pidToKill}.`);
+
+        // Attempt graceful stop via command first
+        if (activeServerProcess && activeServerProcess.stdin && activeServerProcess.stdin.writable) {
+            log('INFO', 'Sending "stop" command to server for graceful shutdown.');
+            activeServerProcess.stdin.write('stop\n');
+        } else {
+            log('INFO', 'Server stdin not available for "stop" command. Falling back to signals.');
+            process.kill(pidToKill, 'SIGTERM');
+            log('INFO', `SIGTERM signal sent to PID: ${pidToKill}.`);
+        }
 
         // Wait for process to exit
         let isRunning = true;
@@ -612,6 +675,34 @@ export async function startServer() {
             const serverLogStream = fs.createWriteStream(serverLogPath, { flags: 'a' });
 
             serverProcess.stdout.on('data', (data) => {
+                const output = data.toString();
+
+                // Parse player list: "There are 1/20 players online:"
+                const listMatch = output.match(/There are (\d+)\/(\d+) players online/);
+                if (listMatch) {
+                    lastPlayerInfo.count = parseInt(listMatch[1], 10);
+                    lastPlayerInfo.max = parseInt(listMatch[2], 10);
+                    lastPlayerInfo.lastUpdated = Date.now();
+
+                    // Look for players after the colon on the same line
+                    const colonIndex = output.indexOf('online:');
+                    if (colonIndex !== -1) {
+                        const playersPart = output.substring(colonIndex + 7).trim();
+                        if (playersPart) {
+                            lastPlayerInfo.list = playersPart.split(',').map(p => p.trim()).filter(p => p);
+                        } else {
+                            lastPlayerInfo.list = [];
+                        }
+                    }
+                } else if (lastPlayerInfo.count > 0 && lastPlayerInfo.list.length === 0 && (Date.now() - lastPlayerInfo.lastUpdated < 1000)) {
+                    // If we just got the "There are" line and no players yet, this might be the player list line
+                    const infoIndex = output.indexOf('] ');
+                    const content = infoIndex !== -1 ? output.substring(infoIndex + 2).trim() : output.trim();
+                    if (content && !content.includes('There are') && !content.includes('INFO') && !content.includes('WARN')) {
+                         lastPlayerInfo.list = content.split(',').map(p => p.trim()).filter(p => p);
+                    }
+                }
+
                 serverLogStream.write(data);
                 process.stdout.write(data); // Also log to manager's stdout
             });
@@ -637,6 +728,7 @@ export async function startServer() {
             log('INFO', `Server process PID ${serverProcess.pid} exited with code ${code} and signal ${signal}`);
             if (serverPID === serverProcess.pid) serverPID = null;
             if (activeServerProcess === serverProcess) activeServerProcess = null;
+            lastPlayerInfo = { count: 0, max: 0, list: [], lastUpdated: 0 };
         });
     } catch (error) {
         log('ERROR', `Error starting server: ${error.message}`);
@@ -953,6 +1045,29 @@ export async function restartServer() {
     await new Promise(resolve => setTimeout(resolve, 3000));
     await startServer();
     log('INFO', 'Minecraft server restart command executed.');
+}
+
+/**
+ * Gets information about currently online players.
+ * @returns {Promise<{success: boolean, count: number, max: number, players: Array<string>}>}
+ */
+export async function getPlayers() {
+    if (!await isProcessRunning()) {
+        return { success: true, count: 0, max: 0, players: [] };
+    }
+
+    // We don't want to spam 'list' command
+    const now = Date.now();
+    if (now - lastPlayerInfo.lastUpdated > 10000) { // Update every 10 seconds at most
+        sendServerCommand('list');
+    }
+
+    return {
+        success: true,
+        count: lastPlayerInfo.count,
+        max: lastPlayerInfo.max,
+        players: lastPlayerInfo.list
+    };
 }
 
 /**
