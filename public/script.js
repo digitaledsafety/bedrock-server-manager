@@ -13,6 +13,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const propertiesTabs = document.getElementById('propertiesTabs');
     const consoleOutput = document.getElementById('consoleOutput'); // Get the console textarea
     const systemInfoContent = document.getElementById('systemInfoContent');
+    const backupListContainer = document.getElementById('backupList');
+    const playerInfoDiv = document.getElementById('playerInfo');
+    const playerCountSpan = document.getElementById('playerCount');
+    const playerListDiv = document.getElementById('playerList');
 
     // Auto-Update specific elements
     const autoUpdateConfigForm = document.getElementById('autoUpdateConfigForm');
@@ -144,6 +148,13 @@ document.addEventListener('DOMContentLoaded', () => {
         serverStatusSpan.textContent = status.toUpperCase();
         serverStatusSpan.className = status === 'running' ? 'status-indicator status-running' : 'status-indicator status-stopped';
         setButtonStates(status); // Call to update button states based on status
+
+        if (status === 'running') {
+            if (playerInfoDiv) playerInfoDiv.style.display = 'block';
+            fetchPlayers();
+        } else {
+            if (playerInfoDiv) playerInfoDiv.style.display = 'none';
+        }
     }
 
     // --- API Calls ---
@@ -371,6 +382,66 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error('Error saving server properties:', error);
             showMessage('Failed to save server properties.', 'error');
+        }
+    }
+
+    async function loadBackups() {
+        if (!backupListContainer) return;
+        try {
+            const response = await fetch('/api/backups');
+            const data = await response.json();
+            if (data.success) {
+                backupListContainer.innerHTML = '';
+                if (data.backups && data.backups.length > 0) {
+                    data.backups.forEach(backup => {
+                        const backupItem = document.createElement('div');
+                        backupItem.className = 'world-item';
+                        backupItem.innerHTML = `
+                            <span>${backup}</span>
+                            <button class="delete-backup-button bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-backup-name="${backup}">
+                                Delete
+                            </button>
+                        `;
+                        backupListContainer.appendChild(backupItem);
+                    });
+                    addDeleteBackupButtonListeners();
+                } else {
+                    backupListContainer.innerHTML = '<p class="text-gray-600">No backups found.</p>';
+                }
+            } else {
+                showMessage('Failed to load backups: ' + data.message, 'error');
+            }
+        } catch (error) {
+            console.error('Error loading backups:', error);
+            showMessage('Failed to load backups.', 'error');
+        }
+    }
+
+    function addDeleteBackupButtonListeners() {
+        document.querySelectorAll('.delete-backup-button').forEach(button => {
+            button.addEventListener('click', handleDeleteBackupClick);
+        });
+    }
+
+    async function handleDeleteBackupClick(event) {
+        const backupName = event.target.dataset.backupName;
+        if (!confirm(`Are you sure you want to delete the backup '${backupName}'?`)) return;
+
+        try {
+            showMessage(`Deleting backup '${backupName}'...`);
+            const response = await fetch(`/api/backups/${backupName}`, {
+                method: 'DELETE'
+            });
+            const data = await response.json();
+            if (response.ok && data.success) {
+                showMessage(data.message || `Backup '${backupName}' deleted.`, 'success');
+                loadBackups();
+            } else {
+                showMessage(data.message || `Failed to delete backup '${backupName}'.`, 'error');
+            }
+        } catch (error) {
+            console.error('Error deleting backup:', error);
+            showMessage('Failed to delete backup.', 'error');
         }
     }
 
@@ -660,6 +731,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const data = await response.json();
                 if (data.success) {
                     showMessage(data.message, 'success');
+                    loadBackups();
                 } else {
                     showMessage(data.message || 'Failed to create backup.', 'error');
                 }
@@ -753,6 +825,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function fetchPlayers() {
+        if (!playerInfoDiv || serverStatusSpan.textContent !== 'RUNNING') return;
+        try {
+            const response = await fetch('/api/players');
+            const data = await response.json();
+            if (data.success) {
+                playerCountSpan.textContent = `${data.count}/${data.max}`;
+                if (data.players && data.players.length > 0) {
+                    playerListDiv.textContent = 'Players: ' + data.players.join(', ');
+                } else {
+                    playerListDiv.textContent = 'No players online.';
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching players:', error);
+        }
+    }
+
     async function fetchSystemInfo() {
         if (!systemInfoContent) return;
         try {
@@ -792,6 +882,7 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchServerStatus(); // This will now also set initial button states
     loadServerProperties();
     //loadWorlds();
+    loadBackups();
     loadAutoUpdateConfig(); // New: Load auto-update config on page load
     addActivateButtonListeners();
     addBackupButtonListeners();
@@ -802,7 +893,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Refresh status and worlds periodically
     setInterval(fetchServerStatus, 10000); // Every 10 seconds
     setInterval(loadWorlds, 30000); // Every 30 seconds
+    setInterval(loadBackups, 60000); // Every 60 seconds
     setInterval(fetchLogs, 5000); // Every 5 seconds
     setInterval(fetchSystemInfo, 30000); // Every 30 seconds
+    setInterval(fetchPlayers, 15000); // Every 15 seconds
 
 });
