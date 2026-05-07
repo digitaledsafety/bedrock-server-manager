@@ -342,6 +342,27 @@ app.post('/api/delete-world', validateWorldName, async (req, res) => {
     }
 });
 
+app.post('/api/rename-world', async (req, res) => {
+    try {
+        const { oldWorldName, newWorldName } = req.body;
+        if (!oldWorldName || !newWorldName) {
+            return res.status(400).json({ success: false, message: 'Both old and new world names are required.' });
+        }
+        if (!backend.isValidWorldName(oldWorldName) || !backend.isValidWorldName(newWorldName)) {
+            return res.status(400).json({ success: false, message: 'Invalid world name format.' });
+        }
+        const result = await backend.renameWorld(oldWorldName, newWorldName);
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        backend.log('ERROR', `Failed to rename world: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Failed to rename world due to server error.' });
+    }
+});
+
 app.post('/api/activate-world', validateWorldName, async (req, res) => {
     try {
         const { worldName } = req.body;

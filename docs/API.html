@@ -114,6 +114,25 @@
 <li><code>500 Internal Server Error</code>: <code>{ &quot;error&quot;: &quot;Failed to restart server&quot; }</code></li>
 </ul>
 <hr>
+<h3>GET /api/players</h3>
+<p>Retrieves the number of online players and their gamertags.</p>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;success&quot;: true, &quot;count&quot;: number, &quot;max&quot;: number, &quot;players&quot;: [&quot;player1&quot;, ...] }</code></li>
+<li><code>500 Internal Server Error</code>: <code>{ &quot;error&quot;: &quot;Failed to get players&quot; }</code></li>
+</ul>
+<hr>
+<h3>POST /api/command</h3>
+<p>Sends a console command to the Minecraft server.</p>
+<p><strong>Request Body:</strong>
+<code>{ &quot;command&quot;: &quot;string&quot; }</code></p>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;success&quot;: true, &quot;message&quot;: string }</code></li>
+<li><code>400 Bad Request</code>: <code>{ &quot;success&quot;: false, &quot;message&quot;: string }</code></li>
+<li><code>500 Internal Server Error</code>: <code>{ &quot;success&quot;: false, &quot;message&quot;: string }</code></li>
+</ul>
+<hr>
 <h3>POST /api/update</h3>
 <p>Checks for Minecraft server updates and installs them if available. This involves stopping the server, backing up data, downloading the new version, restoring data, and restarting the server.</p>
 <p><strong>Response:</strong></p>
@@ -142,6 +161,13 @@ JSON object containing the property keys and values to update.</p>
 <li><code>500 Internal Server Error</code>: <code>{ &quot;error&quot;: &quot;Failed to write server properties&quot; }</code></li>
 </ul>
 <hr>
+<h3>GET /api/properties/metadata</h3>
+<p>Retrieves metadata for server properties, including human-readable labels, categories, and descriptions.</p>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;success&quot;: true, &quot;metadata&quot;: { ... }, &quot;categories&quot;: [ ... ] }</code></li>
+</ul>
+<hr>
 <h2>World Management</h2>
 <h3>GET /api/worlds</h3>
 <p>Lists all world folders found in the server’s <code>worlds</code> directory.</p>
@@ -160,6 +186,121 @@ JSON object containing the property keys and values to update.</p>
 <li><code>200 OK</code>: <code>{ &quot;message&quot;: &quot;World 'worldName' activated.&quot; }</code></li>
 <li><code>400 Bad Request</code>: <code>{ &quot;error&quot;: string }</code> (if world name is missing or invalid)</li>
 <li><code>500 Internal Server Error</code>: <code>{ &quot;error&quot;: &quot;Failed to activate world&quot; }</code></li>
+</ul>
+<hr>
+<h3>POST /api/create-world</h3>
+<p>Creates a new empty world directory.</p>
+<p><strong>Request Body:</strong>
+<code>{ &quot;worldName&quot;: &quot;string&quot; }</code></p>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;success&quot;: true, &quot;message&quot;: string }</code></li>
+<li><code>400 Bad Request</code>: <code>{ &quot;success&quot;: false, &quot;message&quot;: string }</code></li>
+<li><code>500 Internal Server Error</code>: <code>{ &quot;success&quot;: false, &quot;message&quot;: string }</code></li>
+</ul>
+<hr>
+<h3>POST /api/rename-world</h3>
+<p>Renames an existing world directory. If the renamed world is the currently active one, the <code>level-name</code> in <code>server.properties</code> will be automatically updated.</p>
+
+<p><strong>Request Body:</strong>
+<code>{ &quot;oldWorldName&quot;: &quot;string&quot;, &quot;newWorldName&quot;: &quot;string&quot; }</code></p>
+
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;success&quot;: true, &quot;message&quot;: string }</code></li>
+<li><code>400 Bad Request</code>: <code>{ &quot;success&quot;: false, &quot;message&quot;: string }</code></li>
+<li><code>500 Internal Server Error</code>: <code>{ &quot;success&quot;: false, &quot;message&quot;: string }</code></li>
+</ul>
+<hr>
+<h3>POST /api/delete-world</h3>
+<p>Deletes a world directory. The currently active world cannot be deleted.</p>
+<p><strong>Request Body:</strong>
+<code>{ &quot;worldName&quot;: &quot;string&quot; }</code></p>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;success&quot;: true, &quot;message&quot;: string }</code></li>
+<li><code>400 Bad Request</code>: <code>{ &quot;success&quot;: false, &quot;message&quot;: string }</code></li>
+<li><code>500 Internal Server Error</code>: <code>{ &quot;success&quot;: false, &quot;message&quot;: string }</code></li>
+</ul>
+<hr>
+<h3>POST /api/backup-world</h3>
+<p>Creates a backup of a specific world.</p>
+<p><strong>Request Body:</strong>
+<code>{ &quot;worldName&quot;: &quot;string&quot; }</code></p>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;success&quot;: true, &quot;message&quot;: string }</code></li>
+<li><code>500 Internal Server Error</code>: <code>{ &quot;success&quot;: false, &quot;message&quot;: string }</code></li>
+</ul>
+<hr>
+<h3>POST /api/upload-world</h3>
+<p>Uploads and extracts a world from a <code>.mcworld</code> file.</p>
+<p><strong>Request Type:</strong> <code>multipart/form-data</code></p>
+<p><strong>Parameters:</strong></p>
+<ul>
+<li><code>worldFile</code>: The <code>.mcworld</code> file.</li>
+</ul>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;success&quot;: true, &quot;message&quot;: string, &quot;worldName&quot;: string }</code></li>
+<li><code>400 Bad Request</code>: <code>{ &quot;success&quot;: false, &quot;message&quot;: string }</code></li>
+<li><code>500 Internal Server Error</code>: <code>{ &quot;success&quot;: false, &quot;message&quot;: string }</code></li>
+</ul>
+<hr>
+<h2>Backup Management</h2>
+<h3>GET /api/backups</h3>
+<p>Lists all manual server backups.</p>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;success&quot;: true, &quot;backups&quot;: [&quot;backup_dir_name&quot;, ...] }</code></li>
+</ul>
+<hr>
+<h3>POST /api/backup</h3>
+<p>Creates a full manual backup of the server directory.</p>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;success&quot;: true, &quot;message&quot;: string }</code></li>
+<li><code>500 Internal Server Error</code>: <code>{ &quot;success&quot;: false, &quot;message&quot;: string }</code></li>
+</ul>
+<hr>
+<h3>DELETE /api/backups/:backupName</h3>
+<p>Deletes a specific manual backup.</p>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;success&quot;: true, &quot;message&quot;: string }</code></li>
+<li><code>400 Bad Request</code>: <code>{ &quot;success&quot;: false, &quot;message&quot;: string }</code></li>
+<li><code>500 Internal Server Error</code>: <code>{ &quot;success&quot;: false, &quot;message&quot;: string }</code></li>
+</ul>
+<hr>
+<h2>Log Management</h2>
+<h3>GET /api/logs</h3>
+<p>Retrieves the last 100 lines (or up to 16KB) of the server log.</p>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;success&quot;: true, &quot;logs&quot;: &quot;string&quot; }</code></li>
+</ul>
+<hr>
+<h3>POST /api/logs/clear</h3>
+<p>Clears the server log file.</p>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;success&quot;: true, &quot;message&quot;: &quot;Server logs cleared successfully.&quot; }</code></li>
+<li><code>500 Internal Server Error</code>: <code>{ &quot;success&quot;: false, &quot;message&quot;: string }</code></li>
+</ul>
+<hr>
+<h3>GET /api/logs/download</h3>
+<p>Downloads the full <code>server.log</code> file.</p>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: File download (server.log)</li>
+</ul>
+<hr>
+<h2>System Information</h2>
+<h3>GET /api/system-info</h3>
+<p>Retrieves various system information metrics (CPU load, memory usage, uptime, etc.).</p>
+<p><strong>Response:</strong></p>
+<ul>
+<li><code>200 OK</code>: <code>{ &quot;success&quot;: true, &quot;info&quot;: { ... } }</code></li>
 </ul>
 <hr>
 <h2>Application Configuration</h2>

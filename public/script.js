@@ -8,6 +8,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const backupButton = document.getElementById('backupButton');
     const clearLogsButton = document.getElementById('clearLogsButton');
     const downloadLogsButton = document.getElementById('downloadLogsButton');
+    const refreshWorldsButton = document.getElementById('refreshWorldsButton');
+    const refreshBackupsButton = document.getElementById('refreshBackupsButton');
+    const refreshSystemInfoButton = document.getElementById('refreshSystemInfoButton');
     const propertiesForm = document.getElementById('propertiesForm');
     const propertiesContainer = document.getElementById('propertiesContainer');
     const propertiesTabs = document.getElementById('propertiesTabs');
@@ -451,7 +454,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             if (data.success) {
                 // Find the existing .world-list element to update
-                const worldListContainer = document.querySelector('.world-list');
+                const worldListContainer = document.getElementById('worldList');
                 if (worldListContainer) {
                     worldListContainer.innerHTML = ''; // Clear current list
                     if (data.worlds && data.worlds.length > 0) {
@@ -471,6 +474,9 @@ document.addEventListener('DOMContentLoaded', () => {
                                 </button>
                                 <button class="backup-world-button bg-green-600 hover:bg-green-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world}">
                                     Backup
+                            </button>
+                            <button class="rename-world-button bg-blue-500 hover:bg-blue-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world}">
+                                Rename
                                 </button>
                                 ${currentLevelName !== world ? `
                                 <button class="delete-world-button bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world}">
@@ -482,6 +488,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
                         addActivateButtonListeners(); // Re-add listeners after updating DOM
                         addBackupButtonListeners(); // Re-add listeners after updating DOM
+                        addRenameButtonListeners(); // Re-add listeners after updating DOM
                         addDeleteButtonListeners(); // Re-add listeners after updating DOM
                     } else {
                         worldListContainer.innerHTML = '<p class="text-gray-600">No worlds found. Start the server to generate a default world.</p>';
@@ -509,6 +516,13 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.backup-world-button').forEach(button => {
             button.removeEventListener('click', handleBackupWorldClick); // Prevent duplicate listeners
             button.addEventListener('click', handleBackupWorldClick);
+        });
+    }
+
+    function addRenameButtonListeners() {
+        document.querySelectorAll('.rename-world-button').forEach(button => {
+            button.removeEventListener('click', handleRenameWorldClick); // Prevent duplicate listeners
+            button.addEventListener('click', handleRenameWorldClick);
         });
     }
 
@@ -665,6 +679,37 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function handleRenameWorldClick(event) {
+        const oldWorldName = event.target.dataset.worldName;
+        const newWorldName = prompt(`Enter new name for world '${oldWorldName}':`, oldWorldName);
+
+        if (!newWorldName || newWorldName === oldWorldName) return;
+
+        try {
+            showMessage(`Renaming world '${oldWorldName}' to '${newWorldName}'...`);
+            const response = await fetch('/api/rename-world', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ oldWorldName, newWorldName })
+            });
+            const data = await response.json();
+            if (response.ok && data.success) {
+                showMessage(data.message, 'success');
+                if (data.restartRequired && restartNeededNote) {
+                    restartNeededNote.style.display = 'block';
+                }
+                loadWorlds(); // Refresh world list
+            } else {
+                showMessage(data.message || `Failed to rename world '${oldWorldName}'.`, 'error');
+            }
+        } catch (error) {
+            console.error('Error renaming world:', error);
+            showMessage('An error occurred while renaming the world.', 'error');
+        }
+    }
+
     // --- Auto-Update Configuration Functions ---
     async function loadAutoUpdateConfig() {
         try {
@@ -792,6 +837,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (clearLogsButton) clearLogsButton.addEventListener('click', handleClearLogs);
+    if (refreshWorldsButton) refreshWorldsButton.addEventListener('click', loadWorlds);
+    if (refreshBackupsButton) refreshBackupsButton.addEventListener('click', loadBackups);
+    if (refreshSystemInfoButton) refreshSystemInfoButton.addEventListener('click', fetchSystemInfo);
     if (createWorldForm) createWorldForm.addEventListener('submit', handleCreateWorld);
     if (uploadWorldForm) uploadWorldForm.addEventListener('submit', handleUploadWorld);
     if (downloadLogsButton) {
@@ -881,11 +929,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initial load
     fetchServerStatus(); // This will now also set initial button states
     loadServerProperties();
-    //loadWorlds();
+    loadWorlds();
     loadBackups();
     loadAutoUpdateConfig(); // New: Load auto-update config on page load
     addActivateButtonListeners();
     addBackupButtonListeners();
+    addRenameButtonListeners();
     addDeleteButtonListeners();
     fetchLogs();
     fetchSystemInfo();
