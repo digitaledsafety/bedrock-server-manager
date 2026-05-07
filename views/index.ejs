@@ -33,7 +33,10 @@
         <% } %>
 
         <div class="section" id="systemInfoSection">
-            <h2>System Information</h2>
+            <div class="section-header">
+                <h2>System Information</h2>
+                <button id="refreshSystemInfoButton" class="bg-gray-500 hover:bg-gray-700" style="width: auto; padding: 5px 10px; font-size: 0.8rem;">Refresh</button>
+            </div>
             <div id="systemInfoContent" class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <p>Loading system information...</p>
             </div>
@@ -84,7 +87,10 @@
         </div>
 
         <div class="section">
-            <h2>Backup Management</h2>
+            <div class="section-header">
+                <h2>Backup Management</h2>
+                <button id="refreshBackupsButton" class="bg-gray-500 hover:bg-gray-700" style="width: auto; padding: 5px 10px; font-size: 0.8rem;">Refresh</button>
+            </div>
             <div id="backupList" class="world-list">
                 <p>Loading backups...</p>
             </div>
@@ -106,7 +112,10 @@
         </div>
 
         <div class="section">
-            <h2>World Management</h2>
+            <div class="section-header">
+                <h2>World Management</h2>
+                <button id="refreshWorldsButton" class="bg-gray-500 hover:bg-gray-700" style="width: auto; padding: 5px 10px; font-size: 0.8rem;">Refresh</button>
+            </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
                 <form id="createWorldForm">
                     <div class="form-group">
@@ -123,7 +132,7 @@
                     <button type="submit" id="uploadWorldButton">Upload World</button>
                 </form>
             </div>
-            <div class="world-list">
+            <div id="worldList" class="world-list">
                 <% if (worlds && worlds.length > 0) { %>
                     <% worlds.forEach(world => { %>
                         <div class="world-item <%= properties['level-name'] === world ? 'active' : '' %>" data-world-name="<%= world %>">
@@ -133,6 +142,9 @@
                             </button>
                             <button class="backup-world-button bg-green-600 hover:bg-green-700" data-world-name="<%= world %>">
                                 Backup
+                            </button>
+                            <button class="rename-world-button bg-blue-500 hover:bg-blue-700" data-world-name="<%= world %>">
+                                Rename
                             </button>
                             <% if (properties['level-name'] !== world) { %>
                                 <button class="delete-world-button bg-red-500 hover:bg-red-700" data-world-name="<%= world %>">
