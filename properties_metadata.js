@@ -194,5 +194,20 @@ export const propertiesMetadata = {
         category: 'security',
         description: 'Disables skins customized outside of the store assets.',
         type: 'boolean'
+    },
+    'player-idle-timeout': {
+        label: 'Player Idle Timeout',
+        category: 'general',
+        description: 'The amount of time a player can be idle before being kicked (in minutes). 0 to disable.',
+        type: 'number',
+        min: 0
+    },
+    'compression-threshold': {
+        label: 'Compression Threshold',
+        category: 'performance',
+        description: 'Determines the minimum size of a packet before it is compressed.',
+        type: 'number',
+        min: 0,
+        max: 65535
     }
 };

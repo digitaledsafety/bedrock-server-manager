@@ -634,6 +634,40 @@ app.get('/', async (req, res) => {
     }
 });
 
+// --- Pack Management API ---
+app.get('/api/worlds/:worldName/packs', async (req, res) => {
+    try {
+        const { worldName } = req.params;
+        const result = await backend.listPacks(worldName);
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        backend.log('ERROR', `Failed to list packs: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Failed to list packs due to server error.' });
+    }
+});
+
+app.post('/api/delete-pack', async (req, res) => {
+    try {
+        const { worldName, packType, packId } = req.body;
+        if (!worldName || !packType || !packId) {
+            return res.status(400).json({ success: false, message: 'World name, pack type, and pack ID are required.' });
+        }
+        const result = await backend.deletePack(worldName, packType, packId);
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        backend.log('ERROR', `Failed to delete pack: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Failed to delete pack due to server error.' });
+    }
+});
+
 // --- Server Initialization ---
 const start = async () => {
     try {
@@ -641,7 +675,11 @@ const start = async () => {
         backend.init(initialConfig);
         if (initialConfig.autoStart) {
             backend.log('INFO', 'autoStart is enabled, attempting to start the server...');
-            await backend.startServer();
+            try {
+                await backend.startServer();
+            } catch (error) {
+                backend.log('ERROR', `Failed to auto-start server: ${error.message}`);
+            }
         }
         await backend.startAutoUpdateScheduler();
 
