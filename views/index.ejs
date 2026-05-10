@@ -150,6 +150,16 @@
 
         <div class="section">
             <h2>Pack Management</h2>
+            <div id="activePacksSection" style="margin-bottom: 20px;">
+                <h3>Active Packs for World: <span id="packTargetWorldDisplay">None</span></h3>
+                <div class="world-list" id="activePacksList" style="max-height: 300px;">
+                    <p style="padding: 10px; color: #aaa;">Select a world to see active packs.</p>
+                </div>
+            </div>
+
+            <hr style="border: 0; border-top: 1px solid #1E1E1E; margin: 20px 0;">
+
+            <h3>Upload New Pack</h3>
             <form id="uploadPackForm">
                 <div class="form-group">
                     <label for="packFile">Pack File (.mcpack or .mcaddon):</label>

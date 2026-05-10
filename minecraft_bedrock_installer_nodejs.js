@@ -720,16 +720,44 @@ export async function startServer() {
             log('ERROR', `Server process started but PID was not obtained.`);
         }
         serverProcess.unref();
-        serverProcess.on('error', (err) => {
-            log('ERROR', `Server process error: ${err.message}`);
-            if (serverPID === serverProcess.pid) serverPID = null;
+
+        const startupCheck = new Promise((resolve, reject) => {
+            let exitedPrematurely = false;
+
+            const errorHandler = (err) => {
+                log('ERROR', `Server process error: ${err.message}`);
+                if (serverPID === serverProcess.pid) serverPID = null;
+                exitedPrematurely = true;
+                reject(new Error(`Server process error: ${err.message}`));
+            };
+
+            const exitHandler = (code, signal) => {
+                log('INFO', `Server process PID ${serverProcess.pid} exited with code ${code} and signal ${signal}`);
+                if (serverPID === serverProcess.pid) serverPID = null;
+                if (activeServerProcess === serverProcess) activeServerProcess = null;
+                lastPlayerInfo = { count: 0, max: 0, list: [], lastUpdated: 0 };
+                exitedPrematurely = true;
+                reject(new Error(`Server exited prematurely with code ${code} and signal ${signal}`));
+            };
+
+            serverProcess.on('error', errorHandler);
+            serverProcess.on('exit', exitHandler);
+
+            // Wait 5 seconds to see if it stays up
+            setTimeout(() => {
+                if (!exitedPrematurely) {
+                    // It seems okay. Keep the handlers but they won't reject this promise anymore
+                    // We need to re-attach or ensure they don't call reject() after resolve()
+                    resolve();
+                }
+            }, 5000);
         });
-        serverProcess.on('exit', (code, signal) => {
-            log('INFO', `Server process PID ${serverProcess.pid} exited with code ${code} and signal ${signal}`);
-            if (serverPID === serverProcess.pid) serverPID = null;
-            if (activeServerProcess === serverProcess) activeServerProcess = null;
-            lastPlayerInfo = { count: 0, max: 0, list: [], lastUpdated: 0 };
+
+        await startupCheck.catch(err => {
+            // Re-throw so startServer caller knows it failed
+            throw err;
         });
+
     } catch (error) {
         log('ERROR', `Error starting server: ${error.message}`);
         if (serverPID) serverPID = null;
@@ -1470,6 +1498,73 @@ export async function uploadWorld(tempFilePath, originalFilename) {
     } catch (error) {
         log('ERROR', `Error uploading world: ${error.message} ${error.stack}`);
         return { success: false, message: `Error processing world file: ${error.message}` };
+    }
+}
+
+/**
+ * Lists packs applied to a specific world.
+ * @param {string} worldName
+ * @returns {Promise<{success: boolean, behaviorPacks: Array, resourcePacks: Array}>}
+ */
+export async function listPacks(worldName) {
+    if (!SERVER_DIRECTORY) return { success: false, message: 'Server directory not configured.' };
+    if (!isValidWorldName(worldName)) return { success: false, message: 'Invalid world name.' };
+
+    const worldPath = path.join(SERVER_DIRECTORY, 'worlds', worldName);
+    if (!fs.existsSync(worldPath)) return { success: false, message: 'World not found.' };
+
+    const readPackJson = async (fileName) => {
+        const filePath = path.join(worldPath, fileName);
+        if (fs.existsSync(filePath)) {
+            try {
+                const content = await fs.promises.readFile(filePath, 'utf8');
+                return JSON.parse(content);
+            } catch (e) {
+                log('ERROR', `Error reading ${fileName}: ${e.message}`);
+            }
+        }
+        return [];
+    };
+
+    const behaviorPacks = await readPackJson('world_behavior_packs.json');
+    const resourcePacks = await readPackJson('world_resource_packs.json');
+
+    return { success: true, behaviorPacks, resourcePacks };
+}
+
+/**
+ * Removes a pack from a world's configuration.
+ * @param {string} worldName
+ * @param {string} packType - 'behavior' or 'resource'
+ * @param {string} packId - UUID of the pack
+ * @returns {Promise<{success: boolean, message: string}>}
+ */
+export async function deletePack(worldName, packType, packId) {
+    if (!SERVER_DIRECTORY) return { success: false, message: 'Server directory not configured.' };
+    if (!isValidWorldName(worldName)) return { success: false, message: 'Invalid world name.' };
+
+    const worldPath = path.join(SERVER_DIRECTORY, 'worlds', worldName);
+    const fileName = packType === 'behavior' ? 'world_behavior_packs.json' : 'world_resource_packs.json';
+    const filePath = path.join(worldPath, fileName);
+
+    if (!fs.existsSync(filePath)) return { success: false, message: 'Pack configuration file not found.' };
+
+    try {
+        const content = await fs.promises.readFile(filePath, 'utf8');
+        let packs = JSON.parse(content);
+        const originalLength = packs.length;
+        packs = packs.filter(p => p.pack_id !== packId);
+
+        if (packs.length === originalLength) {
+            return { success: false, message: 'Pack ID not found in configuration.' };
+        }
+
+        await fs.promises.writeFile(filePath, JSON.stringify(packs, null, 2), 'utf8');
+        log('INFO', `Removed pack ${packId} from ${worldName} (${packType})`);
+        return { success: true, message: `Pack removed from world configuration. Restart server to apply.` };
+    } catch (error) {
+        log('ERROR', `Error deleting pack: ${error.message}`);
+        return { success: false, message: `Error deleting pack: ${error.message}` };
     }
 }
 
