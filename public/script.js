@@ -39,6 +39,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const packTypeGroup = document.getElementById('packTypeGroup');
     const packWorldNameSelect = document.getElementById('packWorldName');
     const uploadPackButton = document.getElementById('uploadPackButton');
+    const activePacksList = document.getElementById('activePacksList');
+    const packTargetWorldDisplay = document.getElementById('packTargetWorldDisplay');
 
     // Console Command specific elements
     const commandForm = document.getElementById('commandForm');
@@ -81,6 +83,79 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Pack Management Functions ---
+    async function loadActivePacks() {
+        const worldName = packWorldNameSelect.value;
+        if (!worldName) {
+            activePacksList.innerHTML = '<p style="padding: 10px; color: #aaa;">Select a world to see active packs.</p>';
+            packTargetWorldDisplay.textContent = 'None';
+            return;
+        }
+
+        packTargetWorldDisplay.textContent = worldName;
+        try {
+            const response = await fetch(`/api/worlds/${worldName}/packs`);
+            const data = await response.json();
+            if (data.success) {
+                activePacksList.innerHTML = '';
+                const { behaviorPacks, resourcePacks } = data;
+
+                const createPackItem = (pack, type) => {
+                    const item = document.createElement('div');
+                    item.className = 'world-item';
+                    item.innerHTML = `
+                        <div style="flex-grow: 1;">
+                            <strong>${type === 'behavior' ? 'Behavior' : 'Resource'}:</strong> ${pack.pack_id}
+                            <div style="font-size: 0.8rem; color: #aaa;">Version: ${pack.version.join('.')}</div>
+                        </div>
+                        <button class="delete-pack-button bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded transition duration-300"
+                                data-world-name="${worldName}" data-pack-type="${type}" data-pack-id="${pack.pack_id}">
+                            Remove
+                        </button>
+                    `;
+                    return item;
+                };
+
+                behaviorPacks.forEach(p => activePacksList.appendChild(createPackItem(p, 'behavior')));
+                resourcePacks.forEach(p => activePacksList.appendChild(createPackItem(p, 'resource')));
+
+                if (behaviorPacks.length === 0 && resourcePacks.length === 0) {
+                    activePacksList.innerHTML = '<p style="padding: 10px; color: #aaa;">No packs applied to this world.</p>';
+                } else {
+                    document.querySelectorAll('.delete-pack-button').forEach(btn => {
+                        btn.addEventListener('click', handleDeletePackClick);
+                    });
+                }
+            } else {
+                showMessage('Failed to load packs: ' + data.message, 'error');
+            }
+        } catch (error) {
+            console.error('Error loading active packs:', error);
+        }
+    }
+
+    async function handleDeletePackClick(event) {
+        const { worldName, packType, packId } = event.target.dataset;
+        if (!confirm(`Are you sure you want to remove pack ${packId} from world '${worldName}'?`)) return;
+
+        try {
+            const response = await fetch('/api/delete-pack', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ worldName, packType, packId })
+            });
+            const data = await response.json();
+            if (data.success) {
+                showMessage(data.message, 'success');
+                loadActivePacks();
+            } else {
+                showMessage('Failed to remove pack: ' + data.message, 'error');
+            }
+        } catch (error) {
+            console.error('Error deleting pack:', error);
+            showMessage('Failed to remove pack.', 'error');
+        }
+    }
+
     function handlePackFileChange() {
         if (packFileInput.files && packFileInput.files.length > 0) {
             const fileName = packFileInput.files[0].name.toLowerCase();
@@ -802,8 +877,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (propertiesForm) propertiesForm.addEventListener('submit', saveServerProperties);
     if (autoUpdateConfigForm) autoUpdateConfigForm.addEventListener('submit', saveAutoUpdateConfig);
     if (uploadPackForm) {
-        uploadPackForm.addEventListener('submit', handleUploadPack);
+        uploadPackForm.addEventListener('submit', async (e) => {
+            await handleUploadPack(e);
+            loadActivePacks(); // Refresh list after upload
+        });
         packFileInput.addEventListener('change', handlePackFileChange);
+        packWorldNameSelect.addEventListener('change', loadActivePacks);
     }
 
 
@@ -884,6 +963,7 @@ document.addEventListener('DOMContentLoaded', () => {
     //loadWorlds();
     loadBackups();
     loadAutoUpdateConfig(); // New: Load auto-update config on page load
+    loadActivePacks();
     addActivateButtonListeners();
     addBackupButtonListeners();
     addDeleteButtonListeners();
