@@ -123,7 +123,7 @@
                     <button type="submit" id="uploadWorldButton">Upload World</button>
                 </form>
             </div>
-            <div class="world-list">
+            <div class="world-list" id="worldList">
                 <% if (worlds && worlds.length > 0) { %>
                     <% worlds.forEach(world => { %>
                         <div class="world-item <%= properties['level-name'] === world ? 'active' : '' %>" data-world-name="<%= world %>">
@@ -133,6 +133,9 @@
                             </button>
                             <button class="backup-world-button bg-green-600 hover:bg-green-700" data-world-name="<%= world %>">
                                 Backup
+                            </button>
+                            <button class="rename-world-button bg-blue-500 hover:bg-blue-700" data-world-name="<%= world %>">
+                                Rename
                             </button>
                             <% if (properties['level-name'] !== world) { %>
                                 <button class="delete-world-button bg-red-500 hover:bg-red-700" data-world-name="<%= world %>">
