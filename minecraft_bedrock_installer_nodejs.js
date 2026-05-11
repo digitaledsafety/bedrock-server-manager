@@ -1035,6 +1035,49 @@ export async function deleteWorld(worldName) {
     }
 }
 
+/**
+ * Renames a world directory and updates server.properties if it's the active world.
+ * @param {string} oldName
+ * @param {string} newName
+ * @returns {Promise<{success: boolean, message: string}>}
+ */
+export async function renameWorld(oldName, newName) {
+    if (!SERVER_DIRECTORY) {
+        return { success: false, message: 'Server directory not configured.' };
+    }
+    if (!isValidWorldName(oldName) || !isValidWorldName(newName)) {
+        return { success: false, message: 'Invalid world name format.' };
+    }
+
+    const worldsPath = path.join(SERVER_DIRECTORY, 'worlds');
+    const oldPath = path.join(worldsPath, oldName);
+    const newPath = path.join(worldsPath, newName);
+
+    if (!fs.existsSync(oldPath)) {
+        return { success: false, message: `World '${oldName}' not found.` };
+    }
+    if (fs.existsSync(newPath)) {
+        return { success: false, message: `A world named '${newName}' already exists.` };
+    }
+
+    try {
+        log('INFO', `Renaming world from '${oldName}' to '${newName}'`);
+        await fs.promises.rename(oldPath, newPath);
+
+        const properties = await readServerProperties();
+        if (properties['level-name'] === oldName) {
+            log('INFO', `Updating active world name in server.properties to '${newName}'`);
+            properties['level-name'] = newName;
+            await writeServerProperties(properties);
+        }
+
+        return { success: true, message: `World renamed from '${oldName}' to '${newName}'.` };
+    } catch (error) {
+        log('ERROR', `Failed to rename world: ${error.message}`);
+        return { success: false, message: `Failed to rename world: ${error.message}` };
+    }
+}
+
 export async function activateWorld(worldName) {
     if (!SERVER_DIRECTORY) {
         log('ERROR', 'SERVER_DIRECTORY not set. Cannot activate world.');
