@@ -1513,6 +1513,31 @@ export async function listPacks(worldName) {
     const worldPath = path.join(SERVER_DIRECTORY, 'worlds', worldName);
     if (!fs.existsSync(worldPath)) return { success: false, message: 'World not found.' };
 
+    const resolvePackNames = async (packs, packTypeDir) => {
+        const packTypePath = path.join(SERVER_DIRECTORY, packTypeDir);
+        if (!fs.existsSync(packTypePath)) return packs;
+
+        const nameMap = new Map();
+        try {
+            const entries = await fs.promises.readdir(packTypePath, { withFileTypes: true });
+            for (const entry of entries) {
+                if (entry.isDirectory()) {
+                    const manifest = await readManifest(path.join(packTypePath, entry.name));
+                    if (manifest && manifest.header && manifest.header.uuid) {
+                        nameMap.set(manifest.header.uuid, manifest.header.name);
+                    }
+                }
+            }
+        } catch (e) {
+            log('ERROR', `Error scanning ${packTypeDir} for names: ${e.message}`);
+        }
+
+        return packs.map(pack => ({
+            ...pack,
+            name: nameMap.get(pack.pack_id)
+        }));
+    };
+
     const readPackJson = async (fileName) => {
         const filePath = path.join(worldPath, fileName);
         if (fs.existsSync(filePath)) {
@@ -1526,8 +1551,11 @@ export async function listPacks(worldName) {
         return [];
     };
 
-    const behaviorPacks = await readPackJson('world_behavior_packs.json');
-    const resourcePacks = await readPackJson('world_resource_packs.json');
+    let behaviorPacks = await readPackJson('world_behavior_packs.json');
+    let resourcePacks = await readPackJson('world_resource_packs.json');
+
+    behaviorPacks = await resolvePackNames(behaviorPacks, 'behavior_packs');
+    resourcePacks = await resolvePackNames(resourcePacks, 'resource_packs');
 
     return { success: true, behaviorPacks, resourcePacks };
 }
