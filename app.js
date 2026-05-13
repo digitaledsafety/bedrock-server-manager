@@ -46,8 +46,8 @@ const createMulterUpload = (allowedExtensions) => {
     });
 };
 
-const upload = createMulterUpload(['.mcpack', '.mcaddon']);
-const worldUpload = createMulterUpload(['.mcworld']);
+const upload = createMulterUpload(['.mcpack', '.mcaddon', '.zip']);
+const worldUpload = createMulterUpload(['.mcworld', '.zip']);
 
 
 // Middleware
@@ -264,6 +264,22 @@ app.delete('/api/backups/:backupName', async (req, res) => {
     } catch (error) {
         backend.log('ERROR', `Failed to delete backup: ${error.message}`);
         res.status(500).json({ success: false, message: 'Failed to delete backup due to server error.' });
+    }
+});
+
+app.post('/api/backups/:backupName/restore', async (req, res) => {
+    try {
+        const { backupName } = req.params;
+        backend.log('INFO', `API request to restore backup: ${backupName}`);
+        const result = await backend.restoreBackup(backupName);
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        backend.log('ERROR', `Failed to restore backup: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Failed to restore backup due to server error.' });
     }
 });
 

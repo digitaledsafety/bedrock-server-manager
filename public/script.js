@@ -303,30 +303,26 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function renderPropertiesUI() {
+    function renderPropertiesUI(filter = '') {
         propertiesTabs.innerHTML = '';
         propertiesContainer.innerHTML = '';
+        const lowercaseFilter = filter.toLowerCase();
 
-        propertyCategories.forEach((category, index) => {
-            const tabButton = document.createElement('button');
-            tabButton.type = 'button';
-            tabButton.className = `tab-button ${index === 0 ? 'active' : ''}`;
-            tabButton.textContent = category.label;
-            tabButton.onclick = () => switchTab(category.id);
-            propertiesTabs.appendChild(tabButton);
+        let firstVisibleTabSet = false;
 
-            const categorySection = document.createElement('div');
-            categorySection.id = `category-${category.id}`;
-            categorySection.className = `tab-content ${index === 0 ? 'active' : ''}`;
-
+        propertyCategories.forEach((category) => {
             const grid = document.createElement('div');
             grid.className = 'form-grid';
+            let propertiesInGrid = 0;
 
             // Filter properties for this category
             Object.entries(propertiesMetadata).forEach(([key, meta]) => {
                 if (meta.category === category.id) {
-                    const value = currentServerProperties[key] || '';
-                    grid.appendChild(createPropertyElement(key, meta, value));
+                    if (!lowercaseFilter || key.toLowerCase().includes(lowercaseFilter) || (meta.label && meta.label.toLowerCase().includes(lowercaseFilter))) {
+                        const value = currentServerProperties[key] || '';
+                        grid.appendChild(createPropertyElement(key, meta, value));
+                        propertiesInGrid++;
+                    }
                 }
             });
 
@@ -334,14 +330,35 @@ document.addEventListener('DOMContentLoaded', () => {
             if (category.id === 'advanced') {
                 Object.entries(currentServerProperties).forEach(([key, value]) => {
                     if (!propertiesMetadata[key]) {
-                        grid.appendChild(createPropertyElement(key, { label: key, type: 'string', description: 'Advanced setting' }, value));
+                        if (!lowercaseFilter || key.toLowerCase().includes(lowercaseFilter)) {
+                            grid.appendChild(createPropertyElement(key, { label: key, type: 'string', description: 'Advanced setting' }, value));
+                            propertiesInGrid++;
+                        }
                     }
                 });
             }
 
-            categorySection.appendChild(grid);
-            propertiesContainer.appendChild(categorySection);
+            if (propertiesInGrid > 0) {
+                const tabButton = document.createElement('button');
+                tabButton.type = 'button';
+                tabButton.className = `tab-button ${!firstVisibleTabSet ? 'active' : ''}`;
+                tabButton.textContent = category.label;
+                tabButton.onclick = () => switchTab(category.id);
+                propertiesTabs.appendChild(tabButton);
+
+                const categorySection = document.createElement('div');
+                categorySection.id = `category-${category.id}`;
+                categorySection.className = `tab-content ${!firstVisibleTabSet ? 'active' : ''}`;
+                categorySection.appendChild(grid);
+                propertiesContainer.appendChild(categorySection);
+
+                firstVisibleTabSet = true;
+            }
         });
+
+        if (!firstVisibleTabSet) {
+            propertiesContainer.innerHTML = '<p style="padding: 20px; color: #aaa;">No properties match your search.</p>';
+        }
     }
 
     function createPropertyElement(key, meta, value) {
@@ -472,14 +489,20 @@ document.addEventListener('DOMContentLoaded', () => {
                         const backupItem = document.createElement('div');
                         backupItem.className = 'world-item';
                         backupItem.innerHTML = `
-                            <span>${backup}</span>
-                            <button class="delete-backup-button bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-backup-name="${backup}">
-                                Delete
-                            </button>
+                            <span style="flex-grow: 1;">${backup}</span>
+                            <div class="button-group" style="gap: 5px;">
+                                <button class="restore-backup-button bg-blue-500 hover:bg-blue-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-backup-name="${backup}">
+                                    Restore
+                                </button>
+                                <button class="delete-backup-button bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-backup-name="${backup}">
+                                    Delete
+                                </button>
+                            </div>
                         `;
                         backupListContainer.appendChild(backupItem);
                     });
                     addDeleteBackupButtonListeners();
+                    addRestoreBackupButtonListeners();
                 } else {
                     backupListContainer.innerHTML = '<p class="text-gray-600">No backups found.</p>';
                 }
@@ -496,6 +519,44 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.delete-backup-button').forEach(button => {
             button.addEventListener('click', handleDeleteBackupClick);
         });
+    }
+
+    function addRestoreBackupButtonListeners() {
+        document.querySelectorAll('.restore-backup-button').forEach(button => {
+            button.addEventListener('click', handleRestoreBackupClick);
+        });
+    }
+
+    async function handleRestoreBackupClick(event) {
+        const backupName = event.target.dataset.backupName;
+        const isWorldBackup = backupName.startsWith('world_');
+        const confirmMessage = isWorldBackup
+            ? `Are you sure you want to restore world backup '${backupName}'? This will overwrite the existing world folder.`
+            : `Are you sure you want to restore full backup '${backupName}'? This will STOP the server and overwrite the entire server directory. A safety backup of the current state will be created.`;
+
+        if (!confirm(confirmMessage)) return;
+
+        try {
+            showMessage(`Restoring backup '${backupName}'...`);
+            const response = await fetch(`/api/backups/${backupName}/restore`, {
+                method: 'POST'
+            });
+            const data = await response.json();
+            if (response.ok && data.success) {
+                showMessage(data.message || `Backup '${backupName}' restored.`, 'success');
+                if (!isWorldBackup) {
+                    // Give the server a moment to restart
+                    setTimeout(fetchServerStatus, 5000);
+                }
+                loadBackups();
+                loadWorlds();
+            } else {
+                showMessage(data.message || `Failed to restore backup '${backupName}'.`, 'error');
+            }
+        } catch (error) {
+            console.error('Error restoring backup:', error);
+            showMessage('Failed to restore backup.', 'error');
+        }
     }
 
     async function handleDeleteBackupClick(event) {
@@ -867,6 +928,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (clearLogsButton) clearLogsButton.addEventListener('click', handleClearLogs);
+
+    const propertySearchInput = document.getElementById('propertySearch');
+    if (propertySearchInput) {
+        propertySearchInput.addEventListener('input', (e) => {
+            renderPropertiesUI(e.target.value);
+        });
+    }
+
     if (createWorldForm) createWorldForm.addEventListener('submit', handleCreateWorld);
     if (uploadWorldForm) uploadWorldForm.addEventListener('submit', handleUploadWorld);
     if (downloadLogsButton) {
@@ -967,6 +1036,7 @@ document.addEventListener('DOMContentLoaded', () => {
     addActivateButtonListeners();
     addBackupButtonListeners();
     addDeleteButtonListeners();
+    addRestoreBackupButtonListeners();
     fetchLogs();
     fetchSystemInfo();
 

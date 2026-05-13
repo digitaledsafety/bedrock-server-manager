@@ -95,6 +95,36 @@ level-name=World=1
     });
   });
 
+  describe('isValidWorldName', () => {
+    it('should return true for valid world names', () => {
+      expect(backend.isValidWorldName('MyWorld')).toBe(true);
+      expect(backend.isValidWorldName('My World 123')).toBe(true);
+      expect(backend.isValidWorldName('world-name_underscore')).toBe(true);
+    });
+
+    it('should return false for world names with path traversal characters', () => {
+      expect(backend.isValidWorldName('../malicious')).toBe(false);
+      expect(backend.isValidWorldName('world/name')).toBe(false);
+      expect(backend.isValidWorldName('world\\name')).toBe(false);
+      expect(backend.isValidWorldName('world.')).toBe(false);
+    });
+
+    it('should return false for empty or non-string inputs', () => {
+      expect(backend.isValidWorldName('')).toBe(false);
+      expect(backend.isValidWorldName(null)).toBe(false);
+      expect(backend.isValidWorldName(undefined)).toBe(false);
+      expect(backend.isValidWorldName(123)).toBe(false);
+    });
+
+    it('should return false for world names with invalid special characters', () => {
+      expect(backend.isValidWorldName('world!')).toBe(false);
+      expect(backend.isValidWorldName('world@')).toBe(false);
+      expect(backend.isValidWorldName('world#')).toBe(false);
+      expect(backend.isValidWorldName('world$')).toBe(false);
+      expect(backend.isValidWorldName('world%')).toBe(false);
+    });
+  });
+
   describe('readGlobalConfig', () => {
     it('should read and parse config.json correctly', async () => {
       const mockConfig = {

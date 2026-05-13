@@ -463,9 +463,93 @@ export async function deleteBackup(backupName) {
     }
 }
 
-export async function copyDir(src, dest) {
-    log('DEBUG', `Using fs.cpSync for copyDir from ${src} to ${dest}`);
-    fs.cpSync(src, dest, { recursive: true });
+/**
+ * Restores a specific backup.
+ * @param {string} backupName - The name of the backup to restore.
+ * @returns {Promise<{success: boolean, message: string}>}
+ */
+export async function restoreBackup(backupName) {
+    if (!BACKUP_DIRECTORY || !SERVER_DIRECTORY) {
+        return { success: false, message: 'Backup or server directory not configured.' };
+    }
+
+    // Validation: backupName should only contain safe characters and not be a path traversal
+    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+        log('ERROR', `Invalid backup name for restoration: ${backupName}`);
+        return { success: false, message: 'Invalid backup name.' };
+    }
+
+    const backupPath = path.join(BACKUP_DIRECTORY, backupName);
+    if (!fs.existsSync(backupPath)) {
+        log('WARNING', `Backup not found for restoration: ${backupPath}`);
+        return { success: false, message: 'Backup not found.' };
+    }
+
+    try {
+        if (backupName.startsWith('world_')) {
+            // World-specific restoration
+            const entries = fs.readdirSync(backupPath, { withFileTypes: true });
+            const worldDir = entries.find(e => e.isDirectory());
+            if (!worldDir) {
+                return { success: false, message: 'Could not find world directory inside backup.' };
+            }
+            const worldName = worldDir.name;
+            const targetWorldsPath = path.join(SERVER_DIRECTORY, 'worlds');
+            const targetWorldPath = path.join(targetWorldsPath, worldName);
+
+            if (!fs.existsSync(targetWorldsPath)) {
+                fs.mkdirSync(targetWorldsPath, { recursive: true });
+            }
+
+            // Backup existing world if it exists before overwriting
+            if (fs.existsSync(targetWorldPath)) {
+                const safetyBackupName = `world_${worldName}_pre_restore_${new Date().toISOString().replace(/:/g, '-').replace(/\./g, '_')}`;
+                const safetyBackupDir = path.join(BACKUP_DIRECTORY, safetyBackupName);
+                fs.mkdirSync(safetyBackupDir, { recursive: true });
+                fs.cpSync(targetWorldPath, path.join(safetyBackupDir, worldName), { recursive: true });
+                log('INFO', `Created safety backup of existing world '${worldName}' at ${safetyBackupDir}`);
+            }
+
+            // Clean restore: remove target before copying
+            if (fs.existsSync(targetWorldPath)) {
+                fs.rmSync(targetWorldPath, { recursive: true, force: true });
+            }
+            // Copy from backup to worlds directory
+            fs.cpSync(path.join(backupPath, worldName), targetWorldPath, { recursive: true });
+            log('INFO', `Restored world '${worldName}' from backup '${backupName}'`);
+            return { success: true, message: `World '${worldName}' restored successfully.` };
+
+        } else {
+            // Full server restoration
+            log('INFO', `Starting full server restoration from backup: ${backupName}`);
+            await stopServer();
+
+            // Create a safety backup of current state
+            const safetyBackupDir = await backupServer();
+            if (safetyBackupDir) {
+                log('INFO', `Created safety backup of current server state at: ${safetyBackupDir}`);
+            }
+
+            // Clean restore: remove all contents of server directory before overwriting
+            // We should keep CONFIG_FILES if possible, or just overwrite everything as it's a full restore
+            // The review suggested clean restoration.
+            const serverEntries = fs.readdirSync(SERVER_DIRECTORY);
+            for (const entry of serverEntries) {
+                const entryPath = path.join(SERVER_DIRECTORY, entry);
+                fs.rmSync(entryPath, { recursive: true, force: true });
+            }
+
+            // Overwrite server directory with backup contents
+            fs.cpSync(backupPath, SERVER_DIRECTORY, { recursive: true });
+
+            log('INFO', `Full server restoration from '${backupName}' complete.`);
+            await startServer();
+            return { success: true, message: `Full server restoration complete. Server is restarting.` };
+        }
+    } catch (error) {
+        log('ERROR', `Failed to restore backup '${backupName}': ${error.message}`);
+        return { success: false, message: `Restoration failed: ${error.message}` };
+    }
 }
 
 export async function copyExistingData(backupDir, newInstallDir) {
