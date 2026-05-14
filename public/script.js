@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const propertiesContainer = document.getElementById('propertiesContainer');
     const propertiesTabs = document.getElementById('propertiesTabs');
     const consoleOutput = document.getElementById('consoleOutput'); // Get the console textarea
+    const logSearchInput = document.getElementById('logSearchInput');
     const systemInfoContent = document.getElementById('systemInfoContent');
     const backupListContainer = document.getElementById('backupList');
     const playerInfoDiv = document.getElementById('playerInfo');
@@ -147,6 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.success) {
                 showMessage(data.message, 'success');
                 loadActivePacks();
+                if (restartNeededNote) restartNeededNote.style.display = 'block';
             } else {
                 showMessage('Failed to remove pack: ' + data.message, 'error');
             }
@@ -208,6 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (response.ok && data.success) {
                 showMessage(data.message || 'Pack uploaded successfully!', 'success');
                 uploadPackForm.reset(); // Reset form on success
+                if (restartNeededNote) restartNeededNote.style.display = 'block';
             } else {
                 showMessage(data.message || 'Failed to upload pack.', 'error');
             }
@@ -473,9 +476,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         backupItem.className = 'world-item';
                         backupItem.innerHTML = `
                             <span>${backup}</span>
-                            <button class="delete-backup-button bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-backup-name="${backup}">
-                                Delete
-                            </button>
+                            <div class="button-group" style="margin: 0;">
+                                <button class="download-backup-button bg-blue-500 hover:bg-blue-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-backup-name="${backup}">
+                                    Download
+                                </button>
+                                <button class="delete-backup-button bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-backup-name="${backup}">
+                                    Delete
+                                </button>
+                            </div>
                         `;
                         backupListContainer.appendChild(backupItem);
                     });
@@ -496,6 +504,14 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.delete-backup-button').forEach(button => {
             button.addEventListener('click', handleDeleteBackupClick);
         });
+        document.querySelectorAll('.download-backup-button').forEach(button => {
+            button.addEventListener('click', handleDownloadBackupClick);
+        });
+    }
+
+    function handleDownloadBackupClick(event) {
+        const backupName = event.target.dataset.backupName;
+        window.location.href = `/api/backups/${backupName}/download`;
     }
 
     async function handleDeleteBackupClick(event) {
@@ -876,6 +892,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (propertiesForm) propertiesForm.addEventListener('submit', saveServerProperties);
     if (autoUpdateConfigForm) autoUpdateConfigForm.addEventListener('submit', saveAutoUpdateConfig);
+
+    let rawLogs = '';
+
+    function updateLogDisplay() {
+        const filter = logSearchInput.value.toLowerCase();
+        if (!filter) {
+            consoleOutput.value = rawLogs;
+        } else {
+            consoleOutput.value = rawLogs.split('\n').filter(line => line.toLowerCase().includes(filter)).join('\n');
+        }
+        // Auto-scroll to bottom if needed
+        consoleOutput.scrollTop = consoleOutput.scrollHeight;
+    }
+
+    if (logSearchInput) {
+        logSearchInput.addEventListener('input', updateLogDisplay);
+    }
+
     if (uploadPackForm) {
         uploadPackForm.addEventListener('submit', async (e) => {
             await handleUploadPack(e);
@@ -891,9 +925,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/logs');
             const data = await response.json();
             if (data.success) {
-                if (consoleOutput.value !== data.logs) {
+                if (rawLogs !== data.logs) {
                     const isScrolledToBottom = consoleOutput.scrollHeight - consoleOutput.clientHeight <= consoleOutput.scrollTop + 1;
-                    consoleOutput.value = data.logs;
+                    rawLogs = data.logs;
+                    updateLogDisplay();
                     if (isScrolledToBottom) {
                         consoleOutput.scrollTop = consoleOutput.scrollHeight;
                     }

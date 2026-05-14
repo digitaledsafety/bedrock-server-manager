@@ -267,6 +267,58 @@ app.delete('/api/backups/:backupName', async (req, res) => {
     }
 });
 
+app.get('/api/backups/:backupName/download', async (req, res) => {
+    try {
+        const { backupName } = req.params;
+        const config = backend.getConfig();
+        const backupPath = path.join(config.backupDirectory, backupName);
+
+        if (!fs.existsSync(backupPath)) {
+            return res.status(404).json({ success: false, message: 'Backup not found.' });
+        }
+
+        // Basic safety check
+        const resolvedBackupPath = path.resolve(backupPath);
+        const resolvedBackupDir = path.resolve(config.backupDirectory);
+        if (!resolvedBackupPath.startsWith(resolvedBackupDir)) {
+            return res.status(400).json({ success: false, message: 'Invalid backup path.' });
+        }
+
+        const tempZipPath = path.join(TEMP_UPLOAD_DIR, `${backupName}-${Date.now()}.zip`);
+
+        try {
+            const zip = new backend.AdmZip();
+            zip.addLocalFolder(backupPath);
+            await new Promise((resolve, reject) => {
+                zip.writeZip(tempZipPath, (err) => {
+                    if (err) reject(err);
+                    else resolve();
+                });
+            });
+
+            res.download(tempZipPath, `${backupName}.zip`, (err) => {
+                if (err) {
+                    backend.log('ERROR', `Error during backup download delivery: ${err.message}`);
+                }
+                // Cleanup temp file
+                fs.promises.unlink(tempZipPath).catch(cleanupErr => {
+                    backend.log('WARNING', `Failed to delete temporary backup zip ${tempZipPath}: ${cleanupErr.message}`);
+                });
+            });
+        } catch (zipError) {
+            if (fs.existsSync(tempZipPath)) {
+                await fs.promises.unlink(tempZipPath).catch(() => {});
+            }
+            throw zipError;
+        }
+    } catch (error) {
+        backend.log('ERROR', `Failed to download backup: ${error.message}`);
+        if (!res.headersSent) {
+            res.status(500).json({ success: false, message: 'Failed to download backup due to server error.' });
+        }
+    }
+});
+
 app.post('/api/update', async (req, res) => {
     try {
         const result = await backend.checkAndInstall();

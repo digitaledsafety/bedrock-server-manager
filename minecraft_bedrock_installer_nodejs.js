@@ -674,6 +674,10 @@ export async function startServer() {
             const serverLogPath = path.join(SERVER_DIRECTORY, 'server.log');
             const serverLogStream = fs.createWriteStream(serverLogPath, { flags: 'a' });
 
+            serverLogStream.on('error', (err) => {
+                log('ERROR', `Server log stream error: ${err.message}`);
+            });
+
             serverProcess.stdout.on('data', (data) => {
                 const output = data.toString();
 
@@ -1770,6 +1774,8 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
 
 
 // --- End Pack Management ---
+
+export { AdmZip };
 
 export async function startAutoUpdateScheduler() {
     const currentConfig = await readGlobalConfig();

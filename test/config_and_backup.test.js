@@ -87,4 +87,21 @@ describe('Configuration Caching and World Backup Tests', () => {
         expect(properties['server-port']).toBe('19133');
         expect(properties['gamemode']).toBe('creative');
     });
+
+    test('GET /api/backups/:backupName/download should download a backup zip', async () => {
+        const backupName = 'test-download-backup';
+        const backupPath = path.join(backupDir, backupName);
+        fs.mkdirSync(backupPath, { recursive: true });
+        fs.writeFileSync(path.join(backupPath, 'test.txt'), 'backup content', 'utf8');
+
+        const response = await request(app)
+            .get(`/api/backups/${backupName}/download`);
+
+        expect(response.status).toBe(200);
+        expect(response.header['content-type']).toBe('application/zip');
+        expect(response.header['content-disposition']).toContain(`filename="${backupName}.zip"`);
+        // Check content-length header as supertest body parsing can be inconsistent for binary data
+        expect(response.header['content-length']).toBeDefined();
+        expect(parseInt(response.header['content-length'], 10)).toBeGreaterThan(0);
+    });
 });
