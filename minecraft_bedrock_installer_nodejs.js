@@ -463,6 +463,110 @@ export async function deleteBackup(backupName) {
     }
 }
 
+/**
+ * Restores a backup.
+ * @param {string} backupName - The name of the backup to restore.
+ * @returns {Promise<{success: boolean, message: string}>}
+ */
+export async function restoreBackup(backupName) {
+    if (!BACKUP_DIRECTORY) {
+        return { success: false, message: 'Backup directory not configured.' };
+    }
+    // Validation: backupName should only contain safe characters and not be a path traversal
+    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+        log('ERROR', `Invalid backup name for restoration: ${backupName}`);
+        return { success: false, message: 'Invalid backup name.' };
+    }
+
+    const backupPath = path.join(BACKUP_DIRECTORY, backupName);
+    if (!fs.existsSync(backupPath)) {
+        log('WARNING', `Backup not found for restoration: ${backupPath}`);
+        return { success: false, message: 'Backup not found.' };
+    }
+
+    const wasRunning = await isProcessRunning();
+    if (wasRunning) {
+        log('INFO', 'Stopping server for restoration...');
+        await stopServer();
+    }
+
+    try {
+        const isWorldBackup = backupName.startsWith('world_');
+
+        if (isWorldBackup) {
+            // World backup: world_worldName_timestamp
+            // We need to find the world folder inside the backup folder
+            const entries = fs.readdirSync(backupPath, { withFileTypes: true });
+            const worldDirEntry = entries.find(e => e.isDirectory());
+            if (!worldDirEntry) {
+                throw new Error('Invalid world backup: world directory not found inside.');
+            }
+            const worldName = worldDirEntry.name;
+            const worldsPath = path.join(SERVER_DIRECTORY, 'worlds');
+            const targetWorldPath = path.join(worldsPath, worldName);
+
+            log('INFO', `Restoring world backup: ${worldName}`);
+
+            // Safety backup of CURRENT world before overwriting
+            if (fs.existsSync(targetWorldPath)) {
+                log('INFO', `Creating safety backup of current world '${worldName}' before restoration.`);
+                await backupWorld(worldName);
+            }
+
+            // Restore world
+            if (fs.existsSync(targetWorldPath)) {
+                fs.rmSync(targetWorldPath, { recursive: true, force: true });
+            } else if (!fs.existsSync(worldsPath)) {
+                fs.mkdirSync(worldsPath, { recursive: true });
+            }
+
+            fs.cpSync(path.join(backupPath, worldName), targetWorldPath, { recursive: true });
+            log('INFO', `World '${worldName}' restored from backup.`);
+
+        } else {
+            // Full server backup
+            log('INFO', 'Restoring full server backup');
+
+            // Safety backup of CURRENT server before overwriting
+            log('INFO', 'Creating safety backup of current server before restoration.');
+            await backupServer();
+
+            // Restore full server
+            if (SERVER_DIRECTORY && fs.existsSync(SERVER_DIRECTORY)) {
+                log('INFO', `Clearing existing server directory: ${SERVER_DIRECTORY}`);
+                // Delete contents to avoid issues with open directory handles if we deleted the root
+                const items = fs.readdirSync(SERVER_DIRECTORY);
+                for (const item of items) {
+                    fs.rmSync(path.join(SERVER_DIRECTORY, item), { recursive: true, force: true });
+                }
+            } else if (SERVER_DIRECTORY) {
+                fs.mkdirSync(SERVER_DIRECTORY, { recursive: true });
+            }
+
+            fs.cpSync(backupPath, SERVER_DIRECTORY, { recursive: true });
+            log('INFO', 'Full server restored from backup.');
+        }
+
+        if (os.platform() !== 'win32') {
+            await changeOwnership(SERVER_DIRECTORY, config.minecraftUser, config.minecraftGroup);
+        }
+
+        if (wasRunning) {
+            log('INFO', 'Restarting server after restoration...');
+            await startServer();
+        }
+
+        return { success: true, message: `Backup '${backupName}' restored successfully.` };
+    } catch (error) {
+        log('ERROR', `Failed to restore backup '${backupName}': ${error.message}`);
+        // If it failed and was running, try to restart anyway
+        if (wasRunning && !(await isProcessRunning())) {
+            try { await startServer(); } catch (e) { log('ERROR', `Failed to restart server after failed restoration: ${e.message}`); }
+        }
+        return { success: false, message: `Failed to restore backup: ${error.message}` };
+    }
+}
+
 export async function copyDir(src, dest) {
     log('DEBUG', `Using fs.cpSync for copyDir from ${src} to ${dest}`);
     fs.cpSync(src, dest, { recursive: true });

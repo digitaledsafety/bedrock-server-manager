@@ -473,13 +473,18 @@ document.addEventListener('DOMContentLoaded', () => {
                         backupItem.className = 'world-item';
                         backupItem.innerHTML = `
                             <span>${backup}</span>
-                            <button class="delete-backup-button bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-backup-name="${backup}">
-                                Delete
-                            </button>
+                            <div class="button-group" style="margin-top: 0;">
+                                <button class="restore-backup-button bg-blue-500 hover:bg-blue-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-backup-name="${backup}">
+                                    Restore
+                                </button>
+                                <button class="delete-backup-button bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-backup-name="${backup}">
+                                    Delete
+                                </button>
+                            </div>
                         `;
                         backupListContainer.appendChild(backupItem);
                     });
-                    addDeleteBackupButtonListeners();
+                    addBackupActionListeners();
                 } else {
                     backupListContainer.innerHTML = '<p class="text-gray-600">No backups found.</p>';
                 }
@@ -492,10 +497,45 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function addDeleteBackupButtonListeners() {
+    function addBackupActionListeners() {
         document.querySelectorAll('.delete-backup-button').forEach(button => {
             button.addEventListener('click', handleDeleteBackupClick);
         });
+        document.querySelectorAll('.restore-backup-button').forEach(button => {
+            button.addEventListener('click', handleRestoreBackupClick);
+        });
+    }
+
+    async function handleRestoreBackupClick(event) {
+        const backupName = event.target.dataset.backupName;
+        const isWorldBackup = backupName.startsWith('world_');
+        const confirmMessage = isWorldBackup
+            ? `Are you sure you want to restore world backup '${backupName}'? This will overwrite the current world. A safety backup will be created.`
+            : `Are you sure you want to restore full server backup '${backupName}'? This will overwrite the current server files and world. A safety backup will be created.`;
+
+        if (!confirm(confirmMessage)) return;
+
+        try {
+            showMessage(`Restoring backup '${backupName}'... This may take a moment.`);
+            const response = await fetch(`/api/backups/${backupName}/restore`, {
+                method: 'POST'
+            });
+            const data = await response.json();
+            if (response.ok && data.success) {
+                showMessage(data.message || `Backup '${backupName}' restored successfully.`, 'success');
+                // Status and worlds might have changed
+                setTimeout(() => {
+                    fetchServerStatus();
+                    loadWorlds();
+                    loadBackups();
+                }, 2000);
+            } else {
+                showMessage(data.message || `Failed to restore backup '${backupName}'.`, 'error');
+            }
+        } catch (error) {
+            console.error('Error restoring backup:', error);
+            showMessage('Failed to restore backup.', 'error');
+        }
     }
 
     async function handleDeleteBackupClick(event) {
@@ -967,6 +1007,7 @@ document.addEventListener('DOMContentLoaded', () => {
     addActivateButtonListeners();
     addBackupButtonListeners();
     addDeleteButtonListeners();
+    addBackupActionListeners();
     fetchLogs();
     fetchSystemInfo();
 
