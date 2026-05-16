@@ -267,6 +267,21 @@ app.delete('/api/backups/:backupName', async (req, res) => {
     }
 });
 
+app.post('/api/backups/:backupName/restore', async (req, res) => {
+    try {
+        const { backupName } = req.params;
+        const result = await backend.restoreBackup(backupName);
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        backend.log('ERROR', `Failed to restore backup: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Failed to restore backup due to server error.' });
+    }
+});
+
 app.post('/api/update', async (req, res) => {
     try {
         const result = await backend.checkAndInstall();
