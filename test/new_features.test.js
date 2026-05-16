@@ -17,6 +17,7 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
     activateWorld: jest.fn(),
     readGlobalConfig: jest.fn(),
     writeGlobalConfig: jest.fn(),
+    renameWorld: jest.fn(),
     init: jest.fn(),
     startAutoUpdateScheduler: jest.fn(),
     getStoredVersion: jest.fn(),
@@ -70,6 +71,42 @@ describe('New Features API', () => {
             expect(response.status).toBe(400);
             expect(response.body.success).toBe(false);
             expect(response.body.message).toBe('World already exists.');
+        });
+    });
+
+    describe('POST /api/rename-world', () => {
+        it('should rename a world successfully', async () => {
+            backend.renameWorld.mockResolvedValue({ success: true, message: 'World renamed successfully.' });
+
+            const response = await request(app)
+                .post('/api/rename-world')
+                .send({ oldWorldName: 'OldWorld', newWorldName: 'NewWorld' });
+
+            expect(response.status).toBe(200);
+            expect(response.body.success).toBe(true);
+            expect(backend.renameWorld).toHaveBeenCalledWith('OldWorld', 'NewWorld');
+        });
+
+        it('should return 400 for invalid new world name', async () => {
+            const response = await request(app)
+                .post('/api/rename-world')
+                .send({ oldWorldName: 'OldWorld', newWorldName: 'invalid/name' });
+
+            expect(response.status).toBe(400);
+            expect(response.body.success).toBe(false);
+            expect(response.body.message).toBe('Invalid world name format.');
+        });
+
+        it('should return 400 if rename fails in backend', async () => {
+            backend.renameWorld.mockResolvedValue({ success: false, message: 'Target world name already exists.' });
+
+            const response = await request(app)
+                .post('/api/rename-world')
+                .send({ oldWorldName: 'OldWorld', newWorldName: 'ExistingWorld' });
+
+            expect(response.status).toBe(400);
+            expect(response.body.success).toBe(false);
+            expect(response.body.message).toBe('Target world name already exists.');
         });
     });
 });

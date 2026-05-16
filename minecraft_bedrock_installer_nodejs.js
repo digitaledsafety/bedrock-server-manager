@@ -955,6 +955,54 @@ export async function writeServerProperties(propertiesToWrite) {
     log('INFO', `Wrote server.properties to ${configPath} (preserved comments and order)`);
 }
 
+/**
+ * Renames an existing world.
+ * @param {string} oldWorldName - The current name of the world.
+ * @param {string} newWorldName - The new name for the world.
+ * @returns {Promise<{success: boolean, message: string}>}
+ */
+export async function renameWorld(oldWorldName, newWorldName) {
+    if (!SERVER_DIRECTORY) {
+        return { success: false, message: 'Server directory not configured.' };
+    }
+    if (!isValidWorldName(oldWorldName) || !isValidWorldName(newWorldName)) {
+        log('ERROR', `Invalid world name format for rename: ${oldWorldName} -> ${newWorldName}`);
+        return { success: false, message: 'Invalid world name format.' };
+    }
+
+    const worldsPath = path.join(SERVER_DIRECTORY, 'worlds');
+    const oldWorldPath = path.join(worldsPath, oldWorldName);
+    const newWorldPath = path.join(worldsPath, newWorldName);
+
+    if (!fs.existsSync(oldWorldPath)) {
+        log('WARNING', `World directory '${oldWorldName}' not found at ${oldWorldPath}.`);
+        return { success: false, message: 'Source world not found.' };
+    }
+
+    if (fs.existsSync(newWorldPath)) {
+        log('WARNING', `Target world directory '${newWorldName}' already exists at ${newWorldPath}.`);
+        return { success: false, message: 'Target world name already exists.' };
+    }
+
+    try {
+        fs.renameSync(oldWorldPath, newWorldPath);
+        log('INFO', `Renamed world directory from '${oldWorldName}' to '${newWorldName}'`);
+
+        // Update server.properties if the active world was renamed
+        const properties = await readServerProperties();
+        if (properties['level-name'] === oldWorldName) {
+            log('INFO', `Active world renamed. Updating level-name in server.properties.`);
+            properties['level-name'] = newWorldName;
+            await writeServerProperties(properties);
+        }
+
+        return { success: true, message: `World '${oldWorldName}' renamed to '${newWorldName}' successfully.` };
+    } catch (error) {
+        log('ERROR', `Failed to rename world '${oldWorldName}' to '${newWorldName}': ${error.message}`);
+        return { success: false, message: `Failed to rename world: ${error.message}` };
+    }
+}
+
 export async function createWorld(worldName) {
     if (!SERVER_DIRECTORY) {
         log('ERROR', 'SERVER_DIRECTORY not set. Cannot create world.');
