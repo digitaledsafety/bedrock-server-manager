@@ -525,8 +525,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/worlds');
             const data = await response.json();
             if (data.success) {
-                // Find the existing .world-list element to update
-                const worldListContainer = document.querySelector('.world-list');
+                // Find the existing world-list element to update
+                const worldListContainer = document.getElementById('worldList');
                 if (worldListContainer) {
                     worldListContainer.innerHTML = ''; // Clear current list
                     if (data.worlds && data.worlds.length > 0) {
@@ -544,6 +544,9 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <button class="activate-world-button bg-blue-500 hover:bg-blue-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world}">
                                     Activate
                                 </button>
+                                <button class="rename-world-button bg-gray-500 hover:bg-gray-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world}">
+                                    Rename
+                                </button>
                                 <button class="backup-world-button bg-green-600 hover:bg-green-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world}">
                                     Backup
                                 </button>
@@ -556,6 +559,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             worldListContainer.appendChild(worldItem);
                         });
                         addActivateButtonListeners(); // Re-add listeners after updating DOM
+                        addRenameButtonListeners(); // Re-add listeners after updating DOM
                         addBackupButtonListeners(); // Re-add listeners after updating DOM
                         addDeleteButtonListeners(); // Re-add listeners after updating DOM
                     } else {
@@ -577,6 +581,13 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.activate-world-button').forEach(button => {
             button.removeEventListener('click', handleActivateWorldClick); // Prevent duplicate listeners
             button.addEventListener('click', handleActivateWorldClick);
+        });
+    }
+
+    function addRenameButtonListeners() {
+        document.querySelectorAll('.rename-world-button').forEach(button => {
+            button.removeEventListener('click', handleRenameWorldClick); // Prevent duplicate listeners
+            button.addEventListener('click', handleRenameWorldClick);
         });
     }
 
@@ -737,6 +748,34 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error('Error activating world:', error);
             showMessage('Failed to activate world.', 'error');
+        }
+    }
+
+    async function handleRenameWorldClick(event) {
+        const oldWorldName = event.target.dataset.worldName;
+        const newWorldName = prompt(`Enter new name for world '${oldWorldName}':`, oldWorldName);
+
+        if (!newWorldName || newWorldName === oldWorldName) return;
+
+        try {
+            showMessage(`Renaming world '${oldWorldName}' to '${newWorldName}'...`);
+            const response = await fetch('/api/rename-world', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ oldWorldName, newWorldName })
+            });
+            const data = await response.json();
+            if (response.ok && data.success) {
+                showMessage(data.message || `World renamed successfully.`, 'success');
+                loadWorlds(); // Refresh world list
+            } else {
+                showMessage(data.message || `Failed to rename world.`, 'error');
+            }
+        } catch (error) {
+            console.error('Error renaming world:', error);
+            showMessage('Failed to rename world.', 'error');
         }
     }
 
@@ -965,6 +1004,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadAutoUpdateConfig(); // New: Load auto-update config on page load
     loadActivePacks();
     addActivateButtonListeners();
+    addRenameButtonListeners();
     addBackupButtonListeners();
     addDeleteButtonListeners();
     fetchLogs();
