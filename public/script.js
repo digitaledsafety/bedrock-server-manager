@@ -45,6 +45,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Console Command specific elements
     const commandForm = document.getElementById('commandForm');
     const commandInput = document.getElementById('commandInput');
+    const logSearchInput = document.getElementById('logSearchInput');
+
+    let allLogs = '';
 
     // --- Utility Functions ---
     function showMessage(message, type = 'success') {
@@ -226,13 +229,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (status === 'running') {
             if (playerInfoDiv) playerInfoDiv.style.display = 'block';
-            fetchPlayers();
         } else {
             if (playerInfoDiv) playerInfoDiv.style.display = 'none';
         }
     }
 
     // --- API Calls ---
+    async function fetchDashboardData() {
+        try {
+            const response = await fetch('/api/dashboard');
+            const data = await response.json();
+            if (data.success) {
+                updateServerStatusDisplay(data.status);
+                updatePlayersDisplay(data.players);
+                updateSystemInfoDisplay(data.systemInfo);
+            }
+        } catch (error) {
+            console.error('Error fetching dashboard data:', error);
+            updateServerStatusDisplay('unknown');
+            // Don't show message on every heartbeat failure to avoid spamming
+        }
+    }
+
     async function fetchServerStatus() {
         try {
             const response = await fetch('/api/status');
@@ -590,6 +608,9 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <button class="backup-world-button bg-green-600 hover:bg-green-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world}">
                                     Backup
                                 </button>
+                                <button class="download-world-button bg-blue-500 hover:bg-blue-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world}">
+                                    Download
+                                </button>
                                 ${currentLevelName !== world ? `
                                 <button class="delete-world-button bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world}">
                                     Delete
@@ -601,6 +622,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         addActivateButtonListeners(); // Re-add listeners after updating DOM
                         addRenameButtonListeners(); // Re-add listeners after updating DOM
                         addBackupButtonListeners(); // Re-add listeners after updating DOM
+                        addDownloadButtonListeners(); // Re-add listeners after updating DOM
                         addDeleteButtonListeners(); // Re-add listeners after updating DOM
                     } else {
                         worldListContainer.innerHTML = '<p class="text-gray-600">No worlds found. Start the server to generate a default world.</p>';
@@ -635,6 +657,13 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.backup-world-button').forEach(button => {
             button.removeEventListener('click', handleBackupWorldClick); // Prevent duplicate listeners
             button.addEventListener('click', handleBackupWorldClick);
+        });
+    }
+
+    function addDownloadButtonListeners() {
+        document.querySelectorAll('.download-world-button').forEach(button => {
+            button.removeEventListener('click', handleDownloadWorldClick); // Prevent duplicate listeners
+            button.addEventListener('click', handleDownloadWorldClick);
         });
     }
 
@@ -788,6 +817,17 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error('Error activating world:', error);
             showMessage('Failed to activate world.', 'error');
+        }
+    }
+
+    async function handleDownloadWorldClick(event) {
+        const worldName = event.target.dataset.worldName;
+        try {
+            showMessage(`Preparing download for world '${worldName}'... This may take a moment.`);
+            window.location.href = `/api/worlds/${worldName}/download`;
+        } catch (error) {
+            console.error('Error downloading world:', error);
+            showMessage('Failed to download world.', 'error');
         }
     }
 
@@ -955,6 +995,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (propertiesForm) propertiesForm.addEventListener('submit', saveServerProperties);
     if (autoUpdateConfigForm) autoUpdateConfigForm.addEventListener('submit', saveAutoUpdateConfig);
+    if (logSearchInput) logSearchInput.addEventListener('input', applyLogFilter);
     if (uploadPackForm) {
         uploadPackForm.addEventListener('submit', async (e) => {
             await handleUploadPack(e);
@@ -970,16 +1011,45 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/logs');
             const data = await response.json();
             if (data.success) {
-                if (consoleOutput.value !== data.logs) {
-                    const isScrolledToBottom = consoleOutput.scrollHeight - consoleOutput.clientHeight <= consoleOutput.scrollTop + 1;
-                    consoleOutput.value = data.logs;
-                    if (isScrolledToBottom) {
-                        consoleOutput.scrollTop = consoleOutput.scrollHeight;
-                    }
+                if (allLogs !== data.logs) {
+                    allLogs = data.logs;
+                    applyLogFilter();
                 }
             }
         } catch (error) {
             console.error('Error fetching logs:', error);
+        }
+    }
+
+    function applyLogFilter() {
+        const searchTerm = logSearchInput.value.toLowerCase();
+        const isScrolledToBottom = consoleOutput.scrollHeight - consoleOutput.clientHeight <= consoleOutput.scrollTop + 1;
+
+        if (!searchTerm) {
+            consoleOutput.value = allLogs;
+        } else {
+            const lines = allLogs.split('\n');
+            const filteredLines = lines.filter(line => line.toLowerCase().includes(searchTerm));
+            consoleOutput.value = filteredLines.join('\n');
+        }
+
+        if (isScrolledToBottom) {
+            consoleOutput.scrollTop = consoleOutput.scrollHeight;
+        }
+    }
+
+    function updatePlayersDisplay(data) {
+        if (!playerInfoDiv || !data) return;
+        // Handle both individual API response and aggregate dashboard response
+        const count = data.count !== undefined ? data.count : 0;
+        const max = data.max !== undefined ? data.max : 0;
+        const players = data.players || data.list || [];
+
+        playerCountSpan.textContent = `${count}/${max}`;
+        if (players.length > 0) {
+            playerListDiv.textContent = 'Players: ' + players.join(', ');
+        } else {
+            playerListDiv.textContent = 'No players online.';
         }
     }
 
@@ -988,17 +1058,36 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch('/api/players');
             const data = await response.json();
-            if (data.success) {
-                playerCountSpan.textContent = `${data.count}/${data.max}`;
-                if (data.players && data.players.length > 0) {
-                    playerListDiv.textContent = 'Players: ' + data.players.join(', ');
-                } else {
-                    playerListDiv.textContent = 'No players online.';
-                }
-            }
+            updatePlayersDisplay(data);
         } catch (error) {
             console.error('Error fetching players:', error);
         }
+    }
+
+    function updateSystemInfoDisplay(info) {
+        if (!systemInfoContent || !info) return;
+        const formatMem = (bytes) => (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+        const formatUptime = (seconds) => {
+            const d = Math.floor(seconds / (3600*24));
+            const h = Math.floor(seconds % (3600*24) / 3600);
+            const m = Math.floor(seconds % 3600 / 60);
+            const s = Math.floor(seconds % 60);
+            return `${d}d ${h}h ${m}m ${s}s`;
+        };
+
+        systemInfoContent.innerHTML = `
+            <div>
+                <p><strong>OS:</strong> ${info.platform} (${info.arch})</p>
+                <p><strong>Node Version:</strong> ${info.nodeVersion}</p>
+                <p><strong>Manager Uptime:</strong> ${formatUptime(info.uptime)}</p>
+                <p><strong>OS Uptime:</strong> ${formatUptime(info.osUptime)}</p>
+            </div>
+            <div>
+                <p><strong>OS Memory:</strong> ${formatMem(info.osTotalMem - info.osFreeMem)} / ${formatMem(info.osTotalMem)}</p>
+                <p><strong>Manager Memory (RSS):</strong> ${(info.memoryUsage.rss / (1024 * 1024)).toFixed(2)} MB</p>
+                <p><strong>Load Average:</strong> ${info.osLoadAvg.map(l => l.toFixed(2)).join(', ')}</p>
+            </div>
+        `;
     }
 
     async function fetchSystemInfo() {
@@ -1007,29 +1096,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/system-info');
             const data = await response.json();
             if (data.success) {
-                const info = data.info;
-                const formatMem = (bytes) => (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
-                const formatUptime = (seconds) => {
-                    const d = Math.floor(seconds / (3600*24));
-                    const h = Math.floor(seconds % (3600*24) / 3600);
-                    const m = Math.floor(seconds % 3600 / 60);
-                    const s = Math.floor(seconds % 60);
-                    return `${d}d ${h}h ${m}m ${s}s`;
-                };
-
-                systemInfoContent.innerHTML = `
-                    <div>
-                        <p><strong>OS:</strong> ${info.platform} (${info.arch})</p>
-                        <p><strong>Node Version:</strong> ${info.nodeVersion}</p>
-                        <p><strong>Manager Uptime:</strong> ${formatUptime(info.uptime)}</p>
-                        <p><strong>OS Uptime:</strong> ${formatUptime(info.osUptime)}</p>
-                    </div>
-                    <div>
-                        <p><strong>OS Memory:</strong> ${formatMem(info.osTotalMem - info.osFreeMem)} / ${formatMem(info.osTotalMem)}</p>
-                        <p><strong>Manager Memory (RSS):</strong> ${(info.memoryUsage.rss / (1024 * 1024)).toFixed(2)} MB</p>
-                        <p><strong>Load Average:</strong> ${info.osLoadAvg.map(l => l.toFixed(2)).join(', ')}</p>
-                    </div>
-                `;
+                updateSystemInfoDisplay(data.info);
             }
         } catch (error) {
             console.error('Error fetching system info:', error);
@@ -1037,6 +1104,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Initial load
+    fetchDashboardData();
     fetchServerStatus(); // This will now also set initial button states
     loadServerProperties();
     //loadWorlds();
@@ -1046,17 +1114,15 @@ document.addEventListener('DOMContentLoaded', () => {
     addActivateButtonListeners();
     addRenameButtonListeners();
     addBackupButtonListeners();
+    addDownloadButtonListeners();
     addDeleteButtonListeners();
     addBackupActionListeners();
     fetchLogs();
-    fetchSystemInfo();
 
     // Refresh status and worlds periodically
-    setInterval(fetchServerStatus, 10000); // Every 10 seconds
+    setInterval(fetchDashboardData, 10000); // Every 10 seconds
     setInterval(loadWorlds, 30000); // Every 30 seconds
     setInterval(loadBackups, 60000); // Every 60 seconds
     setInterval(fetchLogs, 5000); // Every 5 seconds
-    setInterval(fetchSystemInfo, 30000); // Every 30 seconds
-    setInterval(fetchPlayers, 15000); // Every 15 seconds
 
 });

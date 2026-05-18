@@ -25,7 +25,7 @@ let TEMP_DIRECTORY;
 let BACKUP_DIRECTORY;
 let serverPID = null;
 let activeServerProcess = null;
-let lastPlayerInfo = { count: 0, max: 0, list: [], lastUpdated: 0 };
+let lastPlayerInfo = { count: 0, max: 0, list: [], lastUpdated: 0, lastListRequested: 0 };
 
 const LAST_VERSION_FILE = 'last_version.txt';
 const WEBHOOK_URL = process.env.MC_UPDATE_WEBHOOK;
@@ -1187,6 +1187,45 @@ export async function deleteWorld(worldName) {
     }
 }
 
+/**
+ * Zips a world directory for download.
+ * @param {string} worldName - The name of the world to zip.
+ * @returns {Promise<string|null>} The path to the created ZIP file, or null if failed.
+ */
+export async function zipWorld(worldName) {
+    if (!SERVER_DIRECTORY) {
+        log('ERROR', 'SERVER_DIRECTORY not set. Cannot zip world.');
+        return null;
+    }
+    if (!isValidWorldName(worldName)) {
+        log('ERROR', `Invalid world name for zipping: ${worldName}`);
+        return null;
+    }
+
+    const worldPath = path.join(SERVER_DIRECTORY, 'worlds', worldName);
+    if (!fs.existsSync(worldPath)) {
+        log('ERROR', `World directory '${worldName}' not found at ${worldPath}.`);
+        return null;
+    }
+
+    const zipPath = path.join(TEMP_DIRECTORY, `${worldName}_${Date.now()}.mcworld`);
+
+    try {
+        log('INFO', `Zipping world '${worldName}' to ${zipPath}`);
+        const zip = new AdmZip();
+        zip.addLocalFolder(worldPath);
+        zip.writeZip(zipPath);
+        log('INFO', `World zipping complete: ${zipPath}`);
+        return zipPath;
+    } catch (error) {
+        log('ERROR', `Error during world zipping for '${worldName}': ${error.message}`);
+        if (fs.existsSync(zipPath)) {
+            fs.rmSync(zipPath, { force: true });
+        }
+        throw error;
+    }
+}
+
 export async function activateWorld(worldName) {
     if (!SERVER_DIRECTORY) {
         log('ERROR', 'SERVER_DIRECTORY not set. Cannot activate world.');
@@ -1238,7 +1277,9 @@ export async function getPlayers() {
 
     // We don't want to spam 'list' command
     const now = Date.now();
-    if (now - lastPlayerInfo.lastUpdated > 10000) { // Update every 10 seconds at most
+    // Only request update if it's been 10s since last update AND 10s since last request
+    if (now - lastPlayerInfo.lastUpdated > 10000 && now - lastPlayerInfo.lastListRequested > 10000) {
+        lastPlayerInfo.lastListRequested = now;
         sendServerCommand('list');
     }
 
@@ -1246,7 +1287,8 @@ export async function getPlayers() {
         success: true,
         count: lastPlayerInfo.count,
         max: lastPlayerInfo.max,
-        players: lastPlayerInfo.list
+        players: lastPlayerInfo.list,
+        list: lastPlayerInfo.list // Backward compatibility and internal consistency
     };
 }
 
