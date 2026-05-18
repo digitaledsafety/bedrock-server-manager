@@ -209,5 +209,31 @@ export const propertiesMetadata = {
         type: 'number',
         min: 0,
         max: 65535
+    },
+    'server-authoritative-block-breaking': {
+        label: 'Auth Block Breaking',
+        category: 'security',
+        description: 'If true, the server will authoritative compute block breaking.',
+        type: 'boolean'
+    },
+    'player-movement-score-threshold': {
+        label: 'Movement Score Threshold',
+        category: 'security',
+        description: 'The number of incongruent time intervals needed before abnormal movement is logged.',
+        type: 'number',
+        min: 0
+    },
+    'player-movement-distance-threshold': {
+        label: 'Movement Distance Threshold',
+        category: 'security',
+        description: 'The maximum distance a player can move before being checked for abnormal movement.',
+        type: 'number',
+        min: 0
+    },
+    'client-side-chunk-generation-enabled': {
+        label: 'Client Chunk Gen',
+        category: 'performance',
+        description: 'If enabled, clients will generate chunks themselves to reduce server load.',
+        type: 'boolean'
     }
 };
