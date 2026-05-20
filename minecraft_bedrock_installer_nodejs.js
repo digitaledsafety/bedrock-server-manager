@@ -34,6 +34,7 @@ const WORLD_DIRECTORIES = ['worlds'];
 const GLOBAL_CONFIG_FILE = 'config.json';
 
 let autoUpdateIntervalId = null;
+let lastUpdateCheckStatus = { success: true, message: 'No update check performed yet.', timestamp: null };
 
 const logStream = fs.createWriteStream(path.join(__dirnameESM, 'mc_installer.log'), { flags: 'a' });
 const LOG_LEVELS = { DEBUG: 0, INFO: 1, WARNING: 2, ERROR: 3, FATAL: 4 };
@@ -146,50 +147,52 @@ export async function getLatestVersion() {
     }
 
     if (serverType === 'bedrock_education') {
-       const redirectUrlString = platform === 'win32'
-            ? 'https://aka.ms/downloadmee-winServerBeta'
-            : 'https://aka.ms/downloadmee-linuxServerBeta';
+        try {
+            const redirectUrlString = platform === 'win32'
+                ? 'https://aka.ms/downloadmee-winServerBeta'
+                : 'https://aka.ms/downloadmee-linuxServerBeta';
 
-        // Wrap https.get in a promise to use with async/await
-        const downloadUrl = await new Promise((resolve, reject) => {
-            const request = https.get(new URL(redirectUrlString), (res) => {
-                res.resume(); // Consume response data
-                if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-                    resolve(res.headers.location);
-                } else {
-                    reject(new Error(`Failed to get redirect location. Status: ${res.statusCode}`));
-                }
+            // Wrap https.get in a promise to use with async/await
+            const downloadUrl = await new Promise((resolve, reject) => {
+                const request = https.get(new URL(redirectUrlString), (res) => {
+                    res.resume(); // Consume response data
+                    if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                        resolve(res.headers.location);
+                    } else {
+                        reject(new Error(`Failed to get redirect location. Status: ${res.statusCode}`));
+                    }
+                });
+                request.on('error', (err) => {
+                    reject(new Error(`Error getting Minecraft Education Edition download link: ${err.message}`));
+                });
             });
-            request.on('error', (err) => {
-                reject(new Error(`Error getting Minecraft Education Edition download link: ${err.message}`));
-            });
-        });
 
-        log('DEBUG', `Redirected to: ${downloadUrl}`);
-        const versionRegex = /MinecraftEducation_Server_(?:Windows|Linux)_([\d\.]+)\.zip/;
-        const versionMatch = downloadUrl.match(versionRegex);
+            log('DEBUG', `Redirected to: ${downloadUrl}`);
+            const versionRegex = /MinecraftEducation_Server_(?:Windows|Linux)_([\d\.]+)\.zip/;
+            const versionMatch = downloadUrl.match(versionRegex);
 
-       if (versionMatch && versionMatch[1]) {
-            const version = versionMatch[1].trim();
-            log('INFO', `Found Minecraft Education Edition server version ${version} from redirect.`);
-            return { latestVersion: version, downloadUrl: downloadUrl };
-        } else {
-            const error = new Error(`Could not extract version from the redirected URL: ${downloadUrl}`);
-            log('ERROR', error.message);
-            throw error;
+            if (versionMatch && versionMatch[1]) {
+                const version = versionMatch[1].trim();
+                log('INFO', `Found Minecraft Education Edition server version ${version} from redirect.`);
+                return { latestVersion: version, downloadUrl: downloadUrl };
+            } else {
+                log('WARNING', `Could not extract version from the redirected URL: ${downloadUrl}`);
+                return null;
+            }
+        } catch (error) {
+            log('ERROR', `Failed to fetch Minecraft Education Edition version: ${error.message}`);
+            return null;
         }
-
-        return { latestVersion: version, downloadUrl: downloadUrl };
     }
 
     // Default to bedrock
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
         const apiURL = new URL(MC_DOWNLOAD_API_URL);
         https.get(apiURL, { headers: { 'Accept-Language': 'en-US,en;q=0.5' } }, (res) => {
             let data = '';
             if (res.statusCode < 200 || res.statusCode >= 300) {
                 log('ERROR', `Failed to fetch download links from API. Status: ${res.statusCode} ${res.statusMessage}. Response: ${data}`);
-                return reject(new Error(`API error! Status code: ${res.statusCode}`));
+                return resolve(null);
             }
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
@@ -221,12 +224,12 @@ export async function getLatestVersion() {
                     }
                 } catch (error) {
                     log('ERROR', `Error parsing JSON response from download API: ${error.message}. Response: ${data}`);
-                    reject(error);
+                    resolve(null);
                 }
             });
         }).on('error', err => {
             log('ERROR', `Error fetching data from download API: ${err.message}`);
-            reject(err);
+            resolve(null);
         });
     });
 }
@@ -874,14 +877,16 @@ export async function checkAndInstall() {
     const versionInfo = await getLatestVersion();
     if (!versionInfo || !versionInfo.latestVersion || !versionInfo.downloadUrl) {
         log('WARNING', 'Failed to retrieve the latest version or download URL. Aborting update check.');
-        return { success: false, message: 'Failed to retrieve latest version information from API.' };
+        lastUpdateCheckStatus = { success: false, message: 'Failed to retrieve latest version information from API.', timestamp: new Date().toISOString() };
+        return lastUpdateCheckStatus;
     }
     const { latestVersion, downloadUrl: apiDownloadUrl } = versionInfo;
 
     const lastVersion = getStoredVersion();
     if (lastVersion && latestVersion === lastVersion) {
         log('INFO', 'No new version found. Server is up to date.');
-        return { success: true, message: 'Server is already up to date.' };
+        lastUpdateCheckStatus = { success: true, message: 'Server is already up to date.', timestamp: new Date().toISOString() };
+        return lastUpdateCheckStatus;
     }
     log('INFO', `New version found: ${latestVersion}. Current version: ${lastVersion || 'None'}`);
 
@@ -942,13 +947,19 @@ export async function checkAndInstall() {
         }
         await startServer();
         log('INFO', 'Update process complete. Server should be starting.');
-        return { success: true, message: `Server updated to version ${latestVersion}.` };
+        lastUpdateCheckStatus = { success: true, message: `Server updated to version ${latestVersion}.`, timestamp: new Date().toISOString() };
+        return lastUpdateCheckStatus;
     } catch (error) {
         log('ERROR', `Error during installation: ${error.message}`);
         try { await startServer(); log('INFO', 'Attempted to restart server after failed update.'); }
         catch (startErr) { log('ERROR', `Failed to restart server after update error: ${startErr.message}`); }
-        return { success: false, message: `Error during installation: ${error.message}` };
+        lastUpdateCheckStatus = { success: false, message: `Error during installation: ${error.message}`, timestamp: new Date().toISOString() };
+        return lastUpdateCheckStatus;
     }
+}
+
+export function getLastUpdateCheckStatus() {
+    return lastUpdateCheckStatus;
 }
 
 /**
@@ -1933,14 +1944,23 @@ export async function startAutoUpdateScheduler() {
     if (currentConfig.autoUpdateEnabled && currentConfig.autoUpdateIntervalMinutes > 0) {
         const intervalMs = currentConfig.autoUpdateIntervalMinutes * 60 * 1000;
         log('INFO', `Starting auto-update scheduler to run every ${currentConfig.autoUpdateIntervalMinutes} minutes.`);
-        const initialCheckResult = await checkAndInstall();
-        if (!initialCheckResult.success) {
-            log('ERROR', `Initial auto-update check failed: ${initialCheckResult.message}`);
+        try {
+            const initialCheckResult = await checkAndInstall();
+            if (!initialCheckResult.success) {
+                log('ERROR', `Initial auto-update check failed: ${initialCheckResult.message}`);
+            }
+        } catch (error) {
+            log('ERROR', `Exception during initial auto-update check: ${error.message}`);
         }
+
         autoUpdateIntervalId = setInterval(async () => {
             log('INFO', 'Auto-update check initiated by scheduler.');
-            const result = await checkAndInstall();
-            if (!result.success) { log('ERROR', `Auto-update failed: ${result.message}`); }
+            try {
+                const result = await checkAndInstall();
+                if (!result.success) { log('ERROR', `Auto-update failed: ${result.message}`); }
+            } catch (error) {
+                log('ERROR', `Exception during scheduled auto-update check: ${error.message}`);
+            }
         }, intervalMs);
     } else {
         log('INFO', 'Auto-update is disabled or interval is invalid. Scheduler not started.');
