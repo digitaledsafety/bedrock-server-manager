@@ -9,6 +9,7 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   stopServer: jest.fn(),
   restartServer: jest.fn(),
   checkAndInstall: jest.fn(),
+  getLastUpdateCheckStatus: jest.fn(),
   readServerProperties: jest.fn(),
   writeServerProperties: jest.fn(),
   listWorlds: jest.fn(),
@@ -42,6 +43,7 @@ describe('API Endpoints', () => {
     backend.readServerProperties.mockResolvedValue({});
     backend.listWorlds.mockResolvedValue([]);
     backend.isProcessRunning.mockResolvedValue(false);
+    backend.getLastUpdateCheckStatus.mockReturnValue({ success: true, message: 'All good' });
     backend.getStoredVersion.mockReturnValue('1.0.0');
   });
 
@@ -52,7 +54,7 @@ describe('API Endpoints', () => {
       const res = await request(app).get('/api/status');
 
       expect(res.statusCode).toEqual(200);
-      expect(res.body).toEqual({ status: 'running' });
+      expect(res.body).toEqual({ status: 'running', updateStatus: { success: true, message: 'All good' } });
       expect(backend.isProcessRunning).toHaveBeenCalledTimes(1);
     });
 
@@ -62,7 +64,7 @@ describe('API Endpoints', () => {
       const res = await request(app).get('/api/status');
 
       expect(res.statusCode).toEqual(200);
-      expect(res.body).toEqual({ status: 'stopped' });
+      expect(res.body).toEqual({ status: 'stopped', updateStatus: { success: true, message: 'All good' } });
     });
 
     it('should return 500 if there is an error checking the status', async () => {
