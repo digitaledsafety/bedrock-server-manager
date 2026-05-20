@@ -142,7 +142,11 @@ const sanitizeServerProperties = (req, res, next) => {
 app.get('/api/status', async (req, res) => {
     try {
         const isRunning = await backend.isProcessRunning();
-        res.json({ status: isRunning ? 'running' : 'stopped' });
+        const updateStatus = backend.getLastUpdateCheckStatus();
+        res.json({
+            status: isRunning ? 'running' : 'stopped',
+            updateStatus: updateStatus
+        });
     } catch (error) {
         backend.log('ERROR', `Error getting server status: ${error.message}`);
         res.status(500).json({ error: 'Failed to get server status' });

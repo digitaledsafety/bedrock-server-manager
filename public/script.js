@@ -219,7 +219,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function updateServerStatusDisplay(status) {
+    function updateServerStatusDisplay(status, updateStatus) {
         serverStatusSpan.textContent = status.toUpperCase();
         serverStatusSpan.className = status === 'running' ? 'status-indicator status-running' : 'status-indicator status-stopped';
         setButtonStates(status); // Call to update button states based on status
@@ -230,6 +230,25 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             if (playerInfoDiv) playerInfoDiv.style.display = 'none';
         }
+
+        // Handle update status warning
+        if (updateStatus && updateStatus.success === false) {
+            const updateWarningId = 'update-check-warning';
+            let warningEl = document.getElementById(updateWarningId);
+            if (!warningEl) {
+                warningEl = document.createElement('div');
+                warningEl.id = updateWarningId;
+                warningEl.className = 'error-box';
+                warningEl.style.marginTop = '10px';
+                warningEl.style.display = 'block';
+                // Insert after server status paragraph
+                serverStatusSpan.parentElement.insertAdjacentElement('afterend', warningEl);
+            }
+            warningEl.textContent = `Warning: ${updateStatus.message}`;
+        } else {
+            const warningEl = document.getElementById('update-check-warning');
+            if (warningEl) warningEl.remove();
+        }
     }
 
     // --- API Calls ---
@@ -237,7 +256,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch('/api/status');
             const data = await response.json();
-            updateServerStatusDisplay(data.status);
+            updateServerStatusDisplay(data.status, data.updateStatus);
         } catch (error) {
             console.error('Error fetching server status:', error);
             updateServerStatusDisplay('unknown'); // Set status to unknown on error
