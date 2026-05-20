@@ -31,6 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const uploadWorldButton = document.getElementById('uploadWorldButton');
 
     const restartNeededNote = document.getElementById('restartNeededNote');
+    const propertiesSearch = document.getElementById('propertiesSearch');
 
     // Pack Management specific elements
     const uploadPackForm = document.getElementById('uploadPackForm');
@@ -102,10 +103,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const createPackItem = (pack, type) => {
                     const item = document.createElement('div');
                     item.className = 'world-item';
+                    const displayName = pack.name || pack.pack_id;
                     item.innerHTML = `
                         <div style="flex-grow: 1;">
-                            <strong>${type === 'behavior' ? 'Behavior' : 'Resource'}:</strong> ${pack.pack_id}
-                            <div style="font-size: 0.8rem; color: #aaa;">Version: ${pack.version.join('.')}</div>
+                            <strong>${type === 'behavior' ? 'Behavior' : 'Resource'}:</strong> ${displayName}
+                            <div style="font-size: 0.8rem; color: #aaa;">${pack.name ? 'ID: ' + pack.pack_id + ' | ' : ''}Version: ${pack.version.join('.')}</div>
                         </div>
                         <button class="delete-pack-button bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded transition duration-300"
                                 data-world-name="${worldName}" data-pack-type="${type}" data-pack-id="${pack.pack_id}">
@@ -303,30 +305,38 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function renderPropertiesUI() {
+    function renderPropertiesUI(filter = '') {
         propertiesTabs.innerHTML = '';
         propertiesContainer.innerHTML = '';
+        const searchTerm = filter.toLowerCase();
 
         propertyCategories.forEach((category, index) => {
             const tabButton = document.createElement('button');
             tabButton.type = 'button';
-            tabButton.className = `tab-button ${index === 0 ? 'active' : ''}`;
+            tabButton.className = 'tab-button';
             tabButton.textContent = category.label;
             tabButton.onclick = () => switchTab(category.id);
             propertiesTabs.appendChild(tabButton);
 
             const categorySection = document.createElement('div');
             categorySection.id = `category-${category.id}`;
-            categorySection.className = `tab-content ${index === 0 ? 'active' : ''}`;
+            categorySection.className = 'tab-content';
 
             const grid = document.createElement('div');
             grid.className = 'form-grid';
 
+            let visibleCount = 0;
+
             // Filter properties for this category
             Object.entries(propertiesMetadata).forEach(([key, meta]) => {
                 if (meta.category === category.id) {
-                    const value = currentServerProperties[key] || '';
-                    grid.appendChild(createPropertyElement(key, meta, value));
+                    const labelMatch = (meta.label || '').toLowerCase().includes(searchTerm);
+                    const keyMatch = key.toLowerCase().includes(searchTerm);
+                    if (!searchTerm || labelMatch || keyMatch) {
+                        const value = currentServerProperties[key] || '';
+                        grid.appendChild(createPropertyElement(key, meta, value));
+                        visibleCount++;
+                    }
                 }
             });
 
@@ -334,14 +344,35 @@ document.addEventListener('DOMContentLoaded', () => {
             if (category.id === 'advanced') {
                 Object.entries(currentServerProperties).forEach(([key, value]) => {
                     if (!propertiesMetadata[key]) {
-                        grid.appendChild(createPropertyElement(key, { label: key, type: 'string', description: 'Advanced setting' }, value));
+                        const keyMatch = key.toLowerCase().includes(searchTerm);
+                        if (!searchTerm || keyMatch) {
+                            grid.appendChild(createPropertyElement(key, { label: key, type: 'string', description: 'Advanced setting' }, value));
+                            visibleCount++;
+                        }
                     }
                 });
+            }
+
+            const hasMatch = visibleCount > 0;
+            if (!hasMatch && searchTerm) {
+                tabButton.style.display = 'none';
+                categorySection.style.display = 'none';
             }
 
             categorySection.appendChild(grid);
             propertiesContainer.appendChild(categorySection);
         });
+
+        // Handle initial active state
+        const visibleTabs = Array.from(propertiesTabs.querySelectorAll('.tab-button:not([style*="display: none"])'));
+        if (visibleTabs.length > 0) {
+            const firstTab = visibleTabs[0];
+            const categoryId = propertyCategories.find(c => c.label === firstTab.textContent).id;
+            firstTab.classList.add('active');
+            const content = document.getElementById(`category-${categoryId}`);
+            content.classList.add('active');
+            content.style.display = '';
+        }
     }
 
     function createPropertyElement(key, meta, value) {
@@ -955,6 +986,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (propertiesForm) propertiesForm.addEventListener('submit', saveServerProperties);
     if (autoUpdateConfigForm) autoUpdateConfigForm.addEventListener('submit', saveAutoUpdateConfig);
+    if (propertiesSearch) {
+        propertiesSearch.addEventListener('input', (e) => {
+            renderPropertiesUI(e.target.value);
+        });
+    }
     if (uploadPackForm) {
         uploadPackForm.addEventListener('submit', async (e) => {
             await handleUploadPack(e);
