@@ -76,6 +76,9 @@
                 </div>
             </form>
             <% } %>
+            <div class="form-group" style="margin-bottom: 10px;">
+                <input type="text" id="logSearchInput" placeholder="Search/Filter logs..." style="width: 100%;">
+            </div>
             <textarea id="consoleOutput" readonly placeholder="Server logs will appear here..." style="height: 300px;"></textarea>
             <div class="button-group" style="margin-top: 10px;">
                 <button id="clearLogsButton" class="bg-gray-500 hover:bg-gray-700">Clear Logs</button>
@@ -136,6 +139,9 @@
                             </button>
                             <button class="backup-world-button bg-green-600 hover:bg-green-700" data-world-name="<%= world %>">
                                 Backup
+                            </button>
+                            <button class="download-world-button bg-blue-500 hover:bg-blue-700" data-world-name="<%= world %>">
+                                Download
                             </button>
                             <% if (properties['level-name'] !== world) { %>
                                 <button class="delete-world-button bg-red-500 hover:bg-red-700" data-world-name="<%= world %>">

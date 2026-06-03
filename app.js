@@ -183,6 +183,33 @@ app.get('/api/system-info', async (req, res) => {
     }
 });
 
+app.get('/api/dashboard', async (req, res) => {
+    try {
+        const isRunning = await backend.isProcessRunning();
+        const players = await backend.getPlayers();
+        const systemInfo = {
+            platform: process.platform,
+            arch: process.arch,
+            nodeVersion: process.version,
+            uptime: Math.floor(process.uptime()),
+            memoryUsage: process.memoryUsage(),
+            osUptime: Math.floor(os.uptime()),
+            osTotalMem: os.totalmem(),
+            osFreeMem: os.freemem(),
+            osLoadAvg: os.loadavg()
+        };
+        res.json({
+            success: true,
+            status: isRunning ? 'running' : 'stopped',
+            players,
+            systemInfo
+        });
+    } catch (error) {
+        backend.log('ERROR', `Error getting dashboard data: ${error.message}`);
+        res.status(500).json({ success: false, error: 'Failed to get dashboard data' });
+    }
+});
+
 app.post('/api/start', async (req, res) => {
     try {
         await backend.startServer();
@@ -409,6 +436,32 @@ app.post('/api/backup-world', validateWorldName, async (req, res) => {
     } catch (error) {
         backend.log('ERROR', `Failed to backup world: ${error.message}`);
         res.status(500).json({ success: false, message: 'Failed to create world backup due to server error.' });
+    }
+});
+
+app.get('/api/worlds/:worldName/download', async (req, res) => {
+    try {
+        const { worldName } = req.params;
+        if (!backend.isValidWorldName(worldName)) {
+            return res.status(400).json({ success: false, message: 'Invalid world name.' });
+        }
+        const zipPath = await backend.zipWorld(worldName);
+        if (zipPath) {
+            res.download(zipPath, `${worldName}.mcworld`, (err) => {
+                if (err) {
+                    backend.log('ERROR', `Error downloading world ZIP: ${err.message}`);
+                }
+                // Cleanup temp file
+                fs.promises.unlink(zipPath).catch(cleanupErr => {
+                    backend.log('WARNING', `Failed to cleanup world ZIP ${zipPath}: ${cleanupErr.message}`);
+                });
+            });
+        } else {
+            res.status(500).json({ success: false, message: `Failed to zip world '${worldName}'.` });
+        }
+    } catch (error) {
+        backend.log('ERROR', `Failed to download world: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Failed to download world due to server error.' });
     }
 });
 
