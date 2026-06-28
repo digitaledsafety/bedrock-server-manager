@@ -440,6 +440,51 @@ export async function listBackups() {
  * @param {string} backupName - The name of the backup to delete.
  * @returns {Promise<{success: boolean, message: string}>}
  */
+/**
+ * Zips a backup directory for export.
+ * @param {string} backupName - The name of the backup to export.
+ * @returns {Promise<{success: boolean, zipPath?: string, message?: string}>}
+ */
+/**
+ * Zips a backup directory for export.
+ * @param {string} backupName - The name of the backup to export.
+ * @returns {Promise<{success: boolean, zipPath?: string, message?: string}>}
+ */
+export async function exportBackup(backupName) {
+    if (!BACKUP_DIRECTORY) {
+        return { success: false, message: 'Backup directory not configured.' };
+    }
+    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+        log('ERROR', `Invalid backup name for export: ${backupName}`);
+        return { success: false, message: 'Invalid backup name.' };
+    }
+
+    const backupPath = path.join(BACKUP_DIRECTORY, backupName);
+    if (!fs.existsSync(backupPath)) {
+        log('WARNING', `Backup not found for export: ${backupPath}`);
+        return { success: false, message: 'Backup not found.' };
+    }
+
+    try {
+        const zip = new AdmZip();
+        zip.addLocalFolder(backupPath);
+        const uniqueId = Date.now() + '-' + Math.floor(Math.random() * 1000);
+        const zipFilename = `backup-${backupName}-${uniqueId}.zip`;
+        const zipPath = path.join(TEMP_DIRECTORY, zipFilename);
+
+        if (!fs.existsSync(TEMP_DIRECTORY)) {
+            fs.mkdirSync(TEMP_DIRECTORY, { recursive: true });
+        }
+
+        zip.writeZip(zipPath);
+        log('INFO', `Backup '${backupName}' zipped to ${zipPath}`);
+        return { success: true, zipPath };
+    } catch (error) {
+        log('ERROR', `Failed to zip backup '${backupName}': ${error.message}`);
+        return { success: false, message: `Failed to zip backup: ${error.message}` };
+    }
+}
+
 export async function deleteBackup(backupName) {
     if (!BACKUP_DIRECTORY) {
         return { success: false, message: 'Backup directory not configured.' };
@@ -1118,6 +1163,51 @@ export async function renameWorld(oldWorldName, newWorldName) {
     }
 }
 
+/**
+ * Zips a world directory for export as .mcworld.
+ * @param {string} worldName - The name of the world to export.
+ * @returns {Promise<{success: boolean, zipPath?: string, message?: string}>}
+ */
+/**
+ * Zips a world directory for export as .mcworld.
+ * @param {string} worldName - The name of the world to export.
+ * @returns {Promise<{success: boolean, zipPath?: string, message?: string}>}
+ */
+export async function exportWorld(worldName) {
+    if (!SERVER_DIRECTORY) {
+        return { success: false, message: 'Server directory not configured.' };
+    }
+    if (!isValidWorldName(worldName)) {
+        log('ERROR', `Invalid world name for export: ${worldName}`);
+        return { success: false, message: 'Invalid world name.' };
+    }
+
+    const worldPath = path.join(SERVER_DIRECTORY, 'worlds', worldName);
+    if (!fs.existsSync(worldPath)) {
+        log('WARNING', `World not found for export: ${worldPath}`);
+        return { success: false, message: 'World not found.' };
+    }
+
+    try {
+        const zip = new AdmZip();
+        zip.addLocalFolder(worldPath);
+        const uniqueId = Date.now() + '-' + Math.floor(Math.random() * 1000);
+        const zipFilename = `world-${worldName}-${uniqueId}.mcworld`;
+        const zipPath = path.join(TEMP_DIRECTORY, zipFilename);
+
+        if (!fs.existsSync(TEMP_DIRECTORY)) {
+            fs.mkdirSync(TEMP_DIRECTORY, { recursive: true });
+        }
+
+        zip.writeZip(zipPath);
+        log('INFO', `World '${worldName}' zipped to ${zipPath}`);
+        return { success: true, zipPath };
+    } catch (error) {
+        log('ERROR', `Failed to zip world '${worldName}': ${error.message}`);
+        return { success: false, message: `Failed to zip world: ${error.message}` };
+    }
+}
+
 export async function createWorld(worldName) {
     if (!SERVER_DIRECTORY) {
         log('ERROR', 'SERVER_DIRECTORY not set. Cannot create world.');
@@ -1691,6 +1781,43 @@ export async function listPacks(worldName) {
 
     const behaviorPacks = await readPackJson('world_behavior_packs.json');
     const resourcePacks = await readPackJson('world_resource_packs.json');
+
+    // Efficiently resolve human-readable names for the packs
+    const buildPackNameMap = async () => {
+        const map = new Map();
+        const packDirs = [
+            'behavior_packs', 'development_behavior_packs',
+            'resource_packs', 'development_resource_packs'
+        ];
+
+        for (const dirName of packDirs) {
+            const baseDirPath = path.join(SERVER_DIRECTORY, dirName);
+            if (!fs.existsSync(baseDirPath)) continue;
+
+            try {
+                const entries = await fs.promises.readdir(baseDirPath, { withFileTypes: true });
+                for (const entry of entries) {
+                    if (entry.isDirectory()) {
+                        const packPath = path.join(baseDirPath, entry.name);
+                        const manifest = await readManifest(packPath);
+                        if (manifest && manifest.header && manifest.header.uuid) {
+                            map.set(manifest.header.uuid, manifest.header.name);
+                        }
+                    }
+                }
+            } catch (e) {
+                log('DEBUG', `Failed to build pack name map for ${dirName}: ${e.message}`);
+            }
+        }
+        return map;
+    };
+
+    const packNameMap = await buildPackNameMap();
+    [...behaviorPacks, ...resourcePacks].forEach(pack => {
+        if (packNameMap.has(pack.pack_id)) {
+            pack.name = packNameMap.get(pack.pack_id);
+        }
+    });
 
     return { success: true, behaviorPacks, resourcePacks };
 }
