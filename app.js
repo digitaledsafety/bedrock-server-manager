@@ -271,6 +271,29 @@ app.delete('/api/backups/:backupName', async (req, res) => {
     }
 });
 
+app.get('/api/backups/:backupName/download', async (req, res) => {
+    try {
+        const { backupName } = req.params;
+        const result = await backend.exportBackup(backupName);
+        if (result.success) {
+            res.download(result.zipPath, `${backupName}.zip`, (err) => {
+                if (err) {
+                    backend.log('ERROR', `Error downloading backup ZIP: ${err.message}`);
+                }
+                // Cleanup temp file after download
+                fs.promises.unlink(result.zipPath).catch(cleanupErr => {
+                    backend.log('WARNING', `Failed to delete temporary backup ZIP ${result.zipPath}: ${cleanupErr.message}`);
+                });
+            });
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        backend.log('ERROR', `Failed to export backup: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Failed to export backup due to server error.' });
+    }
+});
+
 app.post('/api/backups/:backupName/restore', async (req, res) => {
     try {
         const { backupName } = req.params;
@@ -409,6 +432,29 @@ app.post('/api/backup-world', validateWorldName, async (req, res) => {
     } catch (error) {
         backend.log('ERROR', `Failed to backup world: ${error.message}`);
         res.status(500).json({ success: false, message: 'Failed to create world backup due to server error.' });
+    }
+});
+
+app.get('/api/worlds/:worldName/export', async (req, res) => {
+    try {
+        const { worldName } = req.params;
+        const result = await backend.exportWorld(worldName);
+        if (result.success) {
+            res.download(result.zipPath, `${worldName}.mcworld`, (err) => {
+                if (err) {
+                    backend.log('ERROR', `Error downloading world export: ${err.message}`);
+                }
+                // Cleanup temp file after download
+                fs.promises.unlink(result.zipPath).catch(cleanupErr => {
+                    backend.log('WARNING', `Failed to delete temporary world export ${result.zipPath}: ${cleanupErr.message}`);
+                });
+            });
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        backend.log('ERROR', `Failed to export world: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Failed to export world due to server error.' });
     }
 });
 
