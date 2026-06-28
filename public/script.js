@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const propertiesForm = document.getElementById('propertiesForm');
     const propertiesContainer = document.getElementById('propertiesContainer');
     const propertiesTabs = document.getElementById('propertiesTabs');
+    const propertySearchInput = document.getElementById('propertySearch');
     const consoleOutput = document.getElementById('consoleOutput'); // Get the console textarea
     const systemInfoContent = document.getElementById('systemInfoContent');
     const backupListContainer = document.getElementById('backupList');
@@ -104,8 +105,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     item.className = 'world-item';
                     item.innerHTML = `
                         <div style="flex-grow: 1;">
-                            <strong>${type === 'behavior' ? 'Behavior' : 'Resource'}:</strong> ${pack.pack_id}
-                            <div style="font-size: 0.8rem; color: #aaa;">Version: ${pack.version.join('.')}</div>
+                            <strong>${type === 'behavior' ? 'Behavior' : 'Resource'}:</strong> ${pack.name || pack.pack_id}
+                            <div style="font-size: 0.8rem; color: #aaa;">${pack.name ? 'ID: ' + pack.pack_id + ' | ' : ''}Version: ${pack.version.join('.')}</div>
                         </div>
                         <button class="delete-pack-button bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded transition duration-300"
                                 data-world-name="${worldName}" data-pack-type="${type}" data-pack-id="${pack.pack_id}">
@@ -493,6 +494,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         backupItem.innerHTML = `
                             <span>${backup}</span>
                             <div class="button-group" style="margin-top: 0;">
+                                <button class="download-backup-button bg-green-600 hover:bg-green-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-backup-name="${backup}">
+                                    Download
+                                </button>
                                 <button class="restore-backup-button bg-blue-500 hover:bg-blue-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-backup-name="${backup}">
                                     Restore
                                 </button>
@@ -517,12 +521,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function addBackupActionListeners() {
+        document.querySelectorAll('.download-backup-button').forEach(button => {
+            button.addEventListener('click', handleDownloadBackupClick);
+        });
         document.querySelectorAll('.delete-backup-button').forEach(button => {
             button.addEventListener('click', handleDeleteBackupClick);
         });
         document.querySelectorAll('.restore-backup-button').forEach(button => {
             button.addEventListener('click', handleRestoreBackupClick);
         });
+    }
+
+    async function handleDownloadBackupClick(event) {
+        const backupName = event.target.dataset.backupName;
+        window.location.href = `/api/backups/${backupName}/download`;
     }
 
     async function handleRestoreBackupClick(event) {
@@ -603,6 +615,9 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <button class="activate-world-button bg-blue-500 hover:bg-blue-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world}">
                                     Activate
                                 </button>
+                                <button class="export-world-button bg-purple-600 hover:bg-purple-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world}">
+                                    Export
+                                </button>
                                 <button class="rename-world-button bg-gray-500 hover:bg-gray-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="${world}">
                                     Rename
                                 </button>
@@ -618,6 +633,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             worldListContainer.appendChild(worldItem);
                         });
                         addActivateButtonListeners(); // Re-add listeners after updating DOM
+                        addExportButtonListeners(); // Re-add listeners after updating DOM
                         addRenameButtonListeners(); // Re-add listeners after updating DOM
                         addBackupButtonListeners(); // Re-add listeners after updating DOM
                         addDeleteButtonListeners(); // Re-add listeners after updating DOM
@@ -643,6 +659,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function addExportButtonListeners() {
+        document.querySelectorAll('.export-world-button').forEach(button => {
+            button.removeEventListener('click', handleExportWorldClick); // Prevent duplicate listeners
+            button.addEventListener('click', handleExportWorldClick);
+        });
+    }
+
     function addRenameButtonListeners() {
         document.querySelectorAll('.rename-world-button').forEach(button => {
             button.removeEventListener('click', handleRenameWorldClick); // Prevent duplicate listeners
@@ -662,6 +685,11 @@ document.addEventListener('DOMContentLoaded', () => {
             button.removeEventListener('click', handleDeleteWorldClick); // Prevent duplicate listeners
             button.addEventListener('click', handleDeleteWorldClick);
         });
+    }
+
+    async function handleExportWorldClick(event) {
+        const worldName = event.target.dataset.worldName;
+        window.location.href = `/api/worlds/${worldName}/export`;
     }
 
     async function handleDeleteWorldClick(event) {
@@ -973,6 +1001,42 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     if (propertiesForm) propertiesForm.addEventListener('submit', saveServerProperties);
+    if (propertySearchInput) {
+        propertySearchInput.addEventListener('input', () => {
+            const query = propertySearchInput.value.toLowerCase();
+            const propertyGroups = propertiesContainer.querySelectorAll('.form-group');
+
+            propertyGroups.forEach(group => {
+                const labelEl = group.querySelector('label');
+                const label = labelEl ? labelEl.textContent.toLowerCase() : '';
+                if (label.includes(query)) {
+                    group.style.display = 'block';
+                } else {
+                    group.style.display = 'none';
+                }
+            });
+
+            // If searching, show all categories and hide tabs
+            if (query) {
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.style.display = 'block';
+                    content.classList.add('active');
+                });
+                propertiesTabs.style.display = 'none';
+            } else {
+                // If query is cleared, restore tab view
+                propertiesTabs.style.display = 'flex';
+                const activeTabButton = propertiesTabs.querySelector('.tab-button.active');
+                if (activeTabButton) {
+                    const categoryLabel = activeTabButton.textContent;
+                    const category = propertyCategories.find(c => c.label === categoryLabel);
+                    if (category) {
+                        switchTab(category.id);
+                    }
+                }
+            }
+        });
+    }
     if (autoUpdateConfigForm) autoUpdateConfigForm.addEventListener('submit', saveAutoUpdateConfig);
     if (uploadPackForm) {
         uploadPackForm.addEventListener('submit', async (e) => {
@@ -1063,6 +1127,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadAutoUpdateConfig(); // New: Load auto-update config on page load
     loadActivePacks();
     addActivateButtonListeners();
+    addExportButtonListeners();
     addRenameButtonListeners();
     addBackupButtonListeners();
     addDeleteButtonListeners();
