@@ -128,17 +128,20 @@
                     <% worlds.forEach(world => { %>
                         <div class="world-item <%= properties['level-name'] === world ? 'active' : '' %>" data-world-name="<%= world %>">
                             <span><%= world %></span>
-                            <button class="activate-world-button" data-world-name="<%= world %>">
+                            <button class="activate-world-button bg-blue-500 hover:bg-blue-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="<%= world %>">
                                 Activate
+                            </button>
+                            <button class="export-world-button bg-purple-600 hover:bg-purple-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="<%= world %>">
+                                Export
                             </button>
                             <button class="rename-world-button bg-gray-500 hover:bg-gray-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="<%= world %>">
                                 Rename
                             </button>
-                            <button class="backup-world-button bg-green-600 hover:bg-green-700" data-world-name="<%= world %>">
+                            <button class="backup-world-button bg-green-600 hover:bg-green-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="<%= world %>">
                                 Backup
                             </button>
                             <% if (properties['level-name'] !== world) { %>
-                                <button class="delete-world-button bg-red-500 hover:bg-red-700" data-world-name="<%= world %>">
+                                <button class="delete-world-button bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded transition duration-300" data-world-name="<%= world %>">
                                     Delete
                                 </button>
                             <% } %>

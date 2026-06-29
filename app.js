@@ -61,13 +61,22 @@ app.set('views', path.join(__dirnameESM, 'views'));
 
 // --- Input Validation Middleware ---
 const validateWorldName = (req, res, next) => {
-    const { worldName } = req.body;
-    if (!worldName) {
-        return res.status(400).json({ error: 'World name is required.' });
+    // Check for worldName, or oldWorldName and newWorldName
+    const namesToValidate = [];
+    if (req.body.worldName) namesToValidate.push({ name: 'worldName', value: req.body.worldName });
+    if (req.body.oldWorldName) namesToValidate.push({ name: 'oldWorldName', value: req.body.oldWorldName });
+    if (req.body.newWorldName) namesToValidate.push({ name: 'newWorldName', value: req.body.newWorldName });
+
+    if (namesToValidate.length === 0) {
+        return res.status(400).json({ success: false, message: 'World name is required.', error: 'World name is required.' });
     }
-    if (!backend.isValidWorldName(worldName)) {
-        backend.log('ERROR', `Invalid worldName format or characters: ${worldName}`);
-        return res.status(400).json({ error: 'Invalid worldName format. Avoid ., /, \\ and ensure it matches allowed pattern.' });
+
+    for (const entry of namesToValidate) {
+        if (!backend.isValidWorldName(entry.value)) {
+            backend.log('ERROR', `Invalid ${entry.name} format or characters: ${entry.value}`);
+            const errorMsg = `Invalid ${entry.name} format. Avoid ., /, \\ and ensure it matches allowed pattern.`;
+            return res.status(400).json({ success: false, message: errorMsg, error: errorMsg });
+        }
     }
     next();
 };
@@ -369,14 +378,11 @@ app.post('/api/create-world', validateWorldName, async (req, res) => {
     }
 });
 
-app.post('/api/rename-world', async (req, res) => {
+app.post('/api/rename-world', validateWorldName, async (req, res) => {
     try {
         const { oldWorldName, newWorldName } = req.body;
         if (!oldWorldName || !newWorldName) {
             return res.status(400).json({ success: false, message: 'Both old and new world names are required.' });
-        }
-        if (!backend.isValidWorldName(oldWorldName) || !backend.isValidWorldName(newWorldName)) {
-            return res.status(400).json({ success: false, message: 'Invalid world name format.' });
         }
         const result = await backend.renameWorld(oldWorldName, newWorldName);
         if (result.success) {
