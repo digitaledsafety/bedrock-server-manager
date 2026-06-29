@@ -49,6 +49,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Utility Functions ---
     function showMessage(message, type = 'success') {
+        if (typeof message === 'object' && message !== null) {
+            message = message.message || message.error || JSON.stringify(message);
+        }
         messageBox.textContent = message;
         messageBox.className = type === 'success' ? 'message-box' : 'error-box';
         messageBox.style.display = 'block';
