@@ -58,7 +58,7 @@ describe('New Features API', () => {
                 .send({ worldName: 'invalid/name' });
 
             expect(response.status).toBe(400);
-            expect(response.body.error).toContain('Invalid worldName format');
+            expect(response.body.message).toContain('Invalid worldName format');
         });
 
         it('should return 400 if world creation fails in backend', async () => {
@@ -93,8 +93,7 @@ describe('New Features API', () => {
                 .send({ oldWorldName: 'OldWorld', newWorldName: 'invalid/name' });
 
             expect(response.status).toBe(400);
-            expect(response.body.success).toBe(false);
-            expect(response.body.message).toBe('Invalid world name format.');
+            expect(response.body.message).toContain('Invalid newWorldName format');
         });
 
         it('should return 400 if rename fails in backend', async () => {

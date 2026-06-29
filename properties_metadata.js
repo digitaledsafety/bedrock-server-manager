@@ -134,7 +134,7 @@ export const propertiesMetadata = {
     'max-threads': {
         label: 'Max Threads',
         category: 'performance',
-        description: 'Maximum number of threads the server will try to use.',
+        description: 'Maximum number of threads the server will try to use. 0 for auto.',
         type: 'number',
         min: 0
     },
@@ -168,6 +168,12 @@ export const propertiesMetadata = {
         label: 'Correct Player Movement',
         category: 'security',
         description: 'Whether to correct player movement if it deviates too much.',
+        type: 'boolean'
+    },
+    'server-authoritative-block-breaking': {
+        label: 'Authoritative Block Breaking',
+        category: 'security',
+        description: 'Determines the authority for block breaking.',
         type: 'boolean'
     },
     'allow-spectators': {
@@ -209,5 +215,25 @@ export const propertiesMetadata = {
         type: 'number',
         min: 0,
         max: 65535
+    },
+    'emit-server-telemetry': {
+        label: 'Emit Server Telemetry',
+        category: 'advanced',
+        description: 'If true, the server will emit telemetry data to Mojang.',
+        type: 'boolean'
+    },
+    'player-movement-score-threshold': {
+        label: 'Movement Score Threshold',
+        category: 'security',
+        description: 'The number of anomalous movements that must be reached before an action is taken.',
+        type: 'number',
+        min: 0
+    },
+    'player-movement-action-direction-threshold': {
+        label: 'Movement Action Direction Threshold',
+        category: 'security',
+        description: 'The threshold for player movement direction before an action is taken.',
+        type: 'number',
+        min: 0
     }
 };
