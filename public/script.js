@@ -8,6 +8,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const backupButton = document.getElementById('backupButton');
     const clearLogsButton = document.getElementById('clearLogsButton');
     const downloadLogsButton = document.getElementById('downloadLogsButton');
+    const refreshBackupsButton = document.getElementById('refreshBackupsButton');
+    const refreshWorldsButton = document.getElementById('refreshWorldsButton');
     const propertiesForm = document.getElementById('propertiesForm');
     const propertiesContainer = document.getElementById('propertiesContainer');
     const propertiesTabs = document.getElementById('propertiesTabs');
@@ -812,6 +814,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function handleActivateWorldClick(event) {
         const worldName = event.target.dataset.worldName;
+        if (!confirm(`Are you sure you want to activate the world '${worldName}'? This will restart the server.`)) return;
+
         try {
             showMessage(`Activating world '${worldName}'...`);
             const response = await fetch('/api/activate-world', {
@@ -996,6 +1000,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (clearLogsButton) clearLogsButton.addEventListener('click', handleClearLogs);
+    if (refreshBackupsButton) refreshBackupsButton.addEventListener('click', loadBackups);
+    if (refreshWorldsButton) refreshWorldsButton.addEventListener('click', loadWorlds);
     if (createWorldForm) createWorldForm.addEventListener('submit', handleCreateWorld);
     if (uploadWorldForm) uploadWorldForm.addEventListener('submit', handleUploadWorld);
     if (downloadLogsButton) {
