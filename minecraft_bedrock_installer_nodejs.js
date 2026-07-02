@@ -257,19 +257,43 @@ export function extractFiles(zipPath, extractPath) {
         try {
             log('INFO', `Using adm-zip for extraction for ${zipPath} to ${extractPath}.`);
             const zip = new AdmZip(zipPath);
-            zip.extractAllTo(extractPath, true); // true for overwrite
+            const zipEntries = zip.getEntries();
+            const resolvedExtractPath = path.resolve(extractPath) + path.sep;
+
+            zipEntries.forEach(entry => {
+                if (entry.isDirectory) return;
+
+                const targetFilePath = path.join(extractPath, entry.entryName);
+                const resolvedTargetFilePath = path.resolve(targetFilePath);
+
+                if (!resolvedTargetFilePath.startsWith(resolvedExtractPath)) {
+                    log('WARNING', `Zip Slip attempt detected and skipped: ${entry.entryName}`);
+                    return;
+                }
+
+                const targetDir = path.dirname(targetFilePath);
+                if (!fs.existsSync(targetDir)) {
+                    fs.mkdirSync(targetDir, { recursive: true });
+                }
+                fs.writeFileSync(targetFilePath, entry.getData());
+            });
+
             log('INFO', `Extraction completed successfully.`);
 
             // 2. Set permissions for specific executable files (e.g., a script named 'script.sh')
             const executableFilePath = path.join(extractPath, getServerExeName());
 
             if (os.platform() !== 'win32') {
-                try {
-                    // Set permissions to 755 (owner can read/write/execute, others can read/execute)
-                    fs.chmodSync(executableFilePath, 0o755);
-                    log('INFO', `Permissions set to 755 for ${executableFilePath}`);
-                } catch (err) {
-                    log('ERROR', `Failed to set permissions for ${executableFilePath}: ${err.message}`);
+                if (fs.existsSync(executableFilePath)) {
+                    try {
+                        // Set permissions to 755 (owner can read/write/execute, others can read/execute)
+                        fs.chmodSync(executableFilePath, 0o755);
+                        log('INFO', `Permissions set to 755 for ${executableFilePath}`);
+                    } catch (err) {
+                        log('ERROR', `Failed to set permissions for ${executableFilePath}: ${err.message}`);
+                    }
+                } else {
+                    log('WARNING', `Executable file not found after extraction: ${executableFilePath}`);
                 }
             }
 
@@ -697,8 +721,12 @@ export async function stopServer() {
                 process.kill(pidToKill, 0);
                 await new Promise(resolve => setTimeout(resolve, 100));
             } catch (e) {
-                isRunning = false;
-                break;
+                if (e.code === 'ESRCH') {
+                    isRunning = false;
+                    break;
+                }
+                // If it's EPERM, it's still running
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
         }
 
@@ -1398,6 +1426,10 @@ export async function isProcessRunning() {
         log('DEBUG', `Process with PID ${serverPID} is running.`);
         return true;
     } catch (error) {
+        if (error.code === 'EPERM') {
+            log('DEBUG', `Process with PID ${serverPID} exists but no permission to signal it (EPERM). Treating as running.`);
+            return true;
+        }
         if (error.code === 'ESRCH') {
             log('INFO', `Process with PID ${serverPID} not found (ESRCH).`);
             const pidFile = path.join(SERVER_DIRECTORY, 'server.pid');
