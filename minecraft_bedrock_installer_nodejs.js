@@ -324,10 +324,33 @@ export async function changeOwnership(dirPath, user, group) {
  * @param {string} worldName - The name of the world to backup.
  * @returns {Promise<string|null>} The path to the backup directory, or null if failed.
  */
+/**
+ * Gets disk usage for the given directory path.
+ * @param {string} dirPath
+ * @returns {Promise<{total: number, available: number}>}
+ */
+export async function getDiskUsage(dirPath) {
+    try {
+        const stats = await fs.promises.statfs(dirPath);
+        return {
+            total: stats.bsize * stats.blocks,
+            available: stats.bsize * stats.bavail
+        };
+    } catch (error) {
+        log('ERROR', `Error getting disk usage for ${dirPath}: ${error.message}`);
+        return { total: 0, available: 0 };
+    }
+}
+
 export async function backupWorld(worldName) {
     if (!SERVER_DIRECTORY || !fs.existsSync(SERVER_DIRECTORY)) {
         log('ERROR', 'SERVER_DIRECTORY not set. Cannot backup world.');
         return null;
+    }
+
+    const diskUsage = await getDiskUsage(BACKUP_DIRECTORY);
+    if (diskUsage.available < 500 * 1024 * 1024) { // 500MB
+        log('WARNING', `Low disk space on backup drive: ${(diskUsage.available / (1024 * 1024)).toFixed(2)} MB available.`);
     }
     if (!isValidWorldName(worldName)) {
         log('ERROR', `Invalid world name for backup: ${worldName}`);
@@ -393,6 +416,12 @@ export async function backupServer() {
         log('INFO', `Server directory not found or not set. Skipping backup.`);
         return null;
     }
+
+    const diskUsage = await getDiskUsage(BACKUP_DIRECTORY);
+    if (diskUsage.available < 500 * 1024 * 1024) { // 500MB
+        log('WARNING', `Low disk space on backup drive: ${(diskUsage.available / (1024 * 1024)).toFixed(2)} MB available.`);
+    }
+
     const backupDir = path.join(BACKUP_DIRECTORY, new Date().toISOString().replace(/:/g, '-').replace(/\./g, '_'));
     fs.mkdirSync(backupDir, { recursive: true });
     log('INFO', `Creating backup in ${backupDir}`);
@@ -874,13 +903,18 @@ export async function startServer() {
         serverProcess.unref();
 
         const startupCheck = new Promise((resolve, reject) => {
-            let exitedPrematurely = false;
+            let startupFailed = false;
+            let startupPeriodActive = true;
+            let timeoutId = null;
 
             const errorHandler = (err) => {
                 log('ERROR', `Server process error: ${err.message}`);
                 if (serverPID === serverProcess.pid) serverPID = null;
-                exitedPrematurely = true;
-                reject(new Error(`Server process error: ${err.message}`));
+                if (startupPeriodActive) {
+                    startupFailed = true;
+                    if (timeoutId) clearTimeout(timeoutId);
+                    reject(new Error(`Server process error: ${err.message}`));
+                }
             };
 
             const exitHandler = (code, signal) => {
@@ -888,18 +922,20 @@ export async function startServer() {
                 if (serverPID === serverProcess.pid) serverPID = null;
                 if (activeServerProcess === serverProcess) activeServerProcess = null;
                 lastPlayerInfo = { count: 0, max: 0, list: [], lastUpdated: 0 };
-                exitedPrematurely = true;
-                reject(new Error(`Server exited prematurely with code ${code} and signal ${signal}`));
+                if (startupPeriodActive) {
+                    startupFailed = true;
+                    if (timeoutId) clearTimeout(timeoutId);
+                    reject(new Error(`Server exited prematurely with code ${code} and signal ${signal}`));
+                }
             };
 
             serverProcess.on('error', errorHandler);
             serverProcess.on('exit', exitHandler);
 
             // Wait 5 seconds to see if it stays up
-            setTimeout(() => {
-                if (!exitedPrematurely) {
-                    // It seems okay. Keep the handlers but they won't reject this promise anymore
-                    // We need to re-attach or ensure they don't call reject() after resolve()
+            timeoutId = setTimeout(() => {
+                startupPeriodActive = false;
+                if (!startupFailed) {
                     resolve();
                 }
             }, 5000);
@@ -919,6 +955,11 @@ export async function startServer() {
 
 export async function checkAndInstall() {
     log('INFO', 'Checking for new Minecraft Bedrock server releases...');
+
+    const diskUsage = await getDiskUsage(SERVER_DIRECTORY);
+    if (diskUsage.available < 500 * 1024 * 1024) { // 500MB
+        log('WARNING', `Low disk space on server drive: ${(diskUsage.available / (1024 * 1024)).toFixed(2)} MB available.`);
+    }
     const versionInfo = await getLatestVersion();
     if (!versionInfo || !versionInfo.latestVersion || !versionInfo.downloadUrl) {
         log('WARNING', 'Failed to retrieve the latest version or download URL. Aborting update check.');

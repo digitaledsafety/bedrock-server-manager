@@ -174,6 +174,9 @@ app.get('/api/players', async (req, res) => {
 
 app.get('/api/system-info', async (req, res) => {
     try {
+        const config = backend.getConfig();
+        const diskUsage = await backend.getDiskUsage(config.serverDirectory);
+
         const info = {
             platform: process.platform,
             arch: process.arch,
@@ -183,7 +186,9 @@ app.get('/api/system-info', async (req, res) => {
             osUptime: Math.floor(os.uptime()),
             osTotalMem: os.totalmem(),
             osFreeMem: os.freemem(),
-            osLoadAvg: os.loadavg()
+            osLoadAvg: os.loadavg(),
+            diskTotal: diskUsage.total,
+            diskFree: diskUsage.available
         };
         res.json({ success: true, info });
     } catch (error) {
