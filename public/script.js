@@ -924,7 +924,11 @@ document.addEventListener('DOMContentLoaded', () => {
     startButton.addEventListener('click', () => sendCommand('start'));
     stopButton.addEventListener('click', () => sendCommand('stop'));
     restartButton.addEventListener('click', () => sendCommand('restart'));
-    updateButton.addEventListener('click', () => sendCommand('update'));
+    updateButton.addEventListener('click', () => {
+        if (confirm('Are you sure you want to check for and install updates? This will stop the server if an update is found.')) {
+            sendCommand('update');
+        }
+    });
 
     if (backupButton) {
         backupButton.addEventListener('click', async () => {
@@ -1103,6 +1107,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     return `${d}d ${h}h ${m}m ${s}s`;
                 };
 
+                const diskUsed = info.diskTotal - info.diskFree;
+                const diskUsedPercent = info.diskTotal > 0 ? (diskUsed / info.diskTotal * 100).toFixed(1) : 0;
+
                 systemInfoContent.innerHTML = `
                     <div>
                         <p><strong>OS:</strong> ${info.platform} (${info.arch})</p>
@@ -1114,6 +1121,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <p><strong>OS Memory:</strong> ${formatMem(info.osTotalMem - info.osFreeMem)} / ${formatMem(info.osTotalMem)}</p>
                         <p><strong>Manager Memory (RSS):</strong> ${(info.memoryUsage.rss / (1024 * 1024)).toFixed(2)} MB</p>
                         <p><strong>Load Average:</strong> ${info.osLoadAvg.map(l => l.toFixed(2)).join(', ')}</p>
+                        <p><strong>Disk Usage:</strong> ${formatMem(diskUsed)} / ${formatMem(info.diskTotal)} (${diskUsedPercent}%)</p>
                     </div>
                 `;
             }
