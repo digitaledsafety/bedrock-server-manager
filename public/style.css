@@ -18,7 +18,7 @@ body {
     background-position: center;
     background-repeat: no-repeat;
     background-attachment: fixed;
-    background-size:contain;
+    background-size:cover;
     background-image: url('/MCV_SummerDropKeyArt_NetDownloadableWallpaper_2560x1440.jpg')
 }
 .container {
