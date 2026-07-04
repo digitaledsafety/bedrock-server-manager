@@ -1,0 +1,23 @@
+<<<<<<< SEARCH
+    const diskUsage = await getDiskUsage(BACKUP_DIRECTORY);
+    if (diskUsage.available < 500 * 1024 * 1024) { // 500MB
+    if (diskUsage.available < 500 * 1024 * 1024) { // 500MB
+        log('WARNING', `Low disk space on backup drive: ${(diskUsage.available / (1024 * 1024)).toFixed(2)} MB available.`);
+    }
+=======
+    const diskUsage = await getDiskUsage(BACKUP_DIRECTORY);
+    if (diskUsage.available < 500 * 1024 * 1024) { // 500MB
+        log('WARNING', `Low disk space on backup drive: ${(diskUsage.available / (1024 * 1024)).toFixed(2)} MB available.`);
+    }
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+    const diskUsage = await getDiskUsage(BACKUP_DIRECTORY);
+    if (diskUsage.available > 0 && diskUsage.available < 500 * 1024 * 1024) { // 500MB
+        log('WARNING', `Low disk space on backup drive: ${(diskUsage.available / (1024 * 1024)).toFixed(2)} MB available.`);
+    }
+=======
+    const diskUsage = await getDiskUsage(BACKUP_DIRECTORY);
+    if (diskUsage.available < 500 * 1024 * 1024) { // 500MB
+        log('WARNING', `Low disk space on backup drive: ${(diskUsage.available / (1024 * 1024)).toFixed(2)} MB available.`);
+    }
+>>>>>>> REPLACE
