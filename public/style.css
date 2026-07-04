@@ -19,7 +19,7 @@ body {
     background-repeat: no-repeat;
     background-attachment: fixed;
     background-size:contain;
-    background-image: url('MCV_SummerDropKeyArt_NetDownloadableWallpaper_2560x1440.jpg')
+    background-image: url('/MCV_SummerDropKeyArt_NetDownloadableWallpaper_2560x1440.jpg')
 }
 .container {
     background-color: #555555; /* Medium gray */
