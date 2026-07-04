@@ -2064,13 +2064,32 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
 export async function startAutoUpdateScheduler() {
     const currentConfig = await readGlobalConfig();
     if (autoUpdateIntervalId) {
-        clearInterval(autoUpdateIntervalId);
+        clearTimeout(autoUpdateIntervalId);
         autoUpdateIntervalId = null;
         log('INFO', 'Cleared existing auto-update scheduler.');
     }
+
     if (currentConfig.autoUpdateEnabled && currentConfig.autoUpdateIntervalMinutes > 0) {
         const intervalMs = currentConfig.autoUpdateIntervalMinutes * 60 * 1000;
         log('INFO', `Starting auto-update scheduler to run every ${currentConfig.autoUpdateIntervalMinutes} minutes.`);
+
+        const scheduleNext = () => {
+            autoUpdateIntervalId = setTimeout(async () => {
+                log('INFO', 'Auto-update check initiated by scheduler.');
+                try {
+                    const result = await checkAndInstall();
+                    if (!result.success) {
+                        log('ERROR', `Auto-update failed: ${result.message}`);
+                    }
+                } catch (error) {
+                    log('ERROR', `Exception during scheduled auto-update check: ${error.message}`);
+                } finally {
+                    // Schedule the next check ONLY after the current one finishes
+                    scheduleNext();
+                }
+            }, intervalMs);
+        };
+
         try {
             const initialCheckResult = await checkAndInstall();
             if (!initialCheckResult.success) {
@@ -2078,17 +2097,9 @@ export async function startAutoUpdateScheduler() {
             }
         } catch (error) {
             log('ERROR', `Exception during initial auto-update check: ${error.message}`);
+        } finally {
+            scheduleNext();
         }
-
-        autoUpdateIntervalId = setInterval(async () => {
-            log('INFO', 'Auto-update check initiated by scheduler.');
-            try {
-                const result = await checkAndInstall();
-                if (!result.success) { log('ERROR', `Auto-update failed: ${result.message}`); }
-            } catch (error) {
-                log('ERROR', `Exception during scheduled auto-update check: ${error.message}`);
-            }
-        }, intervalMs);
     } else {
         log('INFO', 'Auto-update is disabled or interval is invalid. Scheduler not started.');
     }

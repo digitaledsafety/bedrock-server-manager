@@ -569,6 +569,32 @@ app.post('/api/config', async (req, res) => {
             }
             currentFullConfig.autoUpdateIntervalMinutes = interval;
         }
+
+        const validatePort = (port) => {
+            const p = parseInt(port, 10);
+            return !isNaN(p) && p >= 1 && p <= 65535;
+        };
+
+        if (newSettings.uiPort !== undefined) {
+            if (!validatePort(newSettings.uiPort)) {
+                return res.status(400).json({ success: false, message: 'UI Port must be between 1 and 65535.' });
+            }
+            currentFullConfig.uiPort = parseInt(newSettings.uiPort, 10);
+        }
+
+        if (newSettings.serverPortIPv4 !== undefined) {
+            if (!validatePort(newSettings.serverPortIPv4)) {
+                return res.status(400).json({ success: false, message: 'IPv4 Port must be between 1 and 65535.' });
+            }
+            currentFullConfig.serverPortIPv4 = parseInt(newSettings.serverPortIPv4, 10);
+        }
+
+        if (newSettings.serverPortIPv6 !== undefined) {
+            if (!validatePort(newSettings.serverPortIPv6)) {
+                return res.status(400).json({ success: false, message: 'IPv6 Port must be between 1 and 65535.' });
+            }
+            currentFullConfig.serverPortIPv6 = parseInt(newSettings.serverPortIPv6, 10);
+        }
         if (newSettings.logLevel !== undefined) {
             if (typeof newSettings.logLevel !== 'string') {
                 return res.status(400).json({ success: false, message: 'Log level must be a string.' });

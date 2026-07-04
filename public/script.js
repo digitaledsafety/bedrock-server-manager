@@ -12,9 +12,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const propertiesContainer = document.getElementById('propertiesContainer');
     const propertiesTabs = document.getElementById('propertiesTabs');
     const propertySearchInput = document.getElementById('propertySearch');
+    const logSearchInput = document.getElementById('logSearchInput');
     const consoleOutput = document.getElementById('consoleOutput'); // Get the console textarea
     const systemInfoContent = document.getElementById('systemInfoContent');
     const backupListContainer = document.getElementById('backupList');
+    const refreshWorldsButton = document.getElementById('refreshWorldsButton');
+    const refreshBackupsButton = document.getElementById('refreshBackupsButton');
     const playerInfoDiv = document.getElementById('playerInfo');
     const playerCountSpan = document.getElementById('playerCount');
     const playerListDiv = document.getElementById('playerList');
@@ -301,6 +304,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let propertiesMetadata = {};
     let propertyCategories = [];
     let currentServerProperties = {};
+    let allLogs = [];
 
     async function loadServerProperties() {
         try {
@@ -984,6 +988,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             if (data.success) {
                 showMessage('Server logs cleared successfully!', 'success');
+                allLogs = []; // Clear the buffer
                 consoleOutput.value = ''; // Immediately clear in UI
                 fetchLogs(); // Refresh
             } else {
@@ -996,6 +1001,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (clearLogsButton) clearLogsButton.addEventListener('click', handleClearLogs);
+    if (refreshWorldsButton) refreshWorldsButton.addEventListener('click', loadWorlds);
+    if (refreshBackupsButton) refreshBackupsButton.addEventListener('click', loadBackups);
     if (createWorldForm) createWorldForm.addEventListener('submit', handleCreateWorld);
     if (uploadWorldForm) uploadWorldForm.addEventListener('submit', handleUploadWorld);
     if (downloadLogsButton) {
@@ -1041,6 +1048,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     if (autoUpdateConfigForm) autoUpdateConfigForm.addEventListener('submit', saveAutoUpdateConfig);
+    if (logSearchInput) {
+        logSearchInput.addEventListener('input', () => {
+            updateConsoleDisplay();
+        });
+    }
     if (uploadPackForm) {
         uploadPackForm.addEventListener('submit', async (e) => {
             await handleUploadPack(e);
@@ -1056,16 +1068,47 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/logs');
             const data = await response.json();
             if (data.success) {
-                if (consoleOutput.value !== data.logs) {
-                    const isScrolledToBottom = consoleOutput.scrollHeight - consoleOutput.clientHeight <= consoleOutput.scrollTop + 1;
-                    consoleOutput.value = data.logs;
-                    if (isScrolledToBottom) {
-                        consoleOutput.scrollTop = consoleOutput.scrollHeight;
+                const newLines = data.logs.split('\n');
+                if (allLogs.length === 0) {
+                    allLogs = newLines;
+                } else {
+                    const lastLine = allLogs[allLogs.length - 1];
+                    const index = newLines.lastIndexOf(lastLine);
+                    if (index !== -1) {
+                        allLogs = allLogs.concat(newLines.slice(index + 1));
+                    } else {
+                        // If last line not found, check if the whole data is new or just different
+                        if (data.logs !== allLogs.slice(-newLines.length).join('\n')) {
+                            allLogs = allLogs.concat(newLines);
+                        }
                     }
                 }
+
+                // Limit buffer to last 2000 lines
+                if (allLogs.length > 2000) {
+                    allLogs = allLogs.slice(-2000);
+                }
+
+                updateConsoleDisplay();
             }
         } catch (error) {
             console.error('Error fetching logs:', error);
+        }
+    }
+
+    function updateConsoleDisplay() {
+        const query = logSearchInput.value.toLowerCase();
+        const filteredLogs = query
+            ? allLogs.filter(line => line.toLowerCase().includes(query))
+            : allLogs;
+
+        const content = filteredLogs.join('\n');
+        if (consoleOutput.value !== content) {
+            const isScrolledToBottom = consoleOutput.scrollHeight - consoleOutput.clientHeight <= consoleOutput.scrollTop + 1;
+            consoleOutput.value = content;
+            if (isScrolledToBottom) {
+                consoleOutput.scrollTop = consoleOutput.scrollHeight;
+            }
         }
     }
 
