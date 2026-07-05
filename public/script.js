@@ -106,16 +106,36 @@ document.addEventListener('DOMContentLoaded', () => {
                 const createPackItem = (pack, type) => {
                     const item = document.createElement('div');
                     item.className = 'world-item';
-                    item.innerHTML = `
-                        <div style="flex-grow: 1;">
-                            <strong>${type === 'behavior' ? 'Behavior' : 'Resource'}:</strong> ${pack.name || pack.pack_id}
-                            <div style="font-size: 0.8rem; color: #aaa;">${pack.name ? 'ID: ' + pack.pack_id + ' | ' : ''}Version: ${pack.version.join('.')}</div>
-                        </div>
-                        <button class="delete-pack-button bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded transition duration-300"
-                                data-world-name="${worldName}" data-pack-type="${type}" data-pack-id="${pack.pack_id}">
-                            Remove
-                        </button>
-                    `;
+
+                    const infoDiv = document.createElement('div');
+                    infoDiv.style.flexGrow = '1';
+
+                    const typeStrong = document.createElement('strong');
+                    typeStrong.textContent = (type === 'behavior' ? 'Behavior' : 'Resource') + ': ';
+                    infoDiv.appendChild(typeStrong);
+
+                    const nameText = document.createTextNode(pack.name || pack.pack_id);
+                    infoDiv.appendChild(nameText);
+
+                    const metaDiv = document.createElement('div');
+                    metaDiv.style.fontSize = '0.8rem';
+                    metaDiv.style.color = '#aaa';
+                    let metaText = pack.name ? 'ID: ' + pack.pack_id + ' | ' : '';
+                    metaText += 'Version: ' + (pack.version ? pack.version.join('.') : 'Unknown');
+                    metaDiv.textContent = metaText;
+                    infoDiv.appendChild(metaDiv);
+
+                    item.appendChild(infoDiv);
+
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.className = 'delete-pack-button bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded transition duration-300';
+                    deleteBtn.textContent = 'Remove';
+                    deleteBtn.dataset.worldName = worldName;
+                    deleteBtn.dataset.packType = type;
+                    deleteBtn.dataset.packId = pack.pack_id;
+
+                    item.appendChild(deleteBtn);
+
                     return item;
                 };
 
@@ -859,6 +879,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             if (response.ok && data.success) {
                 showMessage(data.message || `World renamed successfully.`, 'success');
+                // Check if we renamed the active world
+                const activeWorldItem = document.querySelector('.world-item.active');
+                if (activeWorldItem && activeWorldItem.dataset.worldName === oldWorldName) {
+                    if (restartNeededNote) restartNeededNote.style.display = 'block';
+                }
                 loadWorlds(); // Refresh world list
             } else {
                 showMessage(data.message || `Failed to rename world.`, 'error');
