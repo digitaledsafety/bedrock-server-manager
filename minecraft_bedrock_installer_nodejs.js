@@ -257,7 +257,26 @@ export function extractFiles(zipPath, extractPath) {
         try {
             log('INFO', `Using adm-zip for extraction for ${zipPath} to ${extractPath}.`);
             const zip = new AdmZip(zipPath);
-            zip.extractAllTo(extractPath, true); // true for overwrite
+            const zipEntries = zip.getEntries();
+            const resolvedExtractPath = path.resolve(extractPath) + path.sep;
+
+            for (const entry of zipEntries) {
+                if (entry.isDirectory) continue;
+                const targetPath = path.join(extractPath, entry.entryName);
+                const resolvedTargetPath = path.resolve(targetPath);
+
+                if (!resolvedTargetPath.startsWith(resolvedExtractPath)) {
+                    log('WARNING', `Zip Slip attempt detected and blocked: ${entry.entryName}`);
+                    continue;
+                }
+
+                const dir = path.dirname(targetPath);
+                if (!fs.existsSync(dir)) {
+                    fs.mkdirSync(dir, { recursive: true });
+                }
+                fs.writeFileSync(targetPath, entry.getData());
+            }
+
             log('INFO', `Extraction completed successfully.`);
 
             // 2. Set permissions for specific executable files (e.g., a script named 'script.sh')
@@ -726,8 +745,12 @@ export async function stopServer() {
                 process.kill(pidToKill, 0);
                 await new Promise(resolve => setTimeout(resolve, 100));
             } catch (e) {
-                isRunning = false;
-                break;
+                if (e.code === 'ESRCH') {
+                    isRunning = false;
+                    break;
+                }
+                // If it's EPERM, it's still running
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
         }
 
@@ -1439,6 +1462,10 @@ export async function isProcessRunning() {
         log('DEBUG', `Process with PID ${serverPID} is running.`);
         return true;
     } catch (error) {
+        if (error.code === 'EPERM') {
+            log('DEBUG', `Process with PID ${serverPID} is running, but we don't have permission to signal it (EPERM).`);
+            return true;
+        }
         if (error.code === 'ESRCH') {
             log('INFO', `Process with PID ${serverPID} not found (ESRCH).`);
             const pidFile = path.join(SERVER_DIRECTORY, 'server.pid');
