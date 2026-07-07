@@ -505,6 +505,11 @@ app.get('/api/logs', async (req, res) => {
         // Optimize: read only the last 16KB of the log file
         const stats = await fs.promises.stat(serverLogPath);
         const fileSize = stats.size;
+
+        if (fileSize === 0) {
+            return res.json({ success: true, logs: '' });
+        }
+
         const readSize = Math.min(fileSize, 16 * 1024); // 16KB
         const buffer = Buffer.alloc(readSize);
 
@@ -518,7 +523,7 @@ app.get('/api/logs', async (req, res) => {
         const logContent = buffer.toString('utf8');
         const lines = logContent.split('\n');
         // If we read from the middle of a line, ignore the partial first line
-        const displayLines = readSize === fileSize ? lines : lines.slice(1);
+        const displayLines = (readSize < fileSize && lines.length > 1) ? lines.slice(1) : lines;
         const lastLines = displayLines.slice(-100).join('\n');
 
         res.json({ success: true, logs: lastLines });
@@ -766,21 +771,30 @@ app.post('/api/delete-pack', async (req, res) => {
 });
 
 // --- Server Initialization ---
+/**
+ * Initializes the backend system, handles auto-start, and starts the update scheduler.
+ * @returns {Promise<number>} The port to listen on.
+ */
+async function initializeSystem() {
+    const initialConfig = await backend.readGlobalConfig();
+    backend.init(initialConfig);
+
+    if (initialConfig.autoStart) {
+        backend.log('INFO', 'autoStart is enabled, attempting to start the server...');
+        try {
+            await backend.startServer();
+        } catch (error) {
+            backend.log('ERROR', `Failed to auto-start server: ${error.message}`);
+        }
+    }
+
+    await backend.startAutoUpdateScheduler();
+    return initialConfig.uiPort ?? PORT;
+}
+
 const start = async () => {
     try {
-        const initialConfig = await backend.readGlobalConfig();
-        backend.init(initialConfig);
-        if (initialConfig.autoStart) {
-            backend.log('INFO', 'autoStart is enabled, attempting to start the server...');
-            try {
-                await backend.startServer();
-            } catch (error) {
-                backend.log('ERROR', `Failed to auto-start server: ${error.message}`);
-            }
-        }
-        await backend.startAutoUpdateScheduler();
-
-        const port = initialConfig.uiPort ?? PORT;
+        const port = await initializeSystem();
 
         // This check prevents the server from starting during tests
         if (process.env.NODE_ENV !== 'test') {

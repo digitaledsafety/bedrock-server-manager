@@ -2,7 +2,7 @@ import https from 'https';
 import http from 'http';
 import * as fs from 'fs';
 import path, { dirname } from 'path';
-import { exec as childProcessExec, spawn } from 'child_process';
+import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { URL } from 'url';
 import util from 'util';
@@ -10,8 +10,6 @@ import os from 'os';
 import net from 'net';
 import dgram from 'dgram';
 import AdmZip from 'adm-zip';
-
-const execPromise = util.promisify(childProcessExec);
 
 const __filenameESM = fileURLToPath(import.meta.url);
 const __dirnameESM = dirname(__filenameESM);
@@ -60,6 +58,18 @@ function setLogLevel(levelName) {
         logStream.write(warningMessage);
         currentLogLevel = LOG_LEVELS.INFO;
     }
+}
+
+/**
+ * Checks if a child path is within a parent directory.
+ * @param {string} parent - The parent directory path.
+ * @param {string} child - The child path to check.
+ * @returns {boolean} True if the child is within the parent, false otherwise.
+ */
+export function isPathInside(parent, child) {
+    if (!parent || !child) return false;
+    const relative = path.relative(parent, child);
+    return relative && !relative.startsWith('..') && !path.isAbsolute(relative);
 }
 
 export function log(level, message) {
@@ -306,7 +316,7 @@ export async function changeOwnership(dirPath, user, group) {
         return;
     }
     const validBasePaths = [SERVER_DIRECTORY, BACKUP_DIRECTORY].filter(Boolean);
-    if (!validBasePaths.some(base => dirPath.startsWith(base))) {
+    if (!validBasePaths.some(base => isPathInside(base, dirPath) || path.resolve(base) === path.resolve(dirPath))) {
         log('ERROR', `changeOwnership attempted on restricted path: ${dirPath}. Expected to be within configured server or backup directories.`);
         throw new Error(`Invalid path for changeOwnership: ${dirPath}. Operation aborted for security.`);
     }
@@ -487,11 +497,6 @@ export async function listBackups() {
  * Deletes a specific backup directory.
  * @param {string} backupName - The name of the backup to delete.
  * @returns {Promise<{success: boolean, message: string}>}
- */
-/**
- * Zips a backup directory for export.
- * @param {string} backupName - The name of the backup to export.
- * @returns {Promise<{success: boolean, zipPath?: string, message?: string}>}
  */
 /**
  * Zips a backup directory for export.
@@ -1227,11 +1232,6 @@ export async function renameWorld(oldWorldName, newWorldName) {
     }
 }
 
-/**
- * Zips a world directory for export as .mcworld.
- * @param {string} worldName - The name of the world to export.
- * @returns {Promise<{success: boolean, zipPath?: string, message?: string}>}
- */
 /**
  * Zips a world directory for export as .mcworld.
  * @param {string} worldName - The name of the world to export.
