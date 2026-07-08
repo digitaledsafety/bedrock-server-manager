@@ -76,6 +76,9 @@
                 </div>
             </form>
             <% } %>
+            <div class="form-group" style="margin-bottom: 10px;">
+                <input type="text" id="logSearchInput" placeholder="Search logs..." style="width: 100%;">
+            </div>
             <textarea id="consoleOutput" readonly placeholder="Server logs will appear here..." style="height: 300px;"></textarea>
             <div class="button-group" style="margin-top: 10px;">
                 <button id="clearLogsButton" class="bg-gray-500 hover:bg-gray-700">Clear Logs</button>
@@ -84,7 +87,10 @@
         </div>
 
         <div class="section">
-            <h2>Backup Management</h2>
+            <div class="section-header">
+                <h2 style="margin: 0;">Backup Management</h2>
+                <button id="refreshBackupsButton" class="bg-gray-500 hover:bg-gray-700 text-sm py-1 px-3">Refresh</button>
+            </div>
             <div id="backupList" class="world-list">
                 <p>Loading backups...</p>
             </div>
@@ -106,7 +112,10 @@
         </div>
 
         <div class="section">
-            <h2>World Management</h2>
+            <div class="section-header">
+                <h2 style="margin: 0;">World Management</h2>
+                <button id="refreshWorldsButton" class="bg-gray-500 hover:bg-gray-700 text-sm py-1 px-3">Refresh</button>
+            </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
                 <form id="createWorldForm">
                     <div class="form-group">
