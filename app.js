@@ -290,14 +290,17 @@ app.get('/api/backups/:backupName/download', async (req, res) => {
         const { backupName } = req.params;
         const result = await backend.exportBackup(backupName);
         if (result.success) {
+            res.on('close', () => {
+                fs.promises.unlink(result.zipPath).catch(cleanupErr => {
+                    if (fs.existsSync(result.zipPath)) {
+                        backend.log('WARNING', `Failed to delete temporary backup ZIP ${result.zipPath}: ${cleanupErr.message}`);
+                    }
+                });
+            });
             res.download(result.zipPath, `${backupName}.zip`, (err) => {
-                if (err) {
+                if (err && !res.headersSent) {
                     backend.log('ERROR', `Error downloading backup ZIP: ${err.message}`);
                 }
-                // Cleanup temp file after download
-                fs.promises.unlink(result.zipPath).catch(cleanupErr => {
-                    backend.log('WARNING', `Failed to delete temporary backup ZIP ${result.zipPath}: ${cleanupErr.message}`);
-                });
             });
         } else {
             res.status(400).json(result);
@@ -451,14 +454,17 @@ app.get('/api/worlds/:worldName/export', async (req, res) => {
         const { worldName } = req.params;
         const result = await backend.exportWorld(worldName);
         if (result.success) {
+            res.on('close', () => {
+                fs.promises.unlink(result.zipPath).catch(cleanupErr => {
+                    if (fs.existsSync(result.zipPath)) {
+                        backend.log('WARNING', `Failed to delete temporary world export ${result.zipPath}: ${cleanupErr.message}`);
+                    }
+                });
+            });
             res.download(result.zipPath, `${worldName}.mcworld`, (err) => {
-                if (err) {
+                if (err && !res.headersSent) {
                     backend.log('ERROR', `Error downloading world export: ${err.message}`);
                 }
-                // Cleanup temp file after download
-                fs.promises.unlink(result.zipPath).catch(cleanupErr => {
-                    backend.log('WARNING', `Failed to delete temporary world export ${result.zipPath}: ${cleanupErr.message}`);
-                });
             });
         } else {
             res.status(400).json(result);
