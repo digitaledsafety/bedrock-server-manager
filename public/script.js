@@ -15,6 +15,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const consoleOutput = document.getElementById('consoleOutput'); // Get the console textarea
     const systemInfoContent = document.getElementById('systemInfoContent');
     const backupListContainer = document.getElementById('backupList');
+    const refreshBackupsButton = document.getElementById('refreshBackupsButton');
+    const refreshWorldsButton = document.getElementById('refreshWorldsButton');
     const playerInfoDiv = document.getElementById('playerInfo');
     const playerCountSpan = document.getElementById('playerCount');
     const playerListDiv = document.getElementById('playerList');
@@ -1025,6 +1027,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (clearLogsButton) clearLogsButton.addEventListener('click', handleClearLogs);
+    if (refreshBackupsButton) refreshBackupsButton.addEventListener('click', loadBackups);
+    if (refreshWorldsButton) refreshWorldsButton.addEventListener('click', loadWorlds);
     if (createWorldForm) createWorldForm.addEventListener('submit', handleCreateWorld);
     if (uploadWorldForm) uploadWorldForm.addEventListener('submit', handleUploadWorld);
     if (downloadLogsButton) {
