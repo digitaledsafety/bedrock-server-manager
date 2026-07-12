@@ -123,4 +123,20 @@ describe('Upload API Verification', () => {
     expect(res.body.success).toBe(false);
     expect(res.body.message).toContain('Only .mcpack, .mcaddon, .zip files are allowed!');
   });
+
+  it('should return error for .zip world upload', async () => {
+    const filePath = path.join(__dirname, 'fixtures', 'test_world.zip');
+    // Ensure fixture exists
+    if (!fs.existsSync(filePath)) {
+        fs.writeFileSync(filePath, 'dummy zip content');
+    }
+
+    const res = await request(app)
+      .post('/api/upload-world')
+      .attach('worldFile', filePath);
+
+    expect(res.statusCode).toEqual(400);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toContain('Only .mcworld files are allowed!');
+  });
 });
