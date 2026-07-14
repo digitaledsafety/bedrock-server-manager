@@ -454,8 +454,29 @@ export async function backupServer() {
     const backupDir = path.join(BACKUP_DIRECTORY, new Date().toISOString().replace(/:/g, '-').replace(/\./g, '_'));
     fs.mkdirSync(backupDir, { recursive: true });
     log('INFO', `Creating backup in ${backupDir}`);
+
+    const serverDirAbs = path.resolve(SERVER_DIRECTORY);
+    const backupDirAbs = path.resolve(BACKUP_DIRECTORY);
+    const tempDirAbs = TEMP_DIRECTORY ? path.resolve(TEMP_DIRECTORY) : null;
+
     try {
-        fs.cpSync(SERVER_DIRECTORY, backupDir, { recursive: true });
+        fs.cpSync(SERVER_DIRECTORY, backupDir, {
+            recursive: true,
+            filter: (src) => {
+                const srcAbs = path.resolve(src);
+                // Exclude the backup directory if it's inside the server directory
+                if (srcAbs === backupDirAbs || srcAbs.startsWith(backupDirAbs + path.sep)) {
+                    log('DEBUG', `Skipping backup directory during backup: ${src}`);
+                    return false;
+                }
+                // Exclude the temp directory if it's inside the server directory
+                if (tempDirAbs && (srcAbs === tempDirAbs || srcAbs.startsWith(tempDirAbs + path.sep))) {
+                    log('DEBUG', `Skipping temp directory during backup: ${src}`);
+                    return false;
+                }
+                return true;
+            }
+        });
         if (os.platform() !== 'win32') {
             await changeOwnership(backupDir, config.minecraftUser, config.minecraftGroup);
         }
@@ -637,8 +658,17 @@ export async function restoreBackup(backupName) {
                 log('INFO', `Clearing existing server directory: ${SERVER_DIRECTORY}`);
                 // Delete contents to avoid issues with open directory handles if we deleted the root
                 const items = fs.readdirSync(SERVER_DIRECTORY);
+                const backupPathAbs = path.resolve(backupPath);
                 for (const item of items) {
-                    fs.rmSync(path.join(SERVER_DIRECTORY, item), { recursive: true, force: true });
+                    const itemPath = path.join(SERVER_DIRECTORY, item);
+                    const itemPathAbs = path.resolve(itemPath);
+
+                    // Safety: Don't delete the backup we're currently restoring from!
+                    if (backupPathAbs === itemPathAbs || backupPathAbs.startsWith(itemPathAbs + path.sep)) {
+                        log('INFO', `Skipping deletion of current backup directory during restoration cleanup: ${itemPath}`);
+                        continue;
+                    }
+                    fs.rmSync(itemPath, { recursive: true, force: true });
                 }
             } else if (SERVER_DIRECTORY) {
                 fs.mkdirSync(SERVER_DIRECTORY, { recursive: true });
@@ -1313,7 +1343,8 @@ export async function listWorlds() {
     const entries = await fs.promises.readdir(worldsPath, { withFileTypes: true });
     const worldNames = entries
         .filter(entry => entry.isDirectory())
-        .map(entry => entry.name);
+        .map(entry => entry.name)
+        .sort((a, b) => a.localeCompare(b));
     log('INFO', `Listed worlds: ${worldNames.join(', ')}`);
     return worldNames;
 }
@@ -1850,6 +1881,10 @@ export async function listPacks(worldName) {
     const behaviorPacks = await readPackJson('world_behavior_packs.json');
     const resourcePacks = await readPackJson('world_resource_packs.json');
 
+    // Sort packs initially by ID to have a stable base
+    behaviorPacks.sort((a, b) => a.pack_id.localeCompare(b.pack_id));
+    resourcePacks.sort((a, b) => a.pack_id.localeCompare(b.pack_id));
+
     // Efficiently resolve human-readable names for the packs
     const buildPackNameMap = async () => {
         const map = new Map();
@@ -1886,6 +1921,10 @@ export async function listPacks(worldName) {
             pack.name = packNameMap.get(pack.pack_id);
         }
     });
+
+    // Re-sort with names if available
+    behaviorPacks.sort((a, b) => (a.name || a.pack_id).localeCompare(b.name || b.pack_id));
+    resourcePacks.sort((a, b) => (a.name || a.pack_id).localeCompare(b.name || b.pack_id));
 
     return { success: true, behaviorPacks, resourcePacks };
 }
