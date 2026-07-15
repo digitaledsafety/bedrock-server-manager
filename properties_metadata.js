@@ -24,6 +24,13 @@ export const propertiesMetadata = {
         description: 'The name of the level directory. Each level has its own folder in worlds/.',
         type: 'string'
     },
+    'level-type': {
+        label: 'World Type',
+        category: 'general',
+        description: 'Sets the world type (DEFAULT, FLAT, or LEGACY).',
+        type: 'select',
+        options: ['DEFAULT', 'FLAT', 'LEGACY']
+    },
     'level-seed': {
         label: 'World Seed',
         category: 'general',

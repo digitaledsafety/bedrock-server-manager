@@ -22,6 +22,7 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   readGlobalConfig: jest.fn().mockResolvedValue({}),
   writeGlobalConfig: jest.fn(),
   uploadPack: jest.fn().mockResolvedValue({ success: true, message: 'Mocked success' }),
+  uploadWorld: jest.fn().mockResolvedValue({ success: true, message: 'Mocked success' }),
   startAutoUpdateScheduler: jest.fn(),
   getStoredVersion: jest.fn(),
   log: jest.fn(),
@@ -124,8 +125,8 @@ describe('Upload API Verification', () => {
     expect(res.body.message).toContain('Only .mcpack, .mcaddon, .zip files are allowed!');
   });
 
-  it('should return error for .zip world upload', async () => {
-    const filePath = path.join(__dirname, 'fixtures', 'test_world.zip');
+  it('should successfully upload a .zip world file', async () => {
+    const filePath = path.join(__dirname, 'fixtures', 'test_world_valid.zip');
     // Ensure fixture exists
     if (!fs.existsSync(filePath)) {
         fs.writeFileSync(filePath, 'dummy zip content');
@@ -135,8 +136,26 @@ describe('Upload API Verification', () => {
       .post('/api/upload-world')
       .attach('worldFile', filePath);
 
+    expect(res.statusCode).toEqual(200);
+    expect(res.body.success).toBe(true);
+    expect(backend.uploadWorld).toHaveBeenCalledWith(
+      expect.stringContaining('test_world_valid.zip'),
+      'test_world_valid.zip'
+    );
+  });
+
+  it('should return error for invalid world file extension', async () => {
+    const filePath = path.join(__dirname, 'fixtures', 'invalid_world.txt');
+    if (!fs.existsSync(filePath)) {
+        fs.writeFileSync(filePath, 'dummy content');
+    }
+
+    const res = await request(app)
+      .post('/api/upload-world')
+      .attach('worldFile', filePath);
+
     expect(res.statusCode).toEqual(400);
     expect(res.body.success).toBe(false);
-    expect(res.body.message).toContain('Only .mcworld files are allowed!');
+    expect(res.body.message).toContain('Only .mcworld, .zip files are allowed!');
   });
 });

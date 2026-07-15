@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const propertiesContainer = document.getElementById('propertiesContainer');
     const propertiesTabs = document.getElementById('propertiesTabs');
     const propertySearchInput = document.getElementById('propertySearch');
+    const backupSearchInput = document.getElementById('backupSearch');
     const consoleOutput = document.getElementById('consoleOutput'); // Get the console textarea
     const systemInfoContent = document.getElementById('systemInfoContent');
     const backupListContainer = document.getElementById('backupList');
@@ -103,7 +104,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             if (data.success) {
                 activePacksList.innerHTML = '';
-                const { behaviorPacks, resourcePacks } = data;
+                let { behaviorPacks, resourcePacks } = data;
+
+                // Sort packs alphabetically by name
+                behaviorPacks.sort((a, b) => (a.name || a.pack_id).localeCompare(b.name || b.pack_id));
+                resourcePacks.sort((a, b) => (a.name || a.pack_id).localeCompare(b.name || b.pack_id));
 
                 const createPackItem = (pack, type) => {
                     const item = document.createElement('div');
@@ -621,6 +626,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/worlds');
             const data = await response.json();
             if (data.success) {
+                // Sort worlds alphabetically
+                if (data.worlds) {
+                    data.worlds.sort((a, b) => a.localeCompare(b));
+                }
+
                 // Find the existing world-list element to update
                 const worldListContainer = document.getElementById('worldList');
                 if (worldListContainer) {
@@ -1074,6 +1084,22 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     if (autoUpdateConfigForm) autoUpdateConfigForm.addEventListener('submit', saveAutoUpdateConfig);
+    if (backupSearchInput) {
+        backupSearchInput.addEventListener('input', () => {
+            const query = backupSearchInput.value.toLowerCase();
+            const backupItems = backupListContainer.querySelectorAll('.world-item');
+
+            backupItems.forEach(item => {
+                const nameEl = item.querySelector('span');
+                const name = nameEl ? nameEl.textContent.toLowerCase() : '';
+                if (name.includes(query)) {
+                    item.style.display = 'flex';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        });
+    }
     if (uploadPackForm) {
         uploadPackForm.addEventListener('submit', async (e) => {
             await handleUploadPack(e);
