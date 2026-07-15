@@ -47,7 +47,7 @@ const createMulterUpload = (allowedExtensions) => {
 };
 
 const upload = createMulterUpload(['.mcpack', '.mcaddon', '.zip']);
-const worldUpload = createMulterUpload(['.mcworld']);
+const worldUpload = createMulterUpload(['.mcworld', '.zip']);
 
 
 // Middleware
@@ -569,6 +569,15 @@ app.post('/api/config', async (req, res) => {
         }
 
         let currentFullConfig = await backend.readGlobalConfig();
+        if (newSettings.serverName !== undefined) {
+            if (typeof newSettings.serverName !== 'string') {
+                return res.status(400).json({ success: false, message: 'Server name must be a string.' });
+            }
+            currentFullConfig.serverName = newSettings.serverName;
+        }
+        if (newSettings.autoStart !== undefined) {
+            currentFullConfig.autoStart = !!newSettings.autoStart;
+        }
         if (newSettings.autoUpdateEnabled !== undefined) {
             currentFullConfig.autoUpdateEnabled = !!newSettings.autoUpdateEnabled;
         }
