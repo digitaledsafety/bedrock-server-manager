@@ -87,4 +87,32 @@ describe('Configuration Caching and World Backup Tests', () => {
         expect(properties['server-port']).toBe('19133');
         expect(properties['gamemode']).toBe('creative');
     });
+
+    test('writeGlobalConfig should handle non-string config paths without crashing', async () => {
+        const initialConfig = await backend.readGlobalConfig();
+        const testConfig = {
+            serverName: "Test",
+            serverDirectory: undefined,
+            tempDirectory: null,
+            backupDirectory: 12345
+        };
+        await expect(backend.writeGlobalConfig(testConfig)).resolves.not.toThrow();
+        await backend.writeGlobalConfig(initialConfig);
+    });
+
+    test('startAutoUpdateScheduler should run and schedule checks using setTimeout', async () => {
+        const initialConfig = backend.getConfig();
+        const testConfig = {
+            ...initialConfig,
+            autoUpdateEnabled: true,
+            autoUpdateIntervalMinutes: 60,
+        };
+        backend.init(testConfig);
+
+        await expect(backend.startAutoUpdateScheduler()).resolves.not.toThrow();
+
+        // Clean up scheduler so that it doesn't leak timers after tests finish
+        backend.init(initialConfig);
+        await backend.startAutoUpdateScheduler();
+    });
 });

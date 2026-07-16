@@ -117,4 +117,16 @@ describe('Backup Restoration Functionality Tests', () => {
         expect(response.status).toBe(400);
         expect(response.body.success).toBe(false);
     });
+
+    test('should fail to restore world backup if world name inside is invalid', async () => {
+        const worldBackupName = 'world_invalidname_timestamp';
+        const worldBackupDir = path.join(backupDir, worldBackupName);
+        fs.mkdirSync(path.join(worldBackupDir, 'invalid..name'), { recursive: true });
+        fs.writeFileSync(path.join(worldBackupDir, 'invalid..name', 'level.dat'), 'data', 'utf8');
+
+        const response = await request(app).post(`/api/backups/${worldBackupName}/restore`);
+        expect(response.status).toBe(400);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('Invalid world name inside backup');
+    });
 });
