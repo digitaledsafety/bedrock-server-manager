@@ -603,6 +603,9 @@ export async function restoreBackup(backupName) {
                 throw new Error('Invalid world backup: world directory not found inside.');
             }
             const worldName = worldDirEntry.name;
+            if (!isValidWorldName(worldName)) {
+                throw new Error(`Invalid world name inside backup: ${worldName}`);
+            }
             const worldsPath = path.join(SERVER_DIRECTORY, 'worlds');
             const targetWorldPath = path.join(worldsPath, worldName);
 
@@ -817,6 +820,7 @@ function isUDPPortAvailable(port, host) {
         try {
             socket.bind(port, host);
         } catch (e) {
+            try { socket.close(); } catch (_) {}
             resolve({ available: false, error: e.message });
         }
     });
@@ -1579,7 +1583,10 @@ export async function readGlobalConfig() {
         } else if (arg === '--no-autoUpdateEnabled') { effectiveConfig.autoUpdateEnabled = false; log('DEBUG', `CLI Override (boolean flag): ${arg} = false`); }
     }
     setLogLevel(effectiveConfig.logLevel || "INFO");
-    const resolvePath = (p) => path.isAbsolute(p) ? p : path.resolve(__dirnameESM, p);
+    const resolvePath = (p) => {
+        if (typeof p !== 'string') return p;
+        return path.isAbsolute(p) ? p : path.resolve(__dirnameESM, p);
+    };
     effectiveConfig.serverDirectory = resolvePath(effectiveConfig.serverDirectory);
     effectiveConfig.tempDirectory = resolvePath(effectiveConfig.tempDirectory);
     effectiveConfig.backupDirectory = resolvePath(effectiveConfig.backupDirectory);
@@ -1599,6 +1606,7 @@ export async function writeGlobalConfig(configToWrite) {
     try {
         const storeConfig = JSON.parse(JSON.stringify(configToWrite));
         const makeRelativeIfNeeded = (absPath) => {
+            if (typeof absPath !== 'string') return absPath;
             if (absPath.startsWith(__dirnameESM) && absPath !== __dirnameESM) {
                 let relPath = path.relative(__dirnameESM, absPath);
                 if (!relPath.startsWith('..') && !path.isAbsolute(relPath)) {
@@ -2132,13 +2140,37 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
 export async function startAutoUpdateScheduler() {
     const currentConfig = await readGlobalConfig();
     if (autoUpdateIntervalId) {
-        clearInterval(autoUpdateIntervalId);
+        clearTimeout(autoUpdateIntervalId);
         autoUpdateIntervalId = null;
         log('INFO', 'Cleared existing auto-update scheduler.');
     }
     if (currentConfig.autoUpdateEnabled && currentConfig.autoUpdateIntervalMinutes > 0) {
         const intervalMs = currentConfig.autoUpdateIntervalMinutes * 60 * 1000;
         log('INFO', `Starting auto-update scheduler to run every ${currentConfig.autoUpdateIntervalMinutes} minutes.`);
+
+        async function runScheduler() {
+            log('INFO', 'Auto-update check initiated by scheduler.');
+            const triggerTimeoutId = autoUpdateIntervalId;
+            try {
+                const result = await checkAndInstall();
+                if (!result.success) {
+                    log('ERROR', `Auto-update failed: ${result.message}`);
+                }
+            } catch (error) {
+                log('ERROR', `Exception during scheduled auto-update check: ${error.message}`);
+            }
+
+            // Read the latest config dynamically to check if auto-update is still enabled
+            const activeConfig = await readGlobalConfig();
+            if (activeConfig.autoUpdateEnabled && activeConfig.autoUpdateIntervalMinutes > 0) {
+                const activeIntervalMs = activeConfig.autoUpdateIntervalMinutes * 60 * 1000;
+                // Only schedule the next run if this scheduler check instance has not been superseded or cleared
+                if (autoUpdateIntervalId === triggerTimeoutId) {
+                    autoUpdateIntervalId = setTimeout(runScheduler, activeIntervalMs);
+                }
+            }
+        }
+
         try {
             const initialCheckResult = await checkAndInstall();
             if (!initialCheckResult.success) {
@@ -2148,15 +2180,7 @@ export async function startAutoUpdateScheduler() {
             log('ERROR', `Exception during initial auto-update check: ${error.message}`);
         }
 
-        autoUpdateIntervalId = setInterval(async () => {
-            log('INFO', 'Auto-update check initiated by scheduler.');
-            try {
-                const result = await checkAndInstall();
-                if (!result.success) { log('ERROR', `Auto-update failed: ${result.message}`); }
-            } catch (error) {
-                log('ERROR', `Exception during scheduled auto-update check: ${error.message}`);
-            }
-        }, intervalMs);
+        autoUpdateIntervalId = setTimeout(runScheduler, intervalMs);
     } else {
         log('INFO', 'Auto-update is disabled or interval is invalid. Scheduler not started.');
     }
