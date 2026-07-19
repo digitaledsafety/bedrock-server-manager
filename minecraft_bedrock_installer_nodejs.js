@@ -315,6 +315,11 @@ export async function changeOwnership(dirPath, user, group) {
         log('INFO', 'Skipping changeOwnership on Windows or if user/group is not configured.');
         return;
     }
+    const safeUserGroupRegex = /^[a-zA-Z0-9_-]+$/;
+    if (!safeUserGroupRegex.test(user) || !safeUserGroupRegex.test(group)) {
+        log('ERROR', `Invalid user or group format: user=${user}, group=${group}`);
+        throw new Error(`Invalid user or group for changeOwnership: user=${user}, group=${group}. Operation aborted for security.`);
+    }
     const validBasePaths = [SERVER_DIRECTORY, BACKUP_DIRECTORY].filter(Boolean);
     if (!validBasePaths.some(base => isPathInside(base, dirPath) || path.resolve(base) === path.resolve(dirPath))) {
         log('ERROR', `changeOwnership attempted on restricted path: ${dirPath}. Expected to be within configured server or backup directories.`);
@@ -513,6 +518,13 @@ export async function exportBackup(backupName) {
     }
 
     const backupPath = path.join(BACKUP_DIRECTORY, backupName);
+    const resolvedBackupDir = path.resolve(BACKUP_DIRECTORY);
+    const resolvedBackupPath = path.resolve(backupPath);
+    if (!isPathInside(resolvedBackupDir, resolvedBackupPath)) {
+        log('ERROR', `Path traversal attempt detected for backup export: ${backupName}`);
+        return { success: false, message: 'Invalid backup name.' };
+    }
+
     if (!fs.existsSync(backupPath)) {
         log('WARNING', `Backup not found for export: ${backupPath}`);
         return { success: false, message: 'Backup not found.' };
@@ -549,6 +561,13 @@ export async function deleteBackup(backupName) {
     }
 
     const targetPath = path.join(BACKUP_DIRECTORY, backupName);
+    const resolvedBackupDir = path.resolve(BACKUP_DIRECTORY);
+    const resolvedTargetPath = path.resolve(targetPath);
+    if (!isPathInside(resolvedBackupDir, resolvedTargetPath)) {
+        log('ERROR', `Path traversal attempt detected for backup deletion: ${backupName}`);
+        return { success: false, message: 'Invalid backup name.' };
+    }
+
     if (!fs.existsSync(targetPath)) {
         log('WARNING', `Backup not found: ${targetPath}`);
         return { success: false, message: 'Backup not found.' };
@@ -580,6 +599,13 @@ export async function restoreBackup(backupName) {
     }
 
     const backupPath = path.join(BACKUP_DIRECTORY, backupName);
+    const resolvedBackupDir = path.resolve(BACKUP_DIRECTORY);
+    const resolvedBackupPath = path.resolve(backupPath);
+    if (!isPathInside(resolvedBackupDir, resolvedBackupPath)) {
+        log('ERROR', `Path traversal attempt detected for backup restoration: ${backupName}`);
+        return { success: false, message: 'Invalid backup name.' };
+    }
+
     if (!fs.existsSync(backupPath)) {
         log('WARNING', `Backup not found for restoration: ${backupPath}`);
         return { success: false, message: 'Backup not found.' };
@@ -817,6 +843,9 @@ function isUDPPortAvailable(port, host) {
         try {
             socket.bind(port, host);
         } catch (e) {
+            try {
+                socket.close();
+            } catch (_) {}
             resolve({ available: false, error: e.message });
         }
     });

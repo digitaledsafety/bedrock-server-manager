@@ -234,6 +234,10 @@ app.post('/api/command', async (req, res) => {
         if (!command) {
             return res.status(400).json({ success: false, message: 'Command is required.' });
         }
+        if (typeof command !== 'string' || command.match(/[\n\r]/)) {
+            backend.log('ERROR', `Control characters or newlines detected in command: ${command}`);
+            return res.status(400).json({ success: false, message: 'Invalid command. Newlines and control characters are not allowed.' });
+        }
         const result = await backend.sendServerCommand(command);
         if (result.success) {
             res.json(result);
