@@ -11,6 +11,7 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   startServer: jest.fn(),
   stopServer: jest.fn(),
   restartServer: jest.fn(),
+  sendServerCommand: jest.fn(),
   checkAndInstall: jest.fn(),
   readServerProperties: jest.fn(),
   writeServerProperties: jest.fn(),
@@ -71,6 +72,30 @@ describe('Security and Validation', () => {
 
             expect(res.statusCode).toBe(400);
             expect(res.body.message).toContain('Update interval must be a positive integer');
+        });
+    });
+
+    describe('POST /api/command validation', () => {
+        it('should reject commands containing newlines or carriage returns', async () => {
+            const res = await request(app)
+                .post('/api/command')
+                .send({ command: 'say Hello\nstop' });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.success).toBe(false);
+            expect(res.body.message).toContain('Invalid command. Newlines and control characters are not allowed.');
+            expect(backend.sendServerCommand).not.toHaveBeenCalled();
+        });
+
+        it('should reject non-string commands', async () => {
+            const res = await request(app)
+                .post('/api/command')
+                .send({ command: 12345 });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.success).toBe(false);
+            expect(res.body.message).toContain('Invalid command. Newlines and control characters are not allowed.');
+            expect(backend.sendServerCommand).not.toHaveBeenCalled();
         });
     });
 });
