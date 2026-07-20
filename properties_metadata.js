@@ -235,5 +235,12 @@ export const propertiesMetadata = {
         description: 'The threshold for player movement direction before an action is taken.',
         type: 'number',
         min: 0
+    },
+    'level-type': {
+        label: 'Level Type',
+        category: 'general',
+        description: 'The world type. Options include DEFAULT, FLAT, and LEGACY.',
+        type: 'select',
+        options: ['DEFAULT', 'FLAT', 'LEGACY']
     }
 };

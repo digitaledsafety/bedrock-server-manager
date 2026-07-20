@@ -403,7 +403,21 @@ export async function backupWorld(worldName) {
     try {
         fs.mkdirSync(backupDir, { recursive: true });
         log('INFO', `Creating backup for world '${worldName}' in ${backupDir}`);
-        fs.cpSync(worldPath, path.join(backupDir, worldName), { recursive: true });
+        const resolvedBackupDir = BACKUP_DIRECTORY ? path.resolve(BACKUP_DIRECTORY) : null;
+        const resolvedTempDir = TEMP_DIRECTORY ? path.resolve(TEMP_DIRECTORY) : null;
+        fs.cpSync(worldPath, path.join(backupDir, worldName), {
+            recursive: true,
+            filter: (srcPath) => {
+                const resolvedSrcPath = path.resolve(srcPath);
+                if (resolvedBackupDir && (resolvedSrcPath === resolvedBackupDir || isPathInside(resolvedBackupDir, resolvedSrcPath))) {
+                    return false;
+                }
+                if (resolvedTempDir && (resolvedSrcPath === resolvedTempDir || isPathInside(resolvedTempDir, resolvedSrcPath))) {
+                    return false;
+                }
+                return true;
+            }
+        });
 
         if (os.platform() !== 'win32') {
             await changeOwnership(backupDir, config.minecraftUser, config.minecraftGroup);
@@ -460,7 +474,21 @@ export async function backupServer() {
     fs.mkdirSync(backupDir, { recursive: true });
     log('INFO', `Creating backup in ${backupDir}`);
     try {
-        fs.cpSync(SERVER_DIRECTORY, backupDir, { recursive: true });
+        const resolvedBackupDir = BACKUP_DIRECTORY ? path.resolve(BACKUP_DIRECTORY) : null;
+        const resolvedTempDir = TEMP_DIRECTORY ? path.resolve(TEMP_DIRECTORY) : null;
+        fs.cpSync(SERVER_DIRECTORY, backupDir, {
+            recursive: true,
+            filter: (srcPath) => {
+                const resolvedSrcPath = path.resolve(srcPath);
+                if (resolvedBackupDir && (resolvedSrcPath === resolvedBackupDir || isPathInside(resolvedBackupDir, resolvedSrcPath))) {
+                    return false;
+                }
+                if (resolvedTempDir && (resolvedSrcPath === resolvedTempDir || isPathInside(resolvedTempDir, resolvedSrcPath))) {
+                    return false;
+                }
+                return true;
+            }
+        });
         if (os.platform() !== 'win32') {
             await changeOwnership(backupDir, config.minecraftUser, config.minecraftGroup);
         }
@@ -629,6 +657,10 @@ export async function restoreBackup(backupName) {
                 throw new Error('Invalid world backup: world directory not found inside.');
             }
             const worldName = worldDirEntry.name;
+            if (!isValidWorldName(worldName)) {
+                log('ERROR', `Invalid world name found inside world backup: ${worldName}`);
+                throw new Error(`Invalid world name inside backup: ${worldName}`);
+            }
             const worldsPath = path.join(SERVER_DIRECTORY, 'worlds');
             const targetWorldPath = path.join(worldsPath, worldName);
 
