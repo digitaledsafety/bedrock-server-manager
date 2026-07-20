@@ -117,4 +117,16 @@ describe('Backup Restoration Functionality Tests', () => {
         expect(response.status).toBe(400);
         expect(response.body.success).toBe(false);
     });
+
+    test('should reject world restoration if the world name inside backup is invalid', async () => {
+        const worldBackupName = 'world_invalidname_timestamp';
+        const worldBackupDir = path.join(backupDir, worldBackupName);
+        // Create an invalid world directory name (e.g., has a period or backslash)
+        fs.mkdirSync(path.join(worldBackupDir, 'invalid..dir'), { recursive: true });
+
+        const response = await request(app).post(`/api/backups/${worldBackupName}/restore`);
+        expect(response.status).toBe(400);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('Invalid world name inside backup');
+    });
 });

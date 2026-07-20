@@ -108,4 +108,35 @@ describe('New Features API', () => {
             expect(response.body.message).toBe('Target world name already exists.');
         });
     });
+
+    describe('POST /api/config serverName and autoStart validation', () => {
+        it('should update config successfully with valid serverName and autoStart', async () => {
+            backend.readGlobalConfig.mockResolvedValue({
+                serverName: "Old Server",
+                autoStart: false
+            });
+            backend.writeGlobalConfig.mockResolvedValue();
+
+            const response = await request(app)
+                .post('/api/config')
+                .send({ serverName: 'My Awesome Server', autoStart: true });
+
+            expect(response.status).toBe(200);
+            expect(response.body.success).toBe(true);
+            expect(backend.writeGlobalConfig).toHaveBeenCalledWith(expect.objectContaining({
+                serverName: 'My Awesome Server',
+                autoStart: true
+            }));
+        });
+
+        it('should return 400 for invalid serverName (empty)', async () => {
+            const response = await request(app)
+                .post('/api/config')
+                .send({ serverName: '   ' });
+
+            expect(response.status).toBe(400);
+            expect(response.body.success).toBe(false);
+            expect(response.body.message).toContain('Server name must be a non-empty string');
+        });
+    });
 });
