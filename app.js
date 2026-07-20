@@ -594,6 +594,20 @@ app.post('/api/config', async (req, res) => {
             }
             currentFullConfig.logLevel = level;
         }
+        if (newSettings.serverName !== undefined) {
+            if (typeof newSettings.serverName !== 'string' || newSettings.serverName.trim() === '') {
+                return res.status(400).json({ success: false, message: 'Server name must be a non-empty string.' });
+            }
+            currentFullConfig.serverName = newSettings.serverName.trim();
+        }
+        if (newSettings.autoStart !== undefined) {
+            // Support both booleans and string conversions ('true', 'false', etc.)
+            if (typeof newSettings.autoStart === 'string') {
+                currentFullConfig.autoStart = newSettings.autoStart === 'true';
+            } else {
+                currentFullConfig.autoStart = !!newSettings.autoStart;
+            }
+        }
         await backend.writeGlobalConfig(currentFullConfig);
         backend.init(currentFullConfig);
         await backend.startAutoUpdateScheduler();
