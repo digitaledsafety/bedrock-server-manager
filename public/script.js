@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const backupListContainer = document.getElementById('backupList');
     const refreshBackupsButton = document.getElementById('refreshBackupsButton');
     const refreshWorldsButton = document.getElementById('refreshWorldsButton');
+    const backupSearchInput = document.getElementById('backupSearch');
     const playerInfoDiv = document.getElementById('playerInfo');
     const playerCountSpan = document.getElementById('playerCount');
     const playerListDiv = document.getElementById('playerList');
@@ -533,6 +534,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         backupListContainer.appendChild(backupItem);
                     });
                     addBackupActionListeners();
+                    filterBackups(); // Apply the current filter if any
                 } else {
                     backupListContainer.innerHTML = '<p class="text-gray-600">No backups found.</p>';
                 }
@@ -543,6 +545,21 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Error loading backups:', error);
             showMessage('Failed to load backups.', 'error');
         }
+    }
+
+    function filterBackups() {
+        if (!backupSearchInput || !backupListContainer) return;
+        const query = backupSearchInput.value.toLowerCase();
+        const backupItems = backupListContainer.querySelectorAll('.world-item');
+        backupItems.forEach(item => {
+            const span = item.querySelector('span');
+            const backupName = span ? span.textContent.toLowerCase() : '';
+            if (backupName.includes(query)) {
+                item.style.display = 'flex';
+            } else {
+                item.style.display = 'none';
+            }
+        });
     }
 
     function addBackupActionListeners() {
@@ -1029,6 +1046,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (clearLogsButton) clearLogsButton.addEventListener('click', handleClearLogs);
     if (refreshBackupsButton) refreshBackupsButton.addEventListener('click', loadBackups);
     if (refreshWorldsButton) refreshWorldsButton.addEventListener('click', loadWorlds);
+    if (backupSearchInput) {
+        backupSearchInput.addEventListener('input', filterBackups);
+    }
     if (createWorldForm) createWorldForm.addEventListener('submit', handleCreateWorld);
     if (uploadWorldForm) uploadWorldForm.addEventListener('submit', handleUploadWorld);
     if (downloadLogsButton) {

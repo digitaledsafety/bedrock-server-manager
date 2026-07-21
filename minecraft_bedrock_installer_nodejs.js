@@ -1863,7 +1863,7 @@ export async function uploadWorld(tempFilePath, originalFilename) {
         let finalWorldName = sanitizedWorldName;
         let counter = 1;
         while (fs.existsSync(path.join(worldsPath, finalWorldName))) {
-            finalWorldName = `${sanitizedWorldName} (${counter})`;
+            finalWorldName = `${sanitizedWorldName}_${counter}`;
             counter++;
         }
 
