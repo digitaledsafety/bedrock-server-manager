@@ -111,4 +111,33 @@ describe('uploadPack Edge Cases', () => {
         expect(result.success).toBe(false);
         expect(result.message).toContain("World 'non_existent_world' not found");
     });
+
+    describe('uploadWorld naming collisions', () => {
+        it('should append _counter instead of (counter) on naming collision to keep names valid', async () => {
+            // Create a pre-existing world folder with name 'my_world'
+            const existingWorldPath = path.join(serverDir, 'worlds', 'my_world');
+            fs.mkdirSync(existingWorldPath, { recursive: true });
+
+            // Prepare a world zip upload
+            const zip = new AdmZip();
+            zip.addFile('level.dat', Buffer.from('dummy level data'));
+            zip.addFile('levelname.txt', Buffer.from('my_world'));
+            zip.writeZip(tempUploadPath);
+
+            // Upload first collision
+            const result1 = await backend.uploadWorld(tempUploadPath, 'my_world.mcworld');
+            expect(result1.success).toBe(true);
+            expect(result1.worldName).toBe('my_world_1');
+            expect(backend.isValidWorldName(result1.worldName)).toBe(true);
+
+            // Create that directory to trigger next collision
+            fs.mkdirSync(path.join(serverDir, 'worlds', 'my_world_1'), { recursive: true });
+
+            // Upload second collision
+            const result2 = await backend.uploadWorld(tempUploadPath, 'my_world.mcworld');
+            expect(result2.success).toBe(true);
+            expect(result2.worldName).toBe('my_world_2');
+            expect(backend.isValidWorldName(result2.worldName)).toBe(true);
+        });
+    });
 });
