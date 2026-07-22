@@ -140,4 +140,66 @@ describe('uploadPack Edge Cases', () => {
             expect(backend.isValidWorldName(result2.worldName)).toBe(true);
         });
     });
+
+    describe('uploadWorld directory cleanup on failure', () => {
+        it('should delete the target world directory if extraction/processing fails', async () => {
+            // Write a corrupt zip file to trigger failure during AdmZip or processing
+            fs.writeFileSync(tempUploadPath, 'not a zip content at all');
+
+            const result = await backend.uploadWorld(tempUploadPath, 'failed_world.mcworld');
+            expect(result.success).toBe(false);
+
+            // Ensure directory with the resolved world name 'failed_world' does not exist
+            const worldPath = path.join(serverDir, 'worlds', 'failed_world');
+            expect(fs.existsSync(worldPath)).toBe(false);
+        });
+    });
+
+    describe('low disk space warning on uploadWorld and uploadPack', () => {
+        it('should log a WARNING during world upload if disk space is low', async () => {
+            // Mock fs.promises.statfs to return low disk space
+            const statfsSpy = jest.spyOn(fs.promises, 'statfs').mockResolvedValue({
+                bsize: 1024,
+                blocks: 1000 * 1024,
+                bavail: 100 * 1024
+            });
+
+            // Capture output printed to stdout/stderr since log function writes to stdout & logStream
+            const writeSpy = jest.spyOn(process.stdout, 'write').mockImplementation(() => {});
+
+            const zip = new AdmZip();
+            zip.addFile('level.dat', Buffer.from('dummy level data'));
+            zip.addFile('levelname.txt', Buffer.from('low_space_world'));
+            zip.writeZip(tempUploadPath);
+
+            await backend.uploadWorld(tempUploadPath, 'low_space_world.mcworld');
+
+            expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('Low disk space on server drive during world upload'));
+
+            statfsSpy.mockRestore();
+            writeSpy.mockRestore();
+        });
+
+        it('should log a WARNING during pack upload if disk space is low', async () => {
+            // Mock fs.promises.statfs to return low disk space
+            const statfsSpy = jest.spyOn(fs.promises, 'statfs').mockResolvedValue({
+                bsize: 1024,
+                blocks: 1000 * 1024,
+                bavail: 100 * 1024
+            });
+
+            // Capture output printed to stdout/stderr since log function writes to stdout & logStream
+            const writeSpy = jest.spyOn(process.stdout, 'write').mockImplementation(() => {});
+
+            const zip = new AdmZip();
+            zip.writeZip(tempUploadPath); // Empty zip to trigger fast return/failure but disk check runs first
+
+            await backend.uploadPack(tempUploadPath, 'test.mcpack', 'behavior', 'test_world');
+
+            expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('Low disk space on server drive during pack upload'));
+
+            statfsSpy.mockRestore();
+            writeSpy.mockRestore();
+        });
+    });
 });

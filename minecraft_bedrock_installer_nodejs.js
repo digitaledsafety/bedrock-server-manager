@@ -1819,6 +1819,11 @@ export async function uploadWorld(tempFilePath, originalFilename) {
         return { success: false, message: 'Server directory not configured.' };
     }
 
+    const diskUsage = await getDiskUsage(SERVER_DIRECTORY);
+    if (diskUsage.available < 500 * 1024 * 1024) { // 500MB
+        log('WARNING', `Low disk space on server drive during world upload: ${(diskUsage.available / (1024 * 1024)).toFixed(2)} MB available.`);
+    }
+
     try {
         const zip = new AdmZip(tempFilePath);
         const zipEntries = zip.getEntries();
@@ -1868,14 +1873,25 @@ export async function uploadWorld(tempFilePath, originalFilename) {
         }
 
         const targetWorldPath = path.join(worldsPath, finalWorldName);
-        fs.mkdirSync(targetWorldPath, { recursive: true });
+        let directoryCreated = false;
+        try {
+            fs.mkdirSync(targetWorldPath, { recursive: true });
+            directoryCreated = true;
 
-        // 5. Extract files from world root
-        log('INFO', `Extracting world '${worldName}' to ${targetWorldPath}`);
-        extractZipSubdir(zipEntries, normalizedWorldRoot, targetWorldPath);
+            // 5. Extract files from world root
+            log('INFO', `Extracting world '${worldName}' to ${targetWorldPath}`);
+            extractZipSubdir(zipEntries, normalizedWorldRoot, targetWorldPath);
 
-        log('INFO', `Successfully uploaded world: ${finalWorldName}`);
-        return { success: true, message: `World '${finalWorldName}' uploaded successfully.`, worldName: finalWorldName };
+            log('INFO', `Successfully uploaded world: ${finalWorldName}`);
+            return { success: true, message: `World '${finalWorldName}' uploaded successfully.`, worldName: finalWorldName };
+        } catch (innerError) {
+            // Cleanup target world folder on error
+            if (directoryCreated && fs.existsSync(targetWorldPath)) {
+                log('INFO', `Cleaning up partially created world directory after error: ${targetWorldPath}`);
+                fs.rmSync(targetWorldPath, { recursive: true, force: true });
+            }
+            throw innerError;
+        }
 
     } catch (error) {
         log('ERROR', `Error uploading world: ${error.message} ${error.stack}`);
@@ -1996,6 +2012,11 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
     }
     if (!isValidWorldName(worldName)) {
         return { success: false, message: 'Invalid world name format.' };
+    }
+
+    const diskUsage = await getDiskUsage(SERVER_DIRECTORY);
+    if (diskUsage.available < 500 * 1024 * 1024) { // 500MB
+        log('WARNING', `Low disk space on server drive during pack upload: ${(diskUsage.available / (1024 * 1024)).toFixed(2)} MB available.`);
     }
 
     const worldPath = path.join(SERVER_DIRECTORY, 'worlds', worldName);
