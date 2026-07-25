@@ -2193,7 +2193,7 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
 export async function startAutoUpdateScheduler() {
     const currentConfig = await readGlobalConfig();
     if (autoUpdateIntervalId) {
-        clearInterval(autoUpdateIntervalId);
+        clearTimeout(autoUpdateIntervalId);
         autoUpdateIntervalId = null;
         log('INFO', 'Cleared existing auto-update scheduler.');
     }
@@ -2209,15 +2209,22 @@ export async function startAutoUpdateScheduler() {
             log('ERROR', `Exception during initial auto-update check: ${error.message}`);
         }
 
-        autoUpdateIntervalId = setInterval(async () => {
-            log('INFO', 'Auto-update check initiated by scheduler.');
-            try {
-                const result = await checkAndInstall();
-                if (!result.success) { log('ERROR', `Auto-update failed: ${result.message}`); }
-            } catch (error) {
-                log('ERROR', `Exception during scheduled auto-update check: ${error.message}`);
-            }
-        }, intervalMs);
+        const scheduleNextCheck = () => {
+            autoUpdateIntervalId = setTimeout(async () => {
+                const triggerTimeoutId = autoUpdateIntervalId;
+                log('INFO', 'Auto-update check initiated by scheduler.');
+                try {
+                    const result = await checkAndInstall();
+                    if (!result.success) { log('ERROR', `Auto-update failed: ${result.message}`); }
+                } catch (error) {
+                    log('ERROR', `Exception during scheduled auto-update check: ${error.message}`);
+                }
+                if (triggerTimeoutId === autoUpdateIntervalId) {
+                    scheduleNextCheck();
+                }
+            }, intervalMs);
+        };
+        scheduleNextCheck();
     } else {
         log('INFO', 'Auto-update is disabled or interval is invalid. Scheduler not started.');
     }
