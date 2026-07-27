@@ -139,5 +139,22 @@ describe('uploadPack Edge Cases', () => {
             expect(result2.worldName).toBe('my_world_2');
             expect(backend.isValidWorldName(result2.worldName)).toBe(true);
         });
+
+        it('should clean up the target world directory if extraction fails during uploadWorld', async () => {
+            const zip = new AdmZip();
+            zip.addFile('levelname.txt', Buffer.from('failed_world'));
+            zip.addFile('level.dat', Buffer.from('dummy level.dat'));
+            // Create a conflict: 'a' is a file, and then try to write to 'a/b'
+            zip.addFile('a', Buffer.from('file instead of dir'));
+            zip.addFile('a/b', Buffer.from('nested file'));
+            zip.writeZip(tempUploadPath);
+
+            const result = await backend.uploadWorld(tempUploadPath, 'failed_world.mcworld');
+            expect(result.success).toBe(false);
+
+            // Verify that the created world directory has been cleaned up
+            const targetPath = path.join(serverDir, 'worlds', 'failed_world');
+            expect(fs.existsSync(targetPath)).toBe(false);
+        });
     });
 });
