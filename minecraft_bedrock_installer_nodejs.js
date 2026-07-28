@@ -364,6 +364,10 @@ export async function changeOwnership(dirPath, user, group) {
  * @returns {Promise<{total: number, available: number}>}
  */
 export async function getDiskUsage(dirPath) {
+    if (!dirPath) {
+        log('WARNING', 'getDiskUsage received an empty or undefined path.');
+        return { total: 0, available: 0 };
+    }
     try {
         const stats = await fs.promises.statfs(dirPath);
         return {
@@ -1274,21 +1278,51 @@ export async function renameWorld(oldWorldName, newWorldName) {
         return { success: false, message: 'Target world name already exists.' };
     }
 
+    const wasRunning = await isProcessRunning();
+    let isActiveWorld = false;
+
+    try {
+        const properties = await readServerProperties();
+        isActiveWorld = (properties['level-name'] === oldWorldName);
+    } catch (e) {
+        log('WARNING', `Failed to read server.properties during rename check: ${e.message}`);
+    }
+
+    if (wasRunning && isActiveWorld) {
+        log('INFO', `Stopping server to rename the active world from '${oldWorldName}' to '${newWorldName}'...`);
+        await stopServer();
+    }
+
     try {
         fs.renameSync(oldWorldPath, newWorldPath);
         log('INFO', `Renamed world directory from '${oldWorldName}' to '${newWorldName}'`);
 
-        // Update server.properties if the active world was renamed
-        const properties = await readServerProperties();
-        if (properties['level-name'] === oldWorldName) {
+        if (isActiveWorld) {
             log('INFO', `Active world renamed. Updating level-name in server.properties.`);
+            const properties = await readServerProperties();
             properties['level-name'] = newWorldName;
             await writeServerProperties(properties);
+        }
+
+        if (wasRunning && isActiveWorld) {
+            log('INFO', 'Restarting server after active world rename...');
+            await startServer();
         }
 
         return { success: true, message: `World '${oldWorldName}' renamed to '${newWorldName}' successfully.` };
     } catch (error) {
         log('ERROR', `Failed to rename world '${oldWorldName}' to '${newWorldName}': ${error.message}`);
+
+        // Recover state: if we stopped the server but the rename failed, start it back up
+        if (wasRunning && isActiveWorld && !(await isProcessRunning())) {
+            try {
+                log('INFO', 'Restarting server after failed active world rename...');
+                await startServer();
+            } catch (startErr) {
+                log('ERROR', `Failed to restart server after rename failure: ${startErr.message}`);
+            }
+        }
+
         return { success: false, message: `Failed to rename world: ${error.message}` };
     }
 }
@@ -1465,6 +1499,7 @@ export async function getPlayers() {
     // We don't want to spam 'list' command
     const now = Date.now();
     if (now - lastPlayerInfo.lastUpdated > 10000) { // Update every 10 seconds at most
+        lastPlayerInfo.lastUpdated = now; // Mark as updated immediately to throttle command sending
         sendServerCommand('list');
     }
 
