@@ -112,6 +112,40 @@ describe('uploadPack Edge Cases', () => {
         expect(result.message).toContain("World 'non_existent_world' not found");
     });
 
+    it('should successfully process a .zip file as a multi-pack if it contains multiple manifest.json files', async () => {
+        const zip = new AdmZip();
+        const bpManifest = {
+            format_version: 2,
+            header: {
+                name: 'My BP Pack',
+                uuid: 'bp-uuid',
+                version: [1, 0, 0]
+            },
+            modules: [{ type: 'data', uuid: 'bp-module-uuid', version: [1, 0, 0] }]
+        };
+        const rpManifest = {
+            format_version: 2,
+            header: {
+                name: 'My RP Pack',
+                uuid: 'rp-uuid',
+                version: [1, 0, 0]
+            },
+            modules: [{ type: 'resources', uuid: 'rp-module-uuid', version: [1, 0, 0] }]
+        };
+        zip.addFile('behavior/manifest.json', Buffer.from(JSON.stringify(bpManifest)));
+        zip.addFile('resource/manifest.json', Buffer.from(JSON.stringify(rpManifest)));
+        zip.writeZip(tempUploadPath);
+
+        const result = await backend.uploadPack(tempUploadPath, 'multipack.zip', undefined, 'test_world');
+        expect(result.success).toBe(true);
+        expect(result.message).toContain('Multi-pack file processing complete');
+        expect(result.message).toContain('2 pack(s) processed');
+
+        // Check if directories were created and manifest.json extracted
+        expect(fs.existsSync(path.join(serverDir, 'behavior_packs', 'My_BP_Pack', 'manifest.json'))).toBe(true);
+        expect(fs.existsSync(path.join(serverDir, 'resource_packs', 'My_RP_Pack', 'manifest.json'))).toBe(true);
+    });
+
     describe('uploadWorld naming collisions', () => {
         it('should append _counter instead of (counter) on naming collision to keep names valid', async () => {
             // Create a pre-existing world folder with name 'my_world'
