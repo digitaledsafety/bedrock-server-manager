@@ -1,0 +1,13 @@
+node_modules
+npm-debug.log
+mc_installer.log
+server_data
+temp_uploads
+test
+verification_artifacts
+.git
+.github
+.gitignore
+README.md
+Dockerfile
+.dockerignore
