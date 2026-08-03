@@ -1094,18 +1094,50 @@ export async function checkAndInstall() {
             throw new Error(`Temporary installation path ${tempInstallPath} not found after extraction.`);
         }
 
-        if (SERVER_DIRECTORY && fs.existsSync(SERVER_DIRECTORY)) { // Check if SERVER_DIRECTORY is defined
-            log('INFO', `Removing existing server directory: ${SERVER_DIRECTORY}`);
-            fs.rmSync(SERVER_DIRECTORY, { recursive: true, force: true });
-            log('INFO', `Removed existing server directory ${SERVER_DIRECTORY}`);
+        const serverDirectoryOld = SERVER_DIRECTORY + '_old';
+        let movedOld = false;
+
+        if (SERVER_DIRECTORY && fs.existsSync(SERVER_DIRECTORY)) {
+            log('INFO', `Moving current server directory to temporary backup: ${serverDirectoryOld}`);
+            try {
+                if (fs.existsSync(serverDirectoryOld)) {
+                    fs.rmSync(serverDirectoryOld, { recursive: true, force: true });
+                }
+                fs.renameSync(SERVER_DIRECTORY, serverDirectoryOld);
+                movedOld = true;
+            } catch (err) {
+                log('WARNING', `Failed to rename current server directory to ${serverDirectoryOld}: ${err.message}. Falling back to direct removal.`);
+                fs.rmSync(SERVER_DIRECTORY, { recursive: true, force: true });
+            }
         }
+
         log('INFO', `Moving new server files from ${tempInstallPath} to ${SERVER_DIRECTORY}`);
         try {
-            fs.renameSync(tempInstallPath, SERVER_DIRECTORY);
-        } catch (renameError) {
-            log('WARNING', `fs.renameSync failed (${renameError.message}). Attempting copy-and-remove fallback.`);
-            fs.cpSync(tempInstallPath, SERVER_DIRECTORY, { recursive: true });
-            fs.rmSync(tempInstallPath, { recursive: true, force: true });
+            try {
+                fs.renameSync(tempInstallPath, SERVER_DIRECTORY);
+            } catch (renameError) {
+                log('WARNING', `fs.renameSync failed (${renameError.message}). Attempting copy-and-remove fallback.`);
+                fs.cpSync(tempInstallPath, SERVER_DIRECTORY, { recursive: true });
+                fs.rmSync(tempInstallPath, { recursive: true, force: true });
+            }
+            if (movedOld && fs.existsSync(serverDirectoryOld)) {
+                log('INFO', `Cleaning up temporary backup of old server directory.`);
+                fs.rmSync(serverDirectoryOld, { recursive: true, force: true });
+            }
+        } catch (moveError) {
+            log('ERROR', `Failed to move/copy new server files to ${SERVER_DIRECTORY}: ${moveError.message}`);
+            if (movedOld && fs.existsSync(serverDirectoryOld)) {
+                log('INFO', `Restoring old server directory from ${serverDirectoryOld} due to failure.`);
+                try {
+                    if (fs.existsSync(SERVER_DIRECTORY)) {
+                        fs.rmSync(SERVER_DIRECTORY, { recursive: true, force: true });
+                    }
+                    fs.renameSync(serverDirectoryOld, SERVER_DIRECTORY);
+                } catch (restoreError) {
+                    log('ERROR', `Failed to restore old server directory: ${restoreError.message}`);
+                }
+            }
+            throw moveError;
         }
         log('INFO', 'Successfully moved new server files to SERVER_DIRECTORY.');
         if (backupDir) {
