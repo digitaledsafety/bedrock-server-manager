@@ -1081,6 +1081,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 propertiesTabs.style.display = 'none';
             } else {
                 // If query is cleared, restore tab view
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.style.display = '';
+                });
                 propertiesTabs.style.display = 'flex';
                 const activeTabButton = propertiesTabs.querySelector('.tab-button.active');
                 if (activeTabButton) {

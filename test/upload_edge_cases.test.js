@@ -112,6 +112,42 @@ describe('uploadPack Edge Cases', () => {
         expect(result.message).toContain("World 'non_existent_world' not found");
     });
 
+    describe('uploadPack multi-pack auto-detection in .zip files', () => {
+        it('should auto-detect and extract multi-pack zip files', async () => {
+            const zip = new AdmZip();
+            const manifest1 = {
+                format_version: 2,
+                header: {
+                    name: 'Behavior Pack',
+                    uuid: 'behavior-uuid',
+                    version: [1, 0, 0],
+                    min_engine_version: [1, 16, 0]
+                },
+                modules: [{ type: 'data', uuid: 'bp-module-uuid', version: [1, 0, 0] }]
+            };
+            const manifest2 = {
+                format_version: 2,
+                header: {
+                    name: 'Resource Pack',
+                    uuid: 'resource-uuid',
+                    version: [1, 0, 0],
+                    min_engine_version: [1, 16, 0]
+                },
+                modules: [{ type: 'resources', uuid: 'rp-module-uuid', version: [1, 0, 0] }]
+            };
+            zip.addFile('BP/manifest.json', Buffer.from(JSON.stringify(manifest1)));
+            zip.addFile('RP/manifest.json', Buffer.from(JSON.stringify(manifest2)));
+            zip.writeZip(tempUploadPath);
+
+            const result = await backend.uploadPack(tempUploadPath, 'addon.zip', undefined, 'test_world');
+            expect(result.success).toBe(true);
+            expect(result.message).toContain('Multi-pack processing complete');
+
+            expect(fs.existsSync(path.join(serverDir, 'behavior_packs', 'Behavior_Pack', 'manifest.json'))).toBe(true);
+            expect(fs.existsSync(path.join(serverDir, 'resource_packs', 'Resource_Pack', 'manifest.json'))).toBe(true);
+        });
+    });
+
     describe('uploadWorld naming collisions', () => {
         it('should append _counter instead of (counter) on naming collision to keep names valid', async () => {
             // Create a pre-existing world folder with name 'my_world'

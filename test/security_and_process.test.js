@@ -77,7 +77,7 @@ describe('Security and Process Management', () => {
         });
     });
 
-    describe('changeOwnership validation', () => {
+    describe('changeOwnership validation and tolerance', () => {
         it('should throw an error if user or group contains invalid characters', async () => {
             // Mock platform to non-win32 to test non-win32 paths
             const platformSpy = jest.spyOn(os, 'platform').mockReturnValue('linux');
@@ -87,6 +87,16 @@ describe('Security and Process Management', () => {
 
             await expect(backend.changeOwnership(serverDir, 'user', 'group\nsh'))
                 .rejects.toThrow('Invalid user or group for changeOwnership');
+
+            platformSpy.mockRestore();
+        });
+
+        it('should resolve and warning log if chown fails instead of throwing/rejecting', async () => {
+            const platformSpy = jest.spyOn(os, 'platform').mockReturnValue('linux');
+
+            // We expect changeOwnership to spawn 'chown' and resolve gracefully even on chown failure
+            // Let's call changeOwnership on serverDir with valid user and group
+            await expect(backend.changeOwnership(serverDir, 'minecraft', 'minecraft')).resolves.toBeUndefined();
 
             platformSpy.mockRestore();
         });
