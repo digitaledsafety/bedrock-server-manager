@@ -112,6 +112,55 @@ describe('uploadPack Edge Cases', () => {
         expect(result.message).toContain("World 'non_existent_world' not found");
     });
 
+    it('should automatically process .zip containing multiple manifests as a multi-pack', async () => {
+        const zip = new AdmZip();
+        const manifestBP = {
+            format_version: 2,
+            header: {
+                name: 'Zip Behavior Pack',
+                uuid: 'zip-bp-uuid',
+                version: [1, 0, 0],
+                min_engine_version: [1, 16, 0]
+            },
+            modules: [{ type: 'data', uuid: 'bp-module-uuid', version: [1, 0, 0] }]
+        };
+        const manifestRP = {
+            format_version: 2,
+            header: {
+                name: 'Zip Resource Pack',
+                uuid: 'zip-rp-uuid',
+                version: [1, 0, 0],
+                min_engine_version: [1, 16, 0]
+            },
+            modules: [{ type: 'resources', uuid: 'rp-module-uuid', version: [1, 0, 0] }]
+        };
+
+        zip.addFile('behavior/manifest.json', Buffer.from(JSON.stringify(manifestBP)));
+        zip.addFile('behavior/dummy.json', Buffer.from('data'));
+        zip.addFile('resource/manifest.json', Buffer.from(JSON.stringify(manifestRP)));
+        zip.addFile('resource/dummy.png', Buffer.from('image'));
+        zip.writeZip(tempUploadPath);
+
+        const result = await backend.uploadPack(tempUploadPath, 'addon.zip', null, 'test_world');
+        expect(result.success).toBe(true);
+        expect(result.message).toContain('Multi-pack processing complete');
+
+        // Check if extracted to correct directories
+        const bpPath = path.join(serverDir, 'behavior_packs', 'Zip_Behavior_Pack');
+        const rpPath = path.join(serverDir, 'resource_packs', 'Zip_Resource_Pack');
+        expect(fs.existsSync(bpPath)).toBe(true);
+        expect(fs.existsSync(rpPath)).toBe(true);
+        expect(fs.existsSync(path.join(bpPath, 'dummy.json'))).toBe(true);
+        expect(fs.existsSync(path.join(rpPath, 'dummy.png'))).toBe(true);
+
+        // Check world json files are updated
+        const worldBPJson = JSON.parse(fs.readFileSync(path.join(worldDir, 'world_behavior_packs.json'), 'utf8'));
+        const worldRPJson = JSON.parse(fs.readFileSync(path.join(worldDir, 'world_resource_packs.json'), 'utf8'));
+
+        expect(worldBPJson.some(p => p.pack_id === 'zip-bp-uuid')).toBe(true);
+        expect(worldRPJson.some(p => p.pack_id === 'zip-rp-uuid')).toBe(true);
+    });
+
     describe('uploadWorld naming collisions', () => {
         it('should append _counter instead of (counter) on naming collision to keep names valid', async () => {
             // Create a pre-existing world folder with name 'my_world'
