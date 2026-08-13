@@ -140,4 +140,29 @@ describe('uploadPack Edge Cases', () => {
             expect(backend.isValidWorldName(result2.worldName)).toBe(true);
         });
     });
+
+    describe('uploadWorld failures', () => {
+        it('should clean up the target world directory if extraction fails', async () => {
+            // Prepare a zip file that triggers a directory-file collision during extraction
+            // to naturally throw an exception inside extractZipSubdir.
+            const zip = new AdmZip();
+            zip.addFile('level.dat', Buffer.from('dummy level data'));
+            zip.addFile('levelname.txt', Buffer.from('my_failing_world'));
+
+            // Adding a file named 'db'
+            zip.addFile('db', Buffer.from('some file contents'));
+            // Adding a nested file inside 'db', which will fail with ENOTDIR since 'db' is a file
+            zip.addFile('db/nested_file.txt', Buffer.from('nested content'));
+
+            zip.writeZip(tempUploadPath);
+
+            const result = await backend.uploadWorld(tempUploadPath, 'my_failing_world.mcworld');
+            expect(result.success).toBe(false);
+            expect(result.message).toContain('ENOTDIR');
+
+            // The target directory 'my_failing_world' should have been cleaned up and not exist
+            const failingWorldPath = path.join(serverDir, 'worlds', 'my_failing_world');
+            expect(fs.existsSync(failingWorldPath)).toBe(false);
+        });
+    });
 });
