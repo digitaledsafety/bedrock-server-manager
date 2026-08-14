@@ -175,6 +175,10 @@ export async function getLatestVersion() {
                 request.on('error', (err) => {
                     reject(new Error(`Error getting Minecraft Education Edition download link: ${err.message}`));
                 });
+                request.setTimeout(15000, () => {
+                    request.destroy();
+                    reject(new Error('Request for redirect location timed out after 15000ms'));
+                });
             });
 
             log('DEBUG', `Redirected to: ${downloadUrl}`);
@@ -198,7 +202,7 @@ export async function getLatestVersion() {
     // Default to bedrock
     return new Promise((resolve) => {
         const apiURL = new URL(MC_DOWNLOAD_API_URL);
-        https.get(apiURL, { headers: { 'Accept-Language': 'en-US,en;q=0.5' } }, (res) => {
+        const req = https.get(apiURL, { headers: { 'Accept-Language': 'en-US,en;q=0.5' } }, (res) => {
             let data = '';
             if (res.statusCode < 200 || res.statusCode >= 300) {
                 log('ERROR', `Failed to fetch download links from API. Status: ${res.statusCode} ${res.statusMessage}. Response: ${data}`);
@@ -237,8 +241,14 @@ export async function getLatestVersion() {
                     resolve(null);
                 }
             });
-        }).on('error', err => {
+        });
+        req.on('error', err => {
             log('ERROR', `Error fetching data from download API: ${err.message}`);
+            resolve(null);
+        });
+        req.setTimeout(15000, () => {
+            log('ERROR', 'Request to download API timed out after 15000ms');
+            req.destroy();
             resolve(null);
         });
     });
@@ -249,7 +259,7 @@ export function downloadFile(downloadUrl, downloadPath) {
         const url = new URL(downloadUrl);
         const protocol = url.protocol === 'https:' ? https : http;
         const file = fs.createWriteStream(downloadPath);
-        protocol.get(url, (response) => {
+        const req = protocol.get(url, (response) => {
             if (response.statusCode < 200 || response.statusCode >= 300) {
                 reject(new Error(`Failed to download file: ${response.statusCode} ${response.statusMessage}`));
                 return;
@@ -258,6 +268,13 @@ export function downloadFile(downloadUrl, downloadPath) {
             file.on('finish', () => { file.close(resolve); });
             file.on('error', (err) => { fs.unlink(downloadPath, () => reject(new Error(`Error writing to file: ${err.message}`))); });
             response.on('error', (err) => { fs.unlink(downloadPath, () => reject(new Error(`Error during download: ${err.message}`))); });
+        });
+        req.on('error', (err) => {
+            fs.unlink(downloadPath, () => reject(new Error(`Error during download request: ${err.message}`)));
+        });
+        req.setTimeout(30000, () => {
+            req.destroy();
+            fs.unlink(downloadPath, () => reject(new Error('Download request timed out after 30000ms')));
         });
     });
 }
@@ -1611,6 +1628,10 @@ export async function sendWebhookNotification(message) {
             log('ERROR', `Error sending webhook notification: ${err.message}`);
             reject(err);
         });
+        req.setTimeout(10000, () => {
+            req.destroy();
+            reject(new Error('Webhook notification request timed out after 10000ms'));
+        });
         req.write(postData);
         req.end();
     });
@@ -1851,6 +1872,8 @@ export async function uploadWorld(tempFilePath, originalFilename) {
         return { success: false, message: 'Server directory not configured.' };
     }
 
+    let targetWorldPath = null;
+
     try {
         const zip = new AdmZip(tempFilePath);
         const zipEntries = zip.getEntries();
@@ -1899,7 +1922,7 @@ export async function uploadWorld(tempFilePath, originalFilename) {
             counter++;
         }
 
-        const targetWorldPath = path.join(worldsPath, finalWorldName);
+        targetWorldPath = path.join(worldsPath, finalWorldName);
         fs.mkdirSync(targetWorldPath, { recursive: true });
 
         // 5. Extract files from world root
@@ -1911,6 +1934,14 @@ export async function uploadWorld(tempFilePath, originalFilename) {
 
     } catch (error) {
         log('ERROR', `Error uploading world: ${error.message} ${error.stack}`);
+        if (targetWorldPath && fs.existsSync(targetWorldPath)) {
+            try {
+                fs.rmSync(targetWorldPath, { recursive: true, force: true });
+                log('INFO', `Cleaned up partially created world directory: ${targetWorldPath}`);
+            } catch (cleanupErr) {
+                log('ERROR', `Failed to clean up partially created world directory ${targetWorldPath}: ${cleanupErr.message}`);
+            }
+        }
         return { success: false, message: `Error processing world file: ${error.message}` };
     }
 }
