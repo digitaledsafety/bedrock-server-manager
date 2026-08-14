@@ -1306,21 +1306,42 @@ export async function renameWorld(oldWorldName, newWorldName) {
         return { success: false, message: 'Target world name already exists.' };
     }
 
+    const wasRunning = await isProcessRunning();
+    const properties = await readServerProperties();
+    const isActiveWorld = (properties['level-name'] === oldWorldName);
+
+    if (wasRunning && isActiveWorld) {
+        log('INFO', `Stopping server because active world '${oldWorldName}' is being renamed.`);
+        await stopServer();
+    }
+
     try {
         fs.renameSync(oldWorldPath, newWorldPath);
         log('INFO', `Renamed world directory from '${oldWorldName}' to '${newWorldName}'`);
 
         // Update server.properties if the active world was renamed
-        const properties = await readServerProperties();
-        if (properties['level-name'] === oldWorldName) {
+        if (isActiveWorld) {
             log('INFO', `Active world renamed. Updating level-name in server.properties.`);
             properties['level-name'] = newWorldName;
             await writeServerProperties(properties);
         }
 
+        if (wasRunning && isActiveWorld) {
+            log('INFO', `Restarting server after active world rename completed.`);
+            await startServer();
+        }
+
         return { success: true, message: `World '${oldWorldName}' renamed to '${newWorldName}' successfully.` };
     } catch (error) {
         log('ERROR', `Failed to rename world '${oldWorldName}' to '${newWorldName}': ${error.message}`);
+        // If server was running and we stopped it, try to restart it even on error
+        if (wasRunning && isActiveWorld) {
+            try {
+                await startServer();
+            } catch (startErr) {
+                log('ERROR', `Failed to restart server after rename failure: ${startErr.message}`);
+            }
+        }
         return { success: false, message: `Failed to rename world: ${error.message}` };
     }
 }
@@ -1902,12 +1923,21 @@ export async function uploadWorld(tempFilePath, originalFilename) {
         const targetWorldPath = path.join(worldsPath, finalWorldName);
         fs.mkdirSync(targetWorldPath, { recursive: true });
 
-        // 5. Extract files from world root
-        log('INFO', `Extracting world '${worldName}' to ${targetWorldPath}`);
-        extractZipSubdir(zipEntries, normalizedWorldRoot, targetWorldPath);
+        try {
+            // 5. Extract files from world root
+            log('INFO', `Extracting world '${worldName}' to ${targetWorldPath}`);
+            extractZipSubdir(zipEntries, normalizedWorldRoot, targetWorldPath);
 
-        log('INFO', `Successfully uploaded world: ${finalWorldName}`);
-        return { success: true, message: `World '${finalWorldName}' uploaded successfully.`, worldName: finalWorldName };
+            log('INFO', `Successfully uploaded world: ${finalWorldName}`);
+            return { success: true, message: `World '${finalWorldName}' uploaded successfully.`, worldName: finalWorldName };
+        } catch (extractErr) {
+            // Clean up the targetWorldPath folder since extraction failed
+            if (fs.existsSync(targetWorldPath)) {
+                log('WARNING', `Cleaning up failed world upload directory: ${targetWorldPath}`);
+                fs.rmSync(targetWorldPath, { recursive: true, force: true });
+            }
+            throw extractErr;
+        }
 
     } catch (error) {
         log('ERROR', `Error uploading world: ${error.message} ${error.stack}`);
@@ -2065,9 +2095,18 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
             for (const manifestEntry of manifestEntries) {
                 let packRootInZip = path.dirname(manifestEntry.entryName);
                 if (packRootInZip === '.') packRootInZip = '';
-                const manifestData = JSON.parse(zip.readAsText(manifestEntry));
 
-                if (!manifestData.header || !manifestData.header.uuid || !manifestData.header.version || !manifestData.header.name) {
+                let manifestData;
+                try {
+                    manifestData = JSON.parse(zip.readAsText(manifestEntry));
+                } catch (jsonErr) {
+                    log('WARNING', `Skipping pack in .mcaddon due to invalid manifest JSON: ${manifestEntry.entryName}. Error: ${jsonErr.message}`);
+                    messages.push(`Skipped pack from ${manifestEntry.entryName} (malformed JSON).`);
+                    overallSuccess = false;
+                    continue;
+                }
+
+                if (!manifestData || !manifestData.header || !manifestData.header.uuid || !manifestData.header.version || !manifestData.header.name) {
                     log('WARNING', `Skipping pack in .mcaddon due to invalid manifest (missing header/uuid/version/name): ${manifestEntry.entryName}`);
                     messages.push(`Skipped pack from ${manifestEntry.entryName} (invalid manifest).`);
                     overallSuccess = false;

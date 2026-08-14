@@ -112,6 +112,26 @@ describe('uploadPack Edge Cases', () => {
         expect(result.message).toContain("World 'non_existent_world' not found");
     });
 
+    it('should handle malformed JSON manifest in .mcaddon gracefully', async () => {
+        const zip = new AdmZip();
+        const manifestGood = {
+            format_version: 2,
+            header: {
+                name: 'Good Pack',
+                uuid: 'good-uuid',
+                version: [1, 0, 0]
+            },
+            modules: [{ type: 'data', uuid: 'good-module-uuid', version: [1, 0, 0] }]
+        };
+        zip.addFile('good_pack/manifest.json', Buffer.from(JSON.stringify(manifestGood)));
+        zip.addFile('bad_pack/manifest.json', Buffer.from('{ malformed json }'));
+        zip.writeZip(tempUploadPath);
+
+        const result = await backend.uploadPack(tempUploadPath, 'test.mcaddon', undefined, 'test_world');
+        expect(result.success).toBe(false);
+        expect(result.message).toContain('Skipped pack from bad_pack/manifest.json (malformed JSON).');
+    });
+
     describe('uploadWorld naming collisions', () => {
         it('should append _counter instead of (counter) on naming collision to keep names valid', async () => {
             // Create a pre-existing world folder with name 'my_world'
@@ -138,6 +158,25 @@ describe('uploadPack Edge Cases', () => {
             expect(result2.success).toBe(true);
             expect(result2.worldName).toBe('my_world_2');
             expect(backend.isValidWorldName(result2.worldName)).toBe(true);
+        });
+    });
+
+    describe('uploadWorld cleanup on extraction failure', () => {
+        it('should remove the target world folder if extraction fails', async () => {
+            // Prepare a world zip upload with a valid level.dat but a second file with a null byte in name to trigger TypeError/Error
+            const zip = new AdmZip();
+            zip.addFile('level.dat', Buffer.from('dummy level data'));
+            zip.addFile('levelname.txt', Buffer.from('cleanup_world'));
+            zip.addFile('invalid\x00file.txt', Buffer.from('null byte trigger'));
+            zip.writeZip(tempUploadPath);
+
+            const result = await backend.uploadWorld(tempUploadPath, 'cleanup_world.mcworld');
+            expect(result.success).toBe(false);
+            expect(result.message).toContain('null byte');
+
+            // The target directory 'cleanup_world' should have been cleaned up and not exist
+            const cleanupWorldPath = path.join(serverDir, 'worlds', 'cleanup_world');
+            expect(fs.existsSync(cleanupWorldPath)).toBe(false);
         });
     });
 });
