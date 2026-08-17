@@ -2078,16 +2078,18 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
             return { success: false, message: 'Uploaded file is empty or invalid.' };
         }
 
-        if (isMcAddon) {
-            log('INFO', `Processing .mcaddon file: ${originalFilename}`);
-            // Find all manifest.json files to identify individual packs
-            const manifestEntries = zipEntries.filter(entry => entry.entryName.endsWith('manifest.json') && !entry.isDirectory);
+        const manifestEntries = zipEntries.filter(entry => entry.entryName.endsWith('manifest.json') && !entry.isDirectory);
 
-            if (manifestEntries.length === 0) {
-                return { success: false, message: 'No valid packs found within the .mcaddon file.' };
-            }
+        if (manifestEntries.length === 0) {
+            return { success: false, message: 'manifest.json not found in the uploaded pack.' };
+        }
 
-            // Pre-calculate all pack roots in this .mcaddon
+        const isMultiPack = isMcAddon || manifestEntries.length > 1;
+
+        if (isMultiPack) {
+            log('INFO', `Processing multi-pack file: ${originalFilename}`);
+
+            // Pre-calculate all pack roots in this archive
             const allPackRoots = manifestEntries.map(entry => {
                 let root = path.dirname(entry.entryName);
                 return root === '.' ? '' : root;
@@ -2096,10 +2098,18 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
             for (const manifestEntry of manifestEntries) {
                 let packRootInZip = path.dirname(manifestEntry.entryName);
                 if (packRootInZip === '.') packRootInZip = '';
-                const manifestData = JSON.parse(zip.readAsText(manifestEntry));
+                let manifestData;
+                try {
+                    manifestData = JSON.parse(zip.readAsText(manifestEntry));
+                } catch (e) {
+                    log('WARNING', `Skipping pack in multi-pack archive due to invalid JSON: ${manifestEntry.entryName}`);
+                    messages.push(`Skipped pack from ${manifestEntry.entryName} (invalid manifest JSON).`);
+                    overallSuccess = false;
+                    continue;
+                }
 
                 if (!manifestData.header || !manifestData.header.uuid || !manifestData.header.version || !manifestData.header.name) {
-                    log('WARNING', `Skipping pack in .mcaddon due to invalid manifest (missing header/uuid/version/name): ${manifestEntry.entryName}`);
+                    log('WARNING', `Skipping pack in multi-pack archive due to invalid manifest (missing header/uuid/version/name): ${manifestEntry.entryName}`);
                     messages.push(`Skipped pack from ${manifestEntry.entryName} (invalid manifest).`);
                     overallSuccess = false;
                     continue;
@@ -2109,19 +2119,19 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
                 const packVersion = manifestData.header.version;
                 const packName = manifestData.header.name;
 
-                // Determine pack type from manifest module type or location (simplistic for now)
+                // Determine pack type from manifest module type or location
                 let packTypeModule = manifestData.modules && manifestData.modules[0] ? manifestData.modules[0].type : null;
                 let currentPackTargetDirName;
                 let currentWorldPackJsonFile;
 
-                if (packTypeModule === 'data' || packRootInZip.toLowerCase().includes('behavior')) { // Assuming 'data' is behavior
+                if (packTypeModule === 'data' || packRootInZip.toLowerCase().includes('behavior')) {
                     currentPackTargetDirName = 'behavior_packs';
                     currentWorldPackJsonFile = 'world_behavior_packs.json';
-                } else if (packTypeModule === 'resources' || packRootInZip.toLowerCase().includes('resource')) { // Assuming 'resources' is resource
+                } else if (packTypeModule === 'resources' || packRootInZip.toLowerCase().includes('resource')) {
                     currentPackTargetDirName = 'resource_packs';
                     currentWorldPackJsonFile = 'world_resource_packs.json';
                 } else {
-                    log('WARNING', `Skipping pack '${packName}' in .mcaddon: Could not determine pack type (behavior/resource) from manifest: ${manifestEntry.entryName}`);
+                    log('WARNING', `Skipping pack '${packName}' in multi-pack archive: Could not determine pack type (behavior/resource) from manifest: ${manifestEntry.entryName}`);
                     messages.push(`Skipped pack '${packName}' (unknown type).`);
                     overallSuccess = false;
                     continue;
@@ -2154,17 +2164,14 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
                 }
             }
             if (packsProcessedCount === 0 && !overallSuccess) {
-                 return { success: false, message: "Failed to process any valid packs from the .mcaddon. " + messages.join(" ") };
+                 return { success: false, message: "Failed to process any valid packs from the archive. " + messages.join(" ") };
             }
-            return { success: overallSuccess, message: `.mcaddon processing complete. ${packsProcessedCount} pack(s) processed. Details: ${messages.join(" ")} Restart server if needed.` };
+            return { success: overallSuccess, message: `Multi-pack processing complete. ${packsProcessedCount} pack(s) processed. Details: ${messages.join(" ")} Restart server if needed.` };
 
-        } else { // Handle as .mcpack
-            log('INFO', `Processing .mcpack file: ${originalFilename} with requested type: ${requestedPackType || 'Auto-detect'}`);
+        } else { // Handle as single .mcpack
+            log('INFO', `Processing pack file: ${originalFilename} with requested type: ${requestedPackType || 'Auto-detect'}`);
 
-            const manifestEntry = zipEntries.find(entry => entry.entryName.endsWith('manifest.json') && !entry.isDirectory);
-            if (!manifestEntry) {
-                return { success: false, message: 'manifest.json not found in the uploaded .mcpack.' };
-            }
+            const manifestEntry = manifestEntries[0];
             let packRootInZip = path.dirname(manifestEntry.entryName);
             if (packRootInZip === '.') packRootInZip = '';
             let manifestData;
