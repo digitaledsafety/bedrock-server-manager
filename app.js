@@ -90,6 +90,10 @@ const sanitizeServerProperties = (req, res, next) => {
     const errors = [];
 
     for (const key in properties) {
+        if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+            backend.log('ERROR', `Forbidden property key detected: ${key}`);
+            return res.status(400).json({ error: `Forbidden property key: ${key}` });
+        }
         if (typeof key !== 'string' || key.match(/[\n\r]/)) {
             backend.log('ERROR', `Invalid character in server property key: ${key}`);
             return res.status(400).json({ error: `Invalid character in server property key: ${key}` });
@@ -500,6 +504,9 @@ app.post('/api/logs/clear', async (req, res) => {
 app.get('/api/logs', async (req, res) => {
     try {
         const config = backend.getConfig();
+        if (!config || !config.serverDirectory) {
+            return res.json({ success: true, logs: 'Server directory not configured.' });
+        }
         const serverLogPath = path.join(config.serverDirectory, 'server.log');
 
         if (!fs.existsSync(serverLogPath)) {
@@ -540,6 +547,9 @@ app.get('/api/logs', async (req, res) => {
 app.get('/api/logs/download', async (req, res) => {
     try {
         const config = backend.getConfig();
+        if (!config || !config.serverDirectory) {
+            return res.status(400).json({ success: false, message: 'Server directory not configured.' });
+        }
         const serverLogPath = path.join(config.serverDirectory, 'server.log');
 
         if (!fs.existsSync(serverLogPath)) {
