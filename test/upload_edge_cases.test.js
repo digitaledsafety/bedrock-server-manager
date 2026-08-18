@@ -56,6 +56,31 @@ describe('uploadPack Edge Cases', () => {
         expect(result.message).toContain('Failed to parse manifest.json');
     });
 
+    it('should skip malformed JSON manifest in .mcaddon pack upload gracefully', async () => {
+        const zip = new AdmZip();
+        // Add one pack with malformed JSON manifest
+        zip.addFile('pack1/manifest.json', Buffer.from('{ malformed json '));
+
+        // Add another pack with valid manifest
+        const validManifest = {
+            format_version: 2,
+            header: {
+                name: 'Valid Addon Pack',
+                uuid: 'valid-addon-uuid',
+                version: [1, 0, 0],
+                min_engine_version: [1, 16, 0]
+            },
+            modules: [{ type: 'data', uuid: 'valid-addon-module-uuid', version: [1, 0, 0] }]
+        };
+        zip.addFile('pack2/manifest.json', Buffer.from(JSON.stringify(validManifest)));
+        zip.writeZip(tempUploadPath);
+
+        const result = await backend.uploadPack(tempUploadPath, 'addon.mcaddon', null, 'test_world');
+        expect(result.message).toContain('.mcaddon processing complete');
+        expect(result.message).toContain('Skipped pack from pack1/manifest.json (malformed JSON manifest)');
+        expect(result.message).toContain("Applied pack 'Valid Addon Pack'");
+    });
+
     it('should fail if manifest.json is missing required header fields', async () => {
         const zip = new AdmZip();
         zip.addFile('manifest.json', Buffer.from(JSON.stringify({ header: { name: 'test' } })));

@@ -19,6 +19,7 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   uploadPack: jest.fn(),
   startAutoUpdateScheduler: jest.fn(),
   getStoredVersion: jest.fn(),
+  getConfig: jest.fn().mockReturnValue({ serverDirectory: '/test/server' }),
   log: jest.fn(), // Mock the log function as well
 }));
 
@@ -95,6 +96,29 @@ describe('API Endpoints', () => {
 
         expect(res.statusCode).toEqual(500);
         expect(res.body).toEqual({ error: 'Failed to start server' });
+    });
+  });
+
+  describe('GET /api/logs', () => {
+    it('should handle unconfigured serverDirectory gracefully', async () => {
+        backend.getConfig.mockReturnValue({});
+
+        const res = await request(app).get('/api/logs');
+
+        expect(res.statusCode).toEqual(200);
+        expect(res.body).toEqual({ success: true, logs: 'Server directory not configured.' });
+    });
+  });
+
+  describe('POST /api/properties security', () => {
+    it('should reject prototype pollution key __proto__', async () => {
+        const res = await request(app)
+            .post('/api/properties')
+            .set('Content-Type', 'application/json')
+            .send('{"__proto__": {"polluted": "true"}}');
+
+        expect(res.statusCode).toEqual(400);
+        expect(res.body.error).toContain('Forbidden property key');
     });
   });
 
