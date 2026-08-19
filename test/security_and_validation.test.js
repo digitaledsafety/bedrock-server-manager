@@ -53,6 +53,16 @@ describe('Security and Validation', () => {
             expect(res.statusCode).toBe(400);
             expect(res.body.error).toContain('Invalid character in server property key');
         });
+
+        it('should reject prototype pollution property keys', async () => {
+            const res = await request(app)
+                .post('/api/properties')
+                .set('Content-Type', 'application/json')
+                .send('{"__proto__": {"injected": true}}');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toContain('Forbidden property key');
+        });
     });
 
     describe('POST /api/config validation', () => {
@@ -72,6 +82,16 @@ describe('Security and Validation', () => {
 
             expect(res.statusCode).toBe(400);
             expect(res.body.message).toContain('Update interval must be a positive integer');
+        });
+
+        it('should reject prototype pollution config keys', async () => {
+            const res = await request(app)
+                .post('/api/config')
+                .set('Content-Type', 'application/json')
+                .send('{"__proto__": {"injected": true}}');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Forbidden setting');
         });
     });
 

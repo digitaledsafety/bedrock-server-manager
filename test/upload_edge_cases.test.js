@@ -112,6 +112,40 @@ describe('uploadPack Edge Cases', () => {
         expect(result.message).toContain("World 'non_existent_world' not found");
     });
 
+    it('should skip malformed JSON manifest in .mcaddon and continue gracefully', async () => {
+        const zip = new AdmZip();
+        const validManifest = {
+            format_version: 2,
+            header: {
+                name: 'Good Pack',
+                uuid: 'good-uuid',
+                version: [1, 0, 0]
+            },
+            modules: [{ type: 'data', uuid: 'good-module', version: [1, 0, 0] }]
+        };
+        zip.addFile('pack1/manifest.json', Buffer.from('{ malformed json }'));
+        zip.addFile('pack2/manifest.json', Buffer.from(JSON.stringify(validManifest)));
+        zip.writeZip(tempUploadPath);
+
+        const result = await backend.uploadPack(tempUploadPath, 'test.mcaddon', 'behavior', 'test_world');
+        expect(result.message).toContain('Skipped pack from pack1/manifest.json (malformed JSON)');
+        expect(result.message).toContain("Applied pack 'Good Pack'");
+    });
+
+    describe('deletePack validation', () => {
+        it('should reject invalid packType in deletePack', async () => {
+            const result = await backend.deletePack('test_world', 'invalid_type', 'some-uuid');
+            expect(result.success).toBe(false);
+            expect(result.message).toContain('Invalid pack type specified');
+        });
+
+        it('should reject invalid or missing packId in deletePack', async () => {
+            const result = await backend.deletePack('test_world', 'behavior', '   ');
+            expect(result.success).toBe(false);
+            expect(result.message).toContain('Invalid pack ID');
+        });
+    });
+
     describe('uploadWorld naming collisions', () => {
         it('should append _counter instead of (counter) on naming collision to keep names valid', async () => {
             // Create a pre-existing world folder with name 'my_world'
