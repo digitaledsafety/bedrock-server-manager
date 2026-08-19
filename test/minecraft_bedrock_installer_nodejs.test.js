@@ -137,4 +137,21 @@ level-name=World=1
         process.argv = [];
     });
   });
+
+  describe('isValidWorldName & isValidBackupName', () => {
+    it('isValidWorldName should reject whitespace-only or empty names', () => {
+      expect(backend.isValidWorldName('')).toBe(false);
+      expect(backend.isValidWorldName('   ')).toBe(false);
+      expect(backend.isValidWorldName(null)).toBe(false);
+      expect(backend.isValidWorldName('valid_world_name')).toBe(true);
+    });
+
+    it('isValidBackupName should validate backup names strictly', () => {
+      expect(backend.isValidBackupName('')).toBe(false);
+      expect(backend.isValidBackupName('   ')).toBe(false);
+      expect(backend.isValidBackupName('../backup')).toBe(false);
+      expect(backend.isValidBackupName('backup/file')).toBe(false);
+      expect(backend.isValidBackupName('world_test_2026-08-19T00-11-05_623Z')).toBe(true);
+    });
+  });
 });

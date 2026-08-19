@@ -89,7 +89,12 @@ const sanitizeServerProperties = (req, res, next) => {
 
     const errors = [];
 
-    for (const key in properties) {
+    const keys = Object.getOwnPropertyNames(properties);
+    for (const key of keys) {
+        if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+            backend.log('ERROR', `Forbidden property key: ${key}`);
+            return res.status(400).json({ error: `Forbidden property key: ${key}` });
+        }
         if (typeof key !== 'string' || key.match(/[\n\r]/)) {
             backend.log('ERROR', `Invalid character in server property key: ${key}`);
             return res.status(400).json({ error: `Invalid character in server property key: ${key}` });
@@ -565,7 +570,12 @@ app.post('/api/config', async (req, res) => {
         const newSettings = req.body;
 
         // Basic validation for all settings
-        for (const key in newSettings) {
+        const configKeys = Object.getOwnPropertyNames(newSettings);
+        for (const key of configKeys) {
+            if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+                backend.log('ERROR', `Forbidden config key: ${key}`);
+                return res.status(400).json({ success: false, message: `Forbidden setting: ${key}` });
+            }
             if (typeof newSettings[key] === 'string' && /[\x00-\x1F\x7F]/.test(newSettings[key])) {
                 backend.log('ERROR', `Control characters detected in config key ${key}`);
                 return res.status(400).json({ success: false, message: `Invalid characters in setting: ${key}` });
