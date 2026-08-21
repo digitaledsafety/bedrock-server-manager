@@ -18,6 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const refreshBackupsButton = document.getElementById('refreshBackupsButton');
     const refreshWorldsButton = document.getElementById('refreshWorldsButton');
     const backupSearchInput = document.getElementById('backupSearch');
+    const worldSearchInput = document.getElementById('worldSearch');
     const playerInfoDiv = document.getElementById('playerInfo');
     const playerCountSpan = document.getElementById('playerCount');
     const playerListDiv = document.getElementById('playerList');
@@ -679,6 +680,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         addRenameButtonListeners(); // Re-add listeners after updating DOM
                         addBackupButtonListeners(); // Re-add listeners after updating DOM
                         addDeleteButtonListeners(); // Re-add listeners after updating DOM
+                        filterWorlds(); // Apply the current filter if any
                     } else {
                         worldListContainer.innerHTML = '<p class="text-gray-600">No worlds found. Start the server to generate a default world.</p>';
                     }
@@ -996,6 +998,23 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function filterWorlds() {
+        if (!worldSearchInput) return;
+        const worldListContainer = document.getElementById('worldList');
+        if (!worldListContainer) return;
+        const query = worldSearchInput.value.toLowerCase();
+        const worldItems = worldListContainer.querySelectorAll('.world-item');
+        worldItems.forEach(item => {
+            const span = item.querySelector('span');
+            const worldName = span ? span.textContent.toLowerCase() : '';
+            if (worldName.includes(query)) {
+                item.style.display = 'flex';
+            } else {
+                item.style.display = 'none';
+            }
+        });
+    }
+
     if (commandForm) {
         commandForm.addEventListener('submit', async (event) => {
             event.preventDefault();
@@ -1048,6 +1067,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (refreshWorldsButton) refreshWorldsButton.addEventListener('click', loadWorlds);
     if (backupSearchInput) {
         backupSearchInput.addEventListener('input', filterBackups);
+    }
+    if (worldSearchInput) {
+        worldSearchInput.addEventListener('input', filterWorlds);
     }
     if (createWorldForm) createWorldForm.addEventListener('submit', handleCreateWorld);
     if (uploadWorldForm) uploadWorldForm.addEventListener('submit', handleUploadWorld);
