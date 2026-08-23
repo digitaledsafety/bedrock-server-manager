@@ -112,6 +112,35 @@ describe('uploadPack Edge Cases', () => {
         expect(result.message).toContain("World 'non_existent_world' not found");
     });
 
+    it('should handle malformed manifest JSON in .mcaddon gracefully without crashing', async () => {
+        const zip = new AdmZip();
+        // Pack 1 has malformed JSON
+        zip.addFile('pack1/manifest.json', Buffer.from('{ malformed json }'));
+
+        // Pack 2 is valid
+        const validManifest = {
+            format_version: 2,
+            header: {
+                name: 'Valid Pack',
+                uuid: 'valid-uuid',
+                version: [1, 0, 0]
+            },
+            modules: [{ type: 'data', uuid: 'mod-uuid', version: [1, 0, 0] }]
+        };
+        zip.addFile('pack2/manifest.json', Buffer.from(JSON.stringify(validManifest)));
+        zip.writeZip(tempUploadPath);
+
+        const result = await backend.uploadPack(tempUploadPath, 'addon.mcaddon', null, 'test_world');
+        expect(result.message).toContain('Skipped pack from pack1/manifest.json (invalid manifest).');
+        expect(result.message).toContain("Applied pack 'Valid Pack'.");
+    });
+
+    it('should fail deletePack if packType is invalid', async () => {
+        const result = await backend.deletePack('test_world', 'invalid_pack_type', 'some-uuid');
+        expect(result.success).toBe(false);
+        expect(result.message).toBe('Invalid pack type specified.');
+    });
+
     describe('uploadWorld naming collisions', () => {
         it('should append _counter instead of (counter) on naming collision to keep names valid', async () => {
             // Create a pre-existing world folder with name 'my_world'

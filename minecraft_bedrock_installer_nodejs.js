@@ -2025,8 +2025,16 @@ export async function deletePack(worldName, packType, packId) {
     if (!SERVER_DIRECTORY) return { success: false, message: 'Server directory not configured.' };
     if (!isValidWorldName(worldName)) return { success: false, message: 'Invalid world name.' };
 
+    const validPackTypes = ['behavior', 'resource', 'dev_behavior', 'dev_resource'];
+    if (!packType || !validPackTypes.includes(packType)) {
+        return { success: false, message: 'Invalid pack type specified.' };
+    }
+    if (!packId || typeof packId !== 'string') {
+        return { success: false, message: 'Invalid pack ID specified.' };
+    }
+
     const worldPath = path.join(SERVER_DIRECTORY, 'worlds', worldName);
-    const fileName = packType === 'behavior' ? 'world_behavior_packs.json' : 'world_resource_packs.json';
+    const fileName = (packType === 'behavior' || packType === 'dev_behavior') ? 'world_behavior_packs.json' : 'world_resource_packs.json';
     const filePath = path.join(worldPath, fileName);
 
     if (!fs.existsSync(filePath)) return { success: false, message: 'Pack configuration file not found.' };
@@ -2096,7 +2104,15 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
             for (const manifestEntry of manifestEntries) {
                 let packRootInZip = path.dirname(manifestEntry.entryName);
                 if (packRootInZip === '.') packRootInZip = '';
-                const manifestData = JSON.parse(zip.readAsText(manifestEntry));
+                let manifestData;
+                try {
+                    manifestData = JSON.parse(zip.readAsText(manifestEntry));
+                } catch (e) {
+                    log('WARNING', `Skipping pack in .mcaddon due to invalid manifest JSON (${manifestEntry.entryName}): ${e.message}`);
+                    messages.push(`Skipped pack from ${manifestEntry.entryName} (invalid manifest).`);
+                    overallSuccess = false;
+                    continue;
+                }
 
                 if (!manifestData.header || !manifestData.header.uuid || !manifestData.header.version || !manifestData.header.name) {
                     log('WARNING', `Skipping pack in .mcaddon due to invalid manifest (missing header/uuid/version/name): ${manifestEntry.entryName}`);
