@@ -90,6 +90,10 @@ const sanitizeServerProperties = (req, res, next) => {
     const errors = [];
 
     for (const key in properties) {
+        if (!Object.prototype.hasOwnProperty.call(properties, key) || ['__proto__', 'constructor', 'prototype'].includes(key)) {
+            backend.log('ERROR', `Invalid property key: ${key}`);
+            return res.status(400).json({ error: `Invalid property key: ${key}` });
+        }
         if (typeof key !== 'string' || key.match(/[\n\r]/)) {
             backend.log('ERROR', `Invalid character in server property key: ${key}`);
             return res.status(400).json({ error: `Invalid character in server property key: ${key}` });
@@ -234,7 +238,7 @@ app.post('/api/command', async (req, res) => {
         if (!command) {
             return res.status(400).json({ success: false, message: 'Command is required.' });
         }
-        if (typeof command !== 'string' || command.match(/[\n\r]/)) {
+        if (typeof command !== 'string' || command.match(/[\n\r\x00-\x1F\x7F]/)) {
             backend.log('ERROR', `Control characters or newlines detected in command: ${command}`);
             return res.status(400).json({ success: false, message: 'Invalid command. Newlines and control characters are not allowed.' });
         }
@@ -566,6 +570,10 @@ app.post('/api/config', async (req, res) => {
 
         // Basic validation for all settings
         for (const key in newSettings) {
+            if (!Object.prototype.hasOwnProperty.call(newSettings, key) || ['__proto__', 'constructor', 'prototype'].includes(key)) {
+                backend.log('ERROR', `Invalid config key: ${key}`);
+                return res.status(400).json({ success: false, message: `Invalid setting key: ${key}` });
+            }
             if (typeof newSettings[key] === 'string' && /[\x00-\x1F\x7F]/.test(newSettings[key])) {
                 backend.log('ERROR', `Control characters detected in config key ${key}`);
                 return res.status(400).json({ success: false, message: `Invalid characters in setting: ${key}` });
