@@ -53,6 +53,16 @@ describe('Security and Validation', () => {
             expect(res.statusCode).toBe(400);
             expect(res.body.error).toContain('Invalid character in server property key');
         });
+
+        it('should reject prototype pollution keys in properties', async () => {
+            const res = await request(app)
+                .post('/api/properties')
+                .set('Content-Type', 'application/json')
+                .send('{"__proto__": {"polluted": true}, "server-name": "Minecraft Server"}');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toContain('Invalid property key');
+        });
     });
 
     describe('POST /api/config validation', () => {
@@ -73,6 +83,16 @@ describe('Security and Validation', () => {
             expect(res.statusCode).toBe(400);
             expect(res.body.message).toContain('Update interval must be a positive integer');
         });
+
+        it('should reject prototype pollution keys in config', async () => {
+            const res = await request(app)
+                .post('/api/config')
+                .set('Content-Type', 'application/json')
+                .send('{"__proto__": {"polluted": true}, "serverName": "MyServer"}');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Invalid setting key');
+        });
     });
 
     describe('POST /api/command validation', () => {
@@ -91,6 +111,17 @@ describe('Security and Validation', () => {
             const res = await request(app)
                 .post('/api/command')
                 .send({ command: 12345 });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.success).toBe(false);
+            expect(res.body.message).toContain('Invalid command. Newlines and control characters are not allowed.');
+            expect(backend.sendServerCommand).not.toHaveBeenCalled();
+        });
+
+        it('should reject commands with null bytes or control characters', async () => {
+            const res = await request(app)
+                .post('/api/command')
+                .send({ command: 'say\x00Hello' });
 
             expect(res.statusCode).toBe(400);
             expect(res.body.success).toBe(false);
