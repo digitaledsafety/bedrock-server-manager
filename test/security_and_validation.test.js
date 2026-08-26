@@ -24,6 +24,15 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   getStoredVersion: jest.fn(),
   log: jest.fn(),
   isValidWorldName: jest.fn().mockReturnValue(true),
+  isValidBackupName: jest.fn().mockImplementation(name => {
+    if (!name || typeof name !== 'string') return false;
+    if (name.includes('..') || name.includes('/') || name.includes('\\')) return false;
+    if (/[\x00-\x1F\x7F]/.test(name)) return false;
+    return true;
+  }),
+  deleteBackup: jest.fn(),
+  exportBackup: jest.fn(),
+  restoreBackup: jest.fn(),
 }));
 
 const { default: app } = await import('../app.js');
@@ -52,6 +61,26 @@ describe('Security and Validation', () => {
 
             expect(res.statusCode).toBe(400);
             expect(res.body.error).toContain('Invalid character in server property key');
+        });
+
+        it('should reject prototype pollution attempts in property keys', async () => {
+            const res = await request(app)
+                .post('/api/properties')
+                .set('Content-Type', 'application/json')
+                .send('{"__proto__": {"polluted": true}}');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toContain('Forbidden server property key');
+        });
+    });
+
+    describe('Backup name validation', () => {
+        it('should reject backup names with path traversal or control characters', async () => {
+            expect(backend.isValidBackupName('../etc/passwd')).toBe(false);
+            expect(backend.isValidBackupName('backup/subdir')).toBe(false);
+            expect(backend.isValidBackupName('backup\\subdir')).toBe(false);
+            expect(backend.isValidBackupName('backup\x00null')).toBe(false);
+            expect(backend.isValidBackupName('valid_backup_123')).toBe(true);
         });
     });
 
