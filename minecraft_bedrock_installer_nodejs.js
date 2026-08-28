@@ -2066,7 +2066,6 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
         return { success: false, message: `World '${worldName}' not found.` };
     }
 
-    const isMcAddon = originalFilename.toLowerCase().endsWith('.mcaddon');
     let overallSuccess = true;
     let messages = [];
     let packsProcessedCount = 0;
@@ -2078,13 +2077,15 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
             return { success: false, message: 'Uploaded file is empty or invalid.' };
         }
 
-        if (isMcAddon) {
-            log('INFO', `Processing .mcaddon file: ${originalFilename}`);
-            // Find all manifest.json files to identify individual packs
-            const manifestEntries = zipEntries.filter(entry => entry.entryName.endsWith('manifest.json') && !entry.isDirectory);
+        const manifestEntries = zipEntries.filter(entry => entry.entryName.endsWith('manifest.json') && !entry.isDirectory);
+        const isMultiPack = manifestEntries.length > 1;
+        const isMcAddon = originalFilename.toLowerCase().endsWith('.mcaddon');
+
+        if (isMcAddon || isMultiPack) {
+            log('INFO', `Processing multi-pack file (${originalFilename}, manifests found: ${manifestEntries.length})`);
 
             if (manifestEntries.length === 0) {
-                return { success: false, message: 'No valid packs found within the .mcaddon file.' };
+                return { success: false, message: 'No valid packs found within the uploaded file.' };
             }
 
             // Pre-calculate all pack roots in this .mcaddon
@@ -2154,16 +2155,16 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
                 }
             }
             if (packsProcessedCount === 0 && !overallSuccess) {
-                 return { success: false, message: "Failed to process any valid packs from the .mcaddon. " + messages.join(" ") };
+                 return { success: false, message: "Failed to process any valid packs from the archive. " + messages.join(" ") };
             }
-            return { success: overallSuccess, message: `.mcaddon processing complete. ${packsProcessedCount} pack(s) processed. Details: ${messages.join(" ")} Restart server if needed.` };
+            return { success: overallSuccess, message: `Pack processing complete. ${packsProcessedCount} pack(s) processed. Details: ${messages.join(" ")} Restart server if needed.` };
 
-        } else { // Handle as .mcpack
-            log('INFO', `Processing .mcpack file: ${originalFilename} with requested type: ${requestedPackType || 'Auto-detect'}`);
+        } else { // Handle as single .mcpack or .zip containing 1 pack
+            log('INFO', `Processing single-pack file: ${originalFilename} with requested type: ${requestedPackType || 'Auto-detect'}`);
 
-            const manifestEntry = zipEntries.find(entry => entry.entryName.endsWith('manifest.json') && !entry.isDirectory);
+            const manifestEntry = manifestEntries[0];
             if (!manifestEntry) {
-                return { success: false, message: 'manifest.json not found in the uploaded .mcpack.' };
+                return { success: false, message: 'manifest.json not found in the uploaded file.' };
             }
             let packRootInZip = path.dirname(manifestEntry.entryName);
             if (packRootInZip === '.') packRootInZip = '';
