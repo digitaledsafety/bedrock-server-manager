@@ -112,6 +112,49 @@ describe('uploadPack Edge Cases', () => {
         expect(result.message).toContain("World 'non_existent_world' not found");
     });
 
+    it('should successfully process multi-pack .zip archive containing behavior and resource packs', async () => {
+        const zip = new AdmZip();
+        const bpManifest = {
+            format_version: 2,
+            header: {
+                name: 'Multi BP',
+                uuid: 'multi-bp-uuid',
+                version: [1, 0, 0]
+            },
+            modules: [{ type: 'data', uuid: 'bp-mod-uuid', version: [1, 0, 0] }]
+        };
+        const rpManifest = {
+            format_version: 2,
+            header: {
+                name: 'Multi RP',
+                uuid: 'multi-rp-uuid',
+                version: [1, 0, 0]
+            },
+            modules: [{ type: 'resources', uuid: 'rp-mod-uuid', version: [1, 0, 0] }]
+        };
+
+        zip.addFile('bp/manifest.json', Buffer.from(JSON.stringify(bpManifest)));
+        zip.addFile('bp/pack_icon.png', Buffer.from('bp icon'));
+        zip.addFile('rp/manifest.json', Buffer.from(JSON.stringify(rpManifest)));
+        zip.addFile('rp/pack_icon.png', Buffer.from('rp icon'));
+        zip.writeZip(tempUploadPath);
+
+        const result = await backend.uploadPack(tempUploadPath, 'addon_bundle.zip', undefined, 'test_world');
+        expect(result.success).toBe(true);
+
+        const bpPath = path.join(serverDir, 'behavior_packs', 'Multi_BP');
+        const rpPath = path.join(serverDir, 'resource_packs', 'Multi_RP');
+
+        expect(fs.existsSync(bpPath)).toBe(true);
+        expect(fs.existsSync(rpPath)).toBe(true);
+
+        const bpJson = JSON.parse(fs.readFileSync(path.join(worldDir, 'world_behavior_packs.json'), 'utf8'));
+        const rpJson = JSON.parse(fs.readFileSync(path.join(worldDir, 'world_resource_packs.json'), 'utf8'));
+
+        expect(bpJson).toEqual(expect.arrayContaining([{ pack_id: 'multi-bp-uuid', version: [1, 0, 0] }]));
+        expect(rpJson).toEqual(expect.arrayContaining([{ pack_id: 'multi-rp-uuid', version: [1, 0, 0] }]));
+    });
+
     describe('uploadWorld naming collisions', () => {
         it('should append _counter instead of (counter) on naming collision to keep names valid', async () => {
             // Create a pre-existing world folder with name 'my_world'
