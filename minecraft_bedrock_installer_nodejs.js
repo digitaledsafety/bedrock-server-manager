@@ -2025,8 +2025,16 @@ export async function deletePack(worldName, packType, packId) {
     if (!SERVER_DIRECTORY) return { success: false, message: 'Server directory not configured.' };
     if (!isValidWorldName(worldName)) return { success: false, message: 'Invalid world name.' };
 
+    const validPackTypes = ['behavior', 'resource', 'dev_behavior', 'dev_resource'];
+    if (!packType || !validPackTypes.includes(packType)) {
+        return { success: false, message: 'Invalid pack type.' };
+    }
+    if (!packId || typeof packId !== 'string' || packId.trim() === '') {
+        return { success: false, message: 'Invalid pack ID.' };
+    }
+
     const worldPath = path.join(SERVER_DIRECTORY, 'worlds', worldName);
-    const fileName = packType === 'behavior' ? 'world_behavior_packs.json' : 'world_resource_packs.json';
+    const fileName = (packType === 'behavior' || packType === 'dev_behavior') ? 'world_behavior_packs.json' : 'world_resource_packs.json';
     const filePath = path.join(worldPath, fileName);
 
     if (!fs.existsSync(filePath)) return { success: false, message: 'Pack configuration file not found.' };
