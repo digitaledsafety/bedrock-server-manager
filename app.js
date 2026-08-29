@@ -776,6 +776,13 @@ app.post('/api/delete-pack', async (req, res) => {
         if (!worldName || !packType || !packId) {
             return res.status(400).json({ success: false, message: 'World name, pack type, and pack ID are required.' });
         }
+        const validPackTypes = ['behavior', 'resource', 'dev_behavior', 'dev_resource'];
+        if (!validPackTypes.includes(packType)) {
+            return res.status(400).json({ success: false, message: 'Invalid pack type specified.' });
+        }
+        if (typeof packId !== 'string' || packId.trim() === '') {
+            return res.status(400).json({ success: false, message: 'Invalid pack ID specified.' });
+        }
         const result = await backend.deletePack(worldName, packType, packId);
         if (result.success) {
             res.json(result);
