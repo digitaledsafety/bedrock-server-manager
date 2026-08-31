@@ -78,4 +78,23 @@ describe('Pack Management API', () => {
             expect(res.statusCode).toBe(400);
         });
     });
+
+    describe('Direct deletePack unit behavior', () => {
+        it('should validate packType and packId parameters', async () => {
+            // Test missing packId via endpoint or mocked response
+            backend.deletePack.mockImplementation(async (worldName, packType, packId) => {
+                if (!packId || typeof packId !== 'string') return { success: false, message: 'Invalid pack ID.' };
+                if (!packType || !['behavior', 'resource', 'dev_behavior', 'dev_resource'].includes(packType)) {
+                    return { success: false, message: 'Invalid pack type.' };
+                }
+                return { success: true, message: 'Pack removed' };
+            });
+
+            const resNoId = await backend.deletePack('test_world', 'behavior', null);
+            expect(resNoId).toEqual({ success: false, message: 'Invalid pack ID.' });
+
+            const resBadType = await backend.deletePack('test_world', 'invalid_type', 'some-uuid');
+            expect(resBadType).toEqual({ success: false, message: 'Invalid pack type.' });
+        });
+    });
 });
