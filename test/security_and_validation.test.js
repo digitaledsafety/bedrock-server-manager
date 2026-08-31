@@ -53,6 +53,16 @@ describe('Security and Validation', () => {
             expect(res.statusCode).toBe(400);
             expect(res.body.error).toContain('Invalid character in server property key');
         });
+
+        it('should reject prototype pollution keys', async () => {
+            const res = await request(app)
+                .post('/api/properties')
+                .set('Content-Type', 'application/json')
+                .send('{"__proto__": {"polluted": "true"}}');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toContain('Invalid server property key');
+        });
     });
 
     describe('POST /api/config validation', () => {

@@ -89,7 +89,13 @@ const sanitizeServerProperties = (req, res, next) => {
 
     const errors = [];
 
-    for (const key in properties) {
+    const propertyKeys = Object.keys(properties);
+    for (const key of propertyKeys) {
+        if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+            backend.log('ERROR', `Forbidden server property key detected: ${key}`);
+            return res.status(400).json({ error: `Invalid server property key: ${key}` });
+        }
+
         if (typeof key !== 'string' || key.match(/[\n\r]/)) {
             backend.log('ERROR', `Invalid character in server property key: ${key}`);
             return res.status(400).json({ error: `Invalid character in server property key: ${key}` });
