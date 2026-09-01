@@ -19,6 +19,10 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   uploadPack: jest.fn(),
   startAutoUpdateScheduler: jest.fn(),
   getStoredVersion: jest.fn(),
+  isValidBackupName: jest.fn(),
+  deleteBackup: jest.fn(),
+  exportBackup: jest.fn(),
+  restoreBackup: jest.fn(),
   log: jest.fn(), // Mock the log function as well
 }));
 
@@ -95,6 +99,38 @@ describe('API Endpoints', () => {
 
         expect(res.statusCode).toEqual(500);
         expect(res.body).toEqual({ error: 'Failed to start server' });
+    });
+  });
+
+  describe('Backup endpoints validation', () => {
+    it('DELETE /api/backups/:backupName should return 400 for invalid backup names', async () => {
+      backend.isValidBackupName.mockReturnValue(false);
+
+      const res = await request(app).delete('/api/backups/..%2Ftraversal');
+
+      expect(res.statusCode).toEqual(400);
+      expect(res.body).toEqual({ success: false, message: 'Invalid backup name.', error: 'Invalid backup name.' });
+      expect(backend.deleteBackup).not.toHaveBeenCalled();
+    });
+
+    it('GET /api/backups/:backupName/download should return 400 for invalid backup names', async () => {
+      backend.isValidBackupName.mockReturnValue(false);
+
+      const res = await request(app).get('/api/backups/invalid%00backup/download');
+
+      expect(res.statusCode).toEqual(400);
+      expect(res.body).toEqual({ success: false, message: 'Invalid backup name.', error: 'Invalid backup name.' });
+      expect(backend.exportBackup).not.toHaveBeenCalled();
+    });
+
+    it('POST /api/backups/:backupName/restore should return 400 for invalid backup names', async () => {
+      backend.isValidBackupName.mockReturnValue(false);
+
+      const res = await request(app).post('/api/backups/..%2Ftraversal/restore');
+
+      expect(res.statusCode).toEqual(400);
+      expect(res.body).toEqual({ success: false, message: 'Invalid backup name.', error: 'Invalid backup name.' });
+      expect(backend.restoreBackup).not.toHaveBeenCalled();
     });
   });
 

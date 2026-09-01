@@ -92,7 +92,27 @@ describe('Security and Process Management', () => {
         });
     });
 
-    describe('Backup Path Traversal Protection', () => {
+    describe('Backup Path Traversal Protection and isValidBackupName', () => {
+        it('should validate valid backup names correctly', () => {
+            expect(backend.isValidBackupName('valid_backup_2026-01-01')).toBe(true);
+            expect(backend.isValidBackupName('world_Bedrock_level_2026')).toBe(true);
+        });
+
+        it('should reject null bytes, control characters, and invalid types', () => {
+            expect(backend.isValidBackupName('backup\x00file')).toBe(false);
+            expect(backend.isValidBackupName('backup\nname')).toBe(false);
+            expect(backend.isValidBackupName(null)).toBe(false);
+            expect(backend.isValidBackupName(undefined)).toBe(false);
+            expect(backend.isValidBackupName(12345)).toBe(false);
+        });
+
+        it('should reject path traversal in isValidBackupName', () => {
+            expect(backend.isValidBackupName('../traversal')).toBe(false);
+            expect(backend.isValidBackupName('folder/file')).toBe(false);
+            expect(backend.isValidBackupName('folder\\file')).toBe(false);
+            expect(backend.isValidBackupName('.')).toBe(false);
+        });
+
         it('should reject backup path traversal in deleteBackup', async () => {
             const result = await backend.deleteBackup('../traversal');
             expect(result.success).toBe(false);
