@@ -608,6 +608,27 @@ app.post('/api/config', async (req, res) => {
                 currentFullConfig.autoStart = !!newSettings.autoStart;
             }
         }
+        if (newSettings.uiPort !== undefined) {
+            const port = parseInt(newSettings.uiPort, 10);
+            if (isNaN(port) || port < 1 || port > 65535) {
+                return res.status(400).json({ success: false, message: 'UI Port must be an integer between 1 and 65535.' });
+            }
+            currentFullConfig.uiPort = port;
+        }
+        if (newSettings.serverPortIPv4 !== undefined) {
+            const port = parseInt(newSettings.serverPortIPv4, 10);
+            if (isNaN(port) || port < 1 || port > 65535) {
+                return res.status(400).json({ success: false, message: 'Server Port IPv4 must be an integer between 1 and 65535.' });
+            }
+            currentFullConfig.serverPortIPv4 = port;
+        }
+        if (newSettings.serverPortIPv6 !== undefined) {
+            const port = parseInt(newSettings.serverPortIPv6, 10);
+            if (isNaN(port) || port < 1 || port > 65535) {
+                return res.status(400).json({ success: false, message: 'Server Port IPv6 must be an integer between 1 and 65535.' });
+            }
+            currentFullConfig.serverPortIPv6 = port;
+        }
         await backend.writeGlobalConfig(currentFullConfig);
         backend.init(currentFullConfig);
         await backend.startAutoUpdateScheduler();

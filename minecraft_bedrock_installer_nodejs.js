@@ -348,25 +348,24 @@ export async function changeOwnership(dirPath, user, group) {
         let stdoutData = ''; let stderrData = '';
         childProcess.stdout.on('data', (data) => stdoutData += data.toString());
         childProcess.stderr.on('data', (data) => stderrData += data.toString());
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve) => {
             childProcess.on('close', (code) => {
                 if (stdoutData) log('DEBUG', `chown stdout: ${stdoutData}`);
                 if (stderrData) log('ERROR', `chown stderr: ${stderrData}`);
                 if (code === 0) {
                     log('INFO', `Changed ownership of ${dirPath} to ${user}:${group} successfully.`);
-                    resolve();
                 } else {
-                    reject(new Error(`chown failed with code ${code} for ${dirPath}. Stderr: ${stderrData}`));
+                    log('WARNING', `chown failed with code ${code} for ${dirPath}. Stderr: ${stderrData}. Continuing without ownership change.`);
                 }
+                resolve();
             });
             childProcess.on('error', (error) => {
-                log('ERROR', `Failed to start chown process for ${dirPath}: ${error.message}`);
-                reject(new Error(`Failed to start chown process: ${error.message}`));
+                log('WARNING', `Failed to start chown process for ${dirPath}: ${error.message}. Continuing without ownership change.`);
+                resolve();
             });
         });
     } catch (error) {
-        log('ERROR', `Error during changeOwnership setup for ${dirPath}: ${error.message}`);
-        throw error;
+        log('WARNING', `Error during changeOwnership setup for ${dirPath}: ${error.message}. Continuing without ownership change.`);
     }
 }
 
@@ -884,7 +883,9 @@ function isUDPPortAvailable(port, host) {
                 log('DEBUG', `UDP port check error for ${host}:${port}: ${err.message}`);
                 resolve({ available: false, error: err.message });
             }
-            socket.close();
+            try {
+                socket.close();
+            } catch (_) {}
         });
         socket.once('listening', () => {
             socket.close(() => resolve({ available: true }));
@@ -1531,6 +1532,11 @@ export async function getPlayers() {
  * @returns {Promise<{success: boolean, message: string}>}
  */
 export async function sendServerCommand(command) {
+    if (!command || typeof command !== 'string' || command.match(/[\n\r]/) || /[\x00-\x1F\x7F]/.test(command)) {
+        log('ERROR', `Control characters or newlines detected in sendServerCommand: ${command}`);
+        return { success: false, message: 'Invalid command. Newlines and control characters are not allowed.' };
+    }
+
     if (!activeServerProcess || !activeServerProcess.stdin || activeServerProcess.stdin.writable === false) {
         log('WARNING', `Cannot send command: Server process not available or stdin not writable. Command: ${command}`);
         return { success: false, message: 'Server console not available.' };
@@ -1693,7 +1699,13 @@ export async function readGlobalConfig() {
         } else if (arg === '--no-autoUpdateEnabled') { effectiveConfig.autoUpdateEnabled = false; log('DEBUG', `CLI Override (boolean flag): ${arg} = false`); }
     }
     setLogLevel(effectiveConfig.logLevel || "INFO");
-    const resolvePath = (p) => path.isAbsolute(p) ? p : path.resolve(__dirnameESM, p);
+    const resolvePath = (p) => {
+        if (typeof p !== 'string') {
+            p = (p !== null && p !== undefined) ? String(p) : '';
+        }
+        if (!p) return '';
+        return path.isAbsolute(p) ? p : path.resolve(__dirnameESM, p);
+    };
     effectiveConfig.serverDirectory = resolvePath(effectiveConfig.serverDirectory);
     effectiveConfig.tempDirectory = resolvePath(effectiveConfig.tempDirectory);
     effectiveConfig.backupDirectory = resolvePath(effectiveConfig.backupDirectory);
@@ -1713,6 +1725,10 @@ export async function writeGlobalConfig(configToWrite) {
     try {
         const storeConfig = JSON.parse(JSON.stringify(configToWrite));
         const makeRelativeIfNeeded = (absPath) => {
+            if (typeof absPath !== 'string') {
+                absPath = (absPath !== null && absPath !== undefined) ? String(absPath) : '';
+            }
+            if (!absPath) return '';
             if (absPath.startsWith(__dirnameESM) && absPath !== __dirnameESM) {
                 let relPath = path.relative(__dirnameESM, absPath);
                 if (!relPath.startsWith('..') && !path.isAbsolute(relPath)) {
@@ -2066,7 +2082,6 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
         return { success: false, message: `World '${worldName}' not found.` };
     }
 
-    const isMcAddon = originalFilename.toLowerCase().endsWith('.mcaddon');
     let overallSuccess = true;
     let messages = [];
     let packsProcessedCount = 0;
@@ -2078,16 +2093,18 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
             return { success: false, message: 'Uploaded file is empty or invalid.' };
         }
 
+        const manifestEntries = zipEntries.filter(entry => entry.entryName.endsWith('manifest.json') && !entry.isDirectory);
+        const isMcAddon = originalFilename.toLowerCase().endsWith('.mcaddon') ||
+                          (originalFilename.toLowerCase().endsWith('.zip') && manifestEntries.length > 1);
+
         if (isMcAddon) {
-            log('INFO', `Processing .mcaddon file: ${originalFilename}`);
-            // Find all manifest.json files to identify individual packs
-            const manifestEntries = zipEntries.filter(entry => entry.entryName.endsWith('manifest.json') && !entry.isDirectory);
+            log('INFO', `Processing multi-pack file: ${originalFilename}`);
 
             if (manifestEntries.length === 0) {
-                return { success: false, message: 'No valid packs found within the .mcaddon file.' };
+                return { success: false, message: 'No valid packs found within the uploaded file.' };
             }
 
-            // Pre-calculate all pack roots in this .mcaddon
+            // Pre-calculate all pack roots in this multi-pack file
             const allPackRoots = manifestEntries.map(entry => {
                 let root = path.dirname(entry.entryName);
                 return root === '.' ? '' : root;
@@ -2099,7 +2116,7 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
                 const manifestData = JSON.parse(zip.readAsText(manifestEntry));
 
                 if (!manifestData.header || !manifestData.header.uuid || !manifestData.header.version || !manifestData.header.name) {
-                    log('WARNING', `Skipping pack in .mcaddon due to invalid manifest (missing header/uuid/version/name): ${manifestEntry.entryName}`);
+                    log('WARNING', `Skipping pack in multi-pack due to invalid manifest (missing header/uuid/version/name): ${manifestEntry.entryName}`);
                     messages.push(`Skipped pack from ${manifestEntry.entryName} (invalid manifest).`);
                     overallSuccess = false;
                     continue;
@@ -2121,7 +2138,7 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
                     currentPackTargetDirName = 'resource_packs';
                     currentWorldPackJsonFile = 'world_resource_packs.json';
                 } else {
-                    log('WARNING', `Skipping pack '${packName}' in .mcaddon: Could not determine pack type (behavior/resource) from manifest: ${manifestEntry.entryName}`);
+                    log('WARNING', `Skipping pack '${packName}' in multi-pack: Could not determine pack type (behavior/resource) from manifest: ${manifestEntry.entryName}`);
                     messages.push(`Skipped pack '${packName}' (unknown type).`);
                     overallSuccess = false;
                     continue;
@@ -2154,9 +2171,9 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
                 }
             }
             if (packsProcessedCount === 0 && !overallSuccess) {
-                 return { success: false, message: "Failed to process any valid packs from the .mcaddon. " + messages.join(" ") };
+                 return { success: false, message: "Failed to process any valid packs from the uploaded file. " + messages.join(" ") };
             }
-            return { success: overallSuccess, message: `.mcaddon processing complete. ${packsProcessedCount} pack(s) processed. Details: ${messages.join(" ")} Restart server if needed.` };
+            return { success: overallSuccess, message: `Multi-pack processing complete. ${packsProcessedCount} pack(s) processed. Details: ${messages.join(" ")} Restart server if needed.` };
 
         } else { // Handle as .mcpack
             log('INFO', `Processing .mcpack file: ${originalFilename} with requested type: ${requestedPackType || 'Auto-detect'}`);
@@ -2285,3 +2302,5 @@ export async function startAutoUpdateScheduler() {
         log('INFO', 'Auto-update is disabled or interval is invalid. Scheduler not started.');
     }
 }
+
+export { AdmZip };
