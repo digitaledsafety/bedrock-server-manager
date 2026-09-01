@@ -45,4 +45,18 @@ describe('Server Properties Newline Injection', () => {
         // We want this to be false, but currently it might be true
         expect(hasInjection).toBe(false);
     });
+
+    describe('sendServerCommand control character and newline injection', () => {
+        it('should block commands with newlines', async () => {
+            const result = await backend.sendServerCommand('say Hello\nstop');
+            expect(result.success).toBe(false);
+            expect(result.message).toContain('Invalid command');
+        });
+
+        it('should block commands with control characters', async () => {
+            const result = await backend.sendServerCommand('say Hello\x00stop');
+            expect(result.success).toBe(false);
+            expect(result.message).toContain('Invalid command');
+        });
+    });
 });
