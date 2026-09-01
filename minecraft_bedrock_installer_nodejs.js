@@ -102,6 +102,27 @@ export function isValidWorldName(worldName) {
 }
 
 /**
+ * Validates a backup name to prevent path traversal, control characters, and null bytes.
+ * @param {string} backupName - The name of the backup to validate.
+ * @returns {boolean} True if valid, false otherwise.
+ */
+export function isValidBackupName(backupName) {
+    if (!backupName || typeof backupName !== 'string') return false;
+    if (backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) return false;
+    if (/[\x00-\x1F\x7F]/.test(backupName)) return false;
+
+    if (BACKUP_DIRECTORY) {
+        const backupPath = path.join(BACKUP_DIRECTORY, backupName);
+        const resolvedBackupDir = path.resolve(BACKUP_DIRECTORY);
+        const resolvedBackupPath = path.resolve(backupPath);
+        if (!isPathInside(resolvedBackupDir, resolvedBackupPath)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
  * Returns the current configuration from memory.
  * @returns {object} The current configuration.
  */
@@ -557,18 +578,12 @@ export async function exportBackup(backupName) {
     if (!BACKUP_DIRECTORY) {
         return { success: false, message: 'Backup directory not configured.' };
     }
-    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+    if (!isValidBackupName(backupName)) {
         log('ERROR', `Invalid backup name for export: ${backupName}`);
         return { success: false, message: 'Invalid backup name.' };
     }
 
     const backupPath = path.join(BACKUP_DIRECTORY, backupName);
-    const resolvedBackupDir = path.resolve(BACKUP_DIRECTORY);
-    const resolvedBackupPath = path.resolve(backupPath);
-    if (!isPathInside(resolvedBackupDir, resolvedBackupPath)) {
-        log('ERROR', `Path traversal attempt detected for backup export: ${backupName}`);
-        return { success: false, message: 'Invalid backup name.' };
-    }
 
     if (!fs.existsSync(backupPath)) {
         log('WARNING', `Backup not found for export: ${backupPath}`);
@@ -599,19 +614,12 @@ export async function deleteBackup(backupName) {
     if (!BACKUP_DIRECTORY) {
         return { success: false, message: 'Backup directory not configured.' };
     }
-    // Validation: backupName should only contain safe characters and not be a path traversal
-    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+    if (!isValidBackupName(backupName)) {
         log('ERROR', `Invalid backup name for deletion: ${backupName}`);
         return { success: false, message: 'Invalid backup name.' };
     }
 
     const targetPath = path.join(BACKUP_DIRECTORY, backupName);
-    const resolvedBackupDir = path.resolve(BACKUP_DIRECTORY);
-    const resolvedTargetPath = path.resolve(targetPath);
-    if (!isPathInside(resolvedBackupDir, resolvedTargetPath)) {
-        log('ERROR', `Path traversal attempt detected for backup deletion: ${backupName}`);
-        return { success: false, message: 'Invalid backup name.' };
-    }
 
     if (!fs.existsSync(targetPath)) {
         log('WARNING', `Backup not found: ${targetPath}`);
@@ -637,19 +645,12 @@ export async function restoreBackup(backupName) {
     if (!BACKUP_DIRECTORY) {
         return { success: false, message: 'Backup directory not configured.' };
     }
-    // Validation: backupName should only contain safe characters and not be a path traversal
-    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+    if (!isValidBackupName(backupName)) {
         log('ERROR', `Invalid backup name for restoration: ${backupName}`);
         return { success: false, message: 'Invalid backup name.' };
     }
 
     const backupPath = path.join(BACKUP_DIRECTORY, backupName);
-    const resolvedBackupDir = path.resolve(BACKUP_DIRECTORY);
-    const resolvedBackupPath = path.resolve(backupPath);
-    if (!isPathInside(resolvedBackupDir, resolvedBackupPath)) {
-        log('ERROR', `Path traversal attempt detected for backup restoration: ${backupName}`);
-        return { success: false, message: 'Invalid backup name.' };
-    }
 
     if (!fs.existsSync(backupPath)) {
         log('WARNING', `Backup not found for restoration: ${backupPath}`);
