@@ -884,7 +884,9 @@ function isUDPPortAvailable(port, host) {
                 log('DEBUG', `UDP port check error for ${host}:${port}: ${err.message}`);
                 resolve({ available: false, error: err.message });
             }
-            socket.close();
+            try {
+                socket.close();
+            } catch (_) {}
         });
         socket.once('listening', () => {
             socket.close(() => resolve({ available: true }));
@@ -1693,7 +1695,13 @@ export async function readGlobalConfig() {
         } else if (arg === '--no-autoUpdateEnabled') { effectiveConfig.autoUpdateEnabled = false; log('DEBUG', `CLI Override (boolean flag): ${arg} = false`); }
     }
     setLogLevel(effectiveConfig.logLevel || "INFO");
-    const resolvePath = (p) => path.isAbsolute(p) ? p : path.resolve(__dirnameESM, p);
+    const resolvePath = (p) => {
+        if (typeof p !== 'string') {
+            p = (p !== null && p !== undefined) ? String(p) : '';
+        }
+        if (!p) return '';
+        return path.isAbsolute(p) ? p : path.resolve(__dirnameESM, p);
+    };
     effectiveConfig.serverDirectory = resolvePath(effectiveConfig.serverDirectory);
     effectiveConfig.tempDirectory = resolvePath(effectiveConfig.tempDirectory);
     effectiveConfig.backupDirectory = resolvePath(effectiveConfig.backupDirectory);
@@ -1713,6 +1721,10 @@ export async function writeGlobalConfig(configToWrite) {
     try {
         const storeConfig = JSON.parse(JSON.stringify(configToWrite));
         const makeRelativeIfNeeded = (absPath) => {
+            if (typeof absPath !== 'string') {
+                absPath = (absPath !== null && absPath !== undefined) ? String(absPath) : '';
+            }
+            if (!absPath) return '';
             if (absPath.startsWith(__dirnameESM) && absPath !== __dirnameESM) {
                 let relPath = path.relative(__dirnameESM, absPath);
                 if (!relPath.startsWith('..') && !path.isAbsolute(relPath)) {
