@@ -685,6 +685,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     console.error('.world-list container not found.');
                 }
+
+                if (packWorldNameSelect) {
+                    const currentSelectedWorld = packWorldNameSelect.value;
+                    packWorldNameSelect.innerHTML = '';
+                    if (data.worlds && data.worlds.length > 0) {
+                        data.worlds.forEach(world => {
+                            const option = document.createElement('option');
+                            option.value = world;
+                            option.textContent = world;
+                            if (world === currentSelectedWorld) {
+                                option.selected = true;
+                            }
+                            packWorldNameSelect.appendChild(option);
+                        });
+                        if (!packWorldNameSelect.value && packWorldNameSelect.options.length > 0) {
+                            packWorldNameSelect.selectedIndex = 0;
+                        }
+                    } else {
+                        const option = document.createElement('option');
+                        option.value = '';
+                        option.disabled = true;
+                        option.textContent = 'No worlds available.';
+                        packWorldNameSelect.appendChild(option);
+                    }
+                    loadActivePacks();
+                }
             } else {
                 showMessage('Failed to load worlds: ' + data.message, 'error');
             }
