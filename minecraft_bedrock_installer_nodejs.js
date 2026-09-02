@@ -2024,6 +2024,9 @@ export async function listPacks(worldName) {
 export async function deletePack(worldName, packType, packId) {
     if (!SERVER_DIRECTORY) return { success: false, message: 'Server directory not configured.' };
     if (!isValidWorldName(worldName)) return { success: false, message: 'Invalid world name.' };
+    if (packType !== 'behavior' && packType !== 'resource') {
+        return { success: false, message: 'Invalid pack type. Must be behavior or resource.' };
+    }
 
     const worldPath = path.join(SERVER_DIRECTORY, 'worlds', worldName);
     const fileName = packType === 'behavior' ? 'world_behavior_packs.json' : 'world_resource_packs.json';
@@ -2078,13 +2081,14 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
             return { success: false, message: 'Uploaded file is empty or invalid.' };
         }
 
-        if (isMcAddon) {
-            log('INFO', `Processing .mcaddon file: ${originalFilename}`);
-            // Find all manifest.json files to identify individual packs
             const manifestEntries = zipEntries.filter(entry => entry.entryName.endsWith('manifest.json') && !entry.isDirectory);
+            const isMultiPack = isMcAddon || manifestEntries.length > 1;
+
+            if (isMultiPack) {
+                log('INFO', `Processing multi-pack file: ${originalFilename}`);
 
             if (manifestEntries.length === 0) {
-                return { success: false, message: 'No valid packs found within the .mcaddon file.' };
+                    return { success: false, message: 'No valid packs found within the file.' };
             }
 
             // Pre-calculate all pack roots in this .mcaddon
@@ -2154,9 +2158,9 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
                 }
             }
             if (packsProcessedCount === 0 && !overallSuccess) {
-                 return { success: false, message: "Failed to process any valid packs from the .mcaddon. " + messages.join(" ") };
+                 return { success: false, message: "Failed to process any valid packs from the uploaded file. " + messages.join(" ") };
             }
-            return { success: overallSuccess, message: `.mcaddon processing complete. ${packsProcessedCount} pack(s) processed. Details: ${messages.join(" ")} Restart server if needed.` };
+            return { success: overallSuccess, message: `Multi-pack processing complete. ${packsProcessedCount} pack(s) processed. Details: ${messages.join(" ")} Restart server if needed.` };
 
         } else { // Handle as .mcpack
             log('INFO', `Processing .mcpack file: ${originalFilename} with requested type: ${requestedPackType || 'Auto-detect'}`);

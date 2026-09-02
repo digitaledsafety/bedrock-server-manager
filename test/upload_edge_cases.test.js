@@ -112,6 +112,48 @@ describe('uploadPack Edge Cases', () => {
         expect(result.message).toContain("World 'non_existent_world' not found");
     });
 
+    it('should successfully upload and process a multi-pack .zip archive', async () => {
+        const zip = new AdmZip();
+        const bpManifest = {
+            format_version: 2,
+            header: {
+                name: 'Multi BP',
+                uuid: 'bp-uuid-1',
+                version: [1, 0, 0]
+            },
+            modules: [{ type: 'data', uuid: 'm1', version: [1, 0, 0] }]
+        };
+        const rpManifest = {
+            format_version: 2,
+            header: {
+                name: 'Multi RP',
+                uuid: 'rp-uuid-1',
+                version: [1, 0, 0]
+            },
+            modules: [{ type: 'resources', uuid: 'm2', version: [1, 0, 0] }]
+        };
+        zip.addFile('bp/manifest.json', Buffer.from(JSON.stringify(bpManifest)));
+        zip.addFile('bp/pack_icon.png', Buffer.from('dummy icon'));
+        zip.addFile('rp/manifest.json', Buffer.from(JSON.stringify(rpManifest)));
+        zip.addFile('rp/pack_icon.png', Buffer.from('dummy icon'));
+        zip.writeZip(tempUploadPath);
+
+        const result = await backend.uploadPack(tempUploadPath, 'addon_packs.zip', undefined, 'test_world');
+        expect(result.success).toBe(true);
+        expect(result.message).toContain('Multi-pack processing complete');
+
+        expect(fs.existsSync(path.join(serverDir, 'behavior_packs', 'Multi_BP', 'manifest.json'))).toBe(true);
+        expect(fs.existsSync(path.join(serverDir, 'resource_packs', 'Multi_RP', 'manifest.json'))).toBe(true);
+    });
+
+    describe('deletePack validation', () => {
+        it('should return error when deletePack is called with invalid packType', async () => {
+            const result = await backend.deletePack('test_world', 'invalid_type', 'bp1');
+            expect(result.success).toBe(false);
+            expect(result.message).toContain('Invalid pack type');
+        });
+    });
+
     describe('uploadWorld naming collisions', () => {
         it('should append _counter instead of (counter) on naming collision to keep names valid', async () => {
             // Create a pre-existing world folder with name 'my_world'
