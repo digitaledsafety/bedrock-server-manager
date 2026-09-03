@@ -81,6 +81,15 @@ const validateWorldName = (req, res, next) => {
     next();
 };
 
+const validateBackupName = (req, res, next) => {
+    const { backupName } = req.params;
+    if (!backupName || !backend.isValidBackupName(backupName)) {
+        backend.log('ERROR', `Invalid backupName format or path traversal attempt: ${backupName}`);
+        return res.status(400).json({ success: false, message: 'Invalid backup name.' });
+    }
+    next();
+};
+
 const sanitizeServerProperties = (req, res, next) => {
     const properties = req.body;
     if (typeof properties !== 'object' || properties === null) {
@@ -89,7 +98,13 @@ const sanitizeServerProperties = (req, res, next) => {
 
     const errors = [];
 
-    for (const key in properties) {
+    const propKeys = Object.getOwnPropertyNames(properties);
+    for (const key of propKeys) {
+        if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+            backend.log('ERROR', `Prototype pollution attempt in server property key: ${key}`);
+            return res.status(400).json({ error: `Invalid server property key: ${key}` });
+        }
+
         if (typeof key !== 'string' || key.match(/[\n\r]/)) {
             backend.log('ERROR', `Invalid character in server property key: ${key}`);
             return res.status(400).json({ error: `Invalid character in server property key: ${key}` });
@@ -274,7 +289,7 @@ app.get('/api/backups', async (req, res) => {
     }
 });
 
-app.delete('/api/backups/:backupName', async (req, res) => {
+app.delete('/api/backups/:backupName', validateBackupName, async (req, res) => {
     try {
         const { backupName } = req.params;
         const result = await backend.deleteBackup(backupName);
@@ -289,7 +304,7 @@ app.delete('/api/backups/:backupName', async (req, res) => {
     }
 });
 
-app.get('/api/backups/:backupName/download', async (req, res) => {
+app.get('/api/backups/:backupName/download', validateBackupName, async (req, res) => {
     try {
         const { backupName } = req.params;
         const result = await backend.exportBackup(backupName);
@@ -312,7 +327,7 @@ app.get('/api/backups/:backupName/download', async (req, res) => {
     }
 });
 
-app.post('/api/backups/:backupName/restore', async (req, res) => {
+app.post('/api/backups/:backupName/restore', validateBackupName, async (req, res) => {
     try {
         const { backupName } = req.params;
         const result = await backend.restoreBackup(backupName);
@@ -500,6 +515,9 @@ app.post('/api/logs/clear', async (req, res) => {
 app.get('/api/logs', async (req, res) => {
     try {
         const config = backend.getConfig();
+        if (!config.serverDirectory) {
+            return res.status(400).json({ success: false, message: 'Server directory not configured.' });
+        }
         const serverLogPath = path.join(config.serverDirectory, 'server.log');
 
         if (!fs.existsSync(serverLogPath)) {
@@ -540,6 +558,9 @@ app.get('/api/logs', async (req, res) => {
 app.get('/api/logs/download', async (req, res) => {
     try {
         const config = backend.getConfig();
+        if (!config.serverDirectory) {
+            return res.status(400).json({ success: false, message: 'Server directory not configured.' });
+        }
         const serverLogPath = path.join(config.serverDirectory, 'server.log');
 
         if (!fs.existsSync(serverLogPath)) {
@@ -565,7 +586,12 @@ app.post('/api/config', async (req, res) => {
         const newSettings = req.body;
 
         // Basic validation for all settings
-        for (const key in newSettings) {
+        const configKeys = Object.getOwnPropertyNames(newSettings);
+        for (const key of configKeys) {
+            if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+                backend.log('ERROR', `Prototype pollution attempt in config key: ${key}`);
+                return res.status(400).json({ success: false, message: `Invalid config key: ${key}` });
+            }
             if (typeof newSettings[key] === 'string' && /[\x00-\x1F\x7F]/.test(newSettings[key])) {
                 backend.log('ERROR', `Control characters detected in config key ${key}`);
                 return res.status(400).json({ success: false, message: `Invalid characters in setting: ${key}` });
