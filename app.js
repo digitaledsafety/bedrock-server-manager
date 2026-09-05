@@ -600,6 +600,16 @@ app.post('/api/config', async (req, res) => {
             }
             currentFullConfig.serverName = newSettings.serverName.trim();
         }
+        const portFields = ['uiPort', 'serverPortIPv4', 'serverPortIPv6'];
+        for (const field of portFields) {
+            if (newSettings[field] !== undefined) {
+                const port = Number(newSettings[field]);
+                if (!Number.isInteger(port) || port < 1 || port > 65535) {
+                    return res.status(400).json({ success: false, message: `${field} must be a valid port number between 1 and 65535.` });
+                }
+                currentFullConfig[field] = port;
+            }
+        }
         if (newSettings.autoStart !== undefined) {
             // Support both booleans and string conversions ('true', 'false', etc.)
             if (typeof newSettings.autoStart === 'string') {
