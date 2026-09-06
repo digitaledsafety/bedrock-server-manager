@@ -23,6 +23,7 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   deleteBackup: jest.fn(),
   getPlayers: jest.fn(),
   isValidWorldName: jest.fn((name) => !/[./\\]/.test(name)),
+  isValidBackupName: jest.fn((name) => typeof name === 'string' && /^[a-zA-Z0-9_ -]+$/.test(name) && !name.includes('.') && !name.includes('/') && !name.includes('\\')),
 }));
 
 // Mock the fs module for app.js initialization
