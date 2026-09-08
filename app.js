@@ -87,9 +87,21 @@ const sanitizeServerProperties = (req, res, next) => {
         return res.status(400).json({ error: 'Invalid server properties format. Expected an object.' });
     }
 
+    if (Object.prototype.hasOwnProperty.call(properties, '__proto__') ||
+        Object.prototype.hasOwnProperty.call(properties, 'constructor') ||
+        Object.prototype.hasOwnProperty.call(properties, 'prototype')) {
+        backend.log('ERROR', 'Disallowed prototype key in server properties');
+        return res.status(400).json({ error: 'Invalid server property key' });
+    }
+
     const errors = [];
 
-    for (const key in properties) {
+    for (const key of Object.keys(properties)) {
+        if (['__proto__', 'constructor', 'prototype'].includes(key)) {
+            backend.log('ERROR', `Disallowed prototype key in server properties: ${key}`);
+            return res.status(400).json({ error: `Invalid server property key: ${key}` });
+        }
+
         if (typeof key !== 'string' || key.match(/[\n\r]/)) {
             backend.log('ERROR', `Invalid character in server property key: ${key}`);
             return res.status(400).json({ error: `Invalid character in server property key: ${key}` });
