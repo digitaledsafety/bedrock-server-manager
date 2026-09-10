@@ -73,6 +73,51 @@ describe('Security and Validation', () => {
             expect(res.statusCode).toBe(400);
             expect(res.body.message).toContain('Update interval must be a positive integer');
         });
+
+        it('should accept valid ports in /api/config', async () => {
+            backend.readGlobalConfig.mockResolvedValue({});
+            const res = await request(app)
+                .post('/api/config')
+                .send({ uiPort: 8080, serverPortIPv4: 19132, serverPortIPv6: 19133 });
+
+            expect(res.statusCode).toBe(200);
+            expect(res.body.success).toBe(true);
+            expect(backend.writeGlobalConfig).toHaveBeenCalledWith(expect.objectContaining({
+                uiPort: 8080,
+                serverPortIPv4: 19132,
+                serverPortIPv6: 19133
+            }));
+        });
+
+        it('should reject invalid uiPort in /api/config', async () => {
+            backend.readGlobalConfig.mockResolvedValue({});
+            const res = await request(app)
+                .post('/api/config')
+                .send({ uiPort: 70000 });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('UI Port must be an integer between 1 and 65535');
+        });
+
+        it('should reject invalid serverPortIPv4 in /api/config', async () => {
+            backend.readGlobalConfig.mockResolvedValue({});
+            const res = await request(app)
+                .post('/api/config')
+                .send({ serverPortIPv4: -1 });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Server IPv4 Port must be an integer between 1 and 65535');
+        });
+
+        it('should reject invalid serverPortIPv6 in /api/config', async () => {
+            backend.readGlobalConfig.mockResolvedValue({});
+            const res = await request(app)
+                .post('/api/config')
+                .send({ serverPortIPv6: "invalid" });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Server IPv6 Port must be an integer between 1 and 65535');
+        });
     });
 
     describe('POST /api/command validation', () => {
