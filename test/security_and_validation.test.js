@@ -23,7 +23,8 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   startAutoUpdateScheduler: jest.fn(),
   getStoredVersion: jest.fn(),
   log: jest.fn(),
-  isValidWorldName: jest.fn().mockReturnValue(true),
+  isValidWorldName: jest.fn(name => typeof name === 'string' && !name.includes('.') && !name.includes('/') && !name.includes('\\')),
+  isValidBackupName: jest.fn(name => typeof name === 'string' && !name.includes('..') && !name.includes('/') && !/[\x00-\x1F\x7F]/.test(name)),
 }));
 
 const { default: app } = await import('../app.js');
@@ -96,6 +97,50 @@ describe('Security and Validation', () => {
             expect(res.body.success).toBe(false);
             expect(res.body.message).toContain('Invalid command. Newlines and control characters are not allowed.');
             expect(backend.sendServerCommand).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('Backup endpoints validation', () => {
+        it('should reject invalid backupName in DELETE /api/backups/:backupName', async () => {
+            const res = await request(app)
+                .delete('/api/backups/..%2F..%2Fetc');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toContain('Invalid backupName format');
+        });
+
+        it('should reject invalid backupName in GET /api/backups/:backupName/download', async () => {
+            const res = await request(app)
+                .get('/api/backups/..%2Fbad/download');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toContain('Invalid backupName format');
+        });
+
+        it('should reject invalid backupName in POST /api/backups/:backupName/restore', async () => {
+            const res = await request(app)
+                .post('/api/backups/..%2Fbad/restore');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toContain('Invalid backupName format');
+        });
+    });
+
+    describe('World endpoints validation', () => {
+        it('should reject invalid worldName in GET /api/worlds/:worldName/export', async () => {
+            const res = await request(app)
+                .get('/api/worlds/world..name/export');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toContain('Invalid worldName format');
+        });
+
+        it('should reject invalid worldName in GET /api/worlds/:worldName/packs', async () => {
+            const res = await request(app)
+                .get('/api/worlds/world..name/packs');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toContain('Invalid worldName format');
         });
     });
 });
