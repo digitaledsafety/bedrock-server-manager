@@ -63,9 +63,10 @@ app.set('views', path.join(__dirnameESM, 'views'));
 const validateWorldName = (req, res, next) => {
     // Check for worldName, or oldWorldName and newWorldName
     const namesToValidate = [];
-    if (req.body.worldName) namesToValidate.push({ name: 'worldName', value: req.body.worldName });
-    if (req.body.oldWorldName) namesToValidate.push({ name: 'oldWorldName', value: req.body.oldWorldName });
-    if (req.body.newWorldName) namesToValidate.push({ name: 'newWorldName', value: req.body.newWorldName });
+    if (req.body?.worldName) namesToValidate.push({ name: 'worldName', value: req.body.worldName });
+    if (req.body?.oldWorldName) namesToValidate.push({ name: 'oldWorldName', value: req.body.oldWorldName });
+    if (req.body?.newWorldName) namesToValidate.push({ name: 'newWorldName', value: req.body.newWorldName });
+    if (req.params?.worldName) namesToValidate.push({ name: 'worldName', value: req.params.worldName });
 
     if (namesToValidate.length === 0) {
         return res.status(400).json({ success: false, message: 'World name is required.', error: 'World name is required.' });
@@ -77,6 +78,19 @@ const validateWorldName = (req, res, next) => {
             const errorMsg = `Invalid ${entry.name} format. Avoid ., /, \\ and ensure it matches allowed pattern.`;
             return res.status(400).json({ success: false, message: errorMsg, error: errorMsg });
         }
+    }
+    next();
+};
+
+const validateBackupName = (req, res, next) => {
+    const backupName = req.params.backupName || req.body.backupName;
+    if (!backupName) {
+        return res.status(400).json({ success: false, message: 'Backup name is required.', error: 'Backup name is required.' });
+    }
+    if (!backend.isValidBackupName(backupName)) {
+        backend.log('ERROR', `Invalid backupName format or characters: ${backupName}`);
+        const errorMsg = 'Invalid backupName format. Avoid path traversal and forbidden characters.';
+        return res.status(400).json({ success: false, message: errorMsg, error: errorMsg });
     }
     next();
 };
@@ -274,7 +288,7 @@ app.get('/api/backups', async (req, res) => {
     }
 });
 
-app.delete('/api/backups/:backupName', async (req, res) => {
+app.delete('/api/backups/:backupName', validateBackupName, async (req, res) => {
     try {
         const { backupName } = req.params;
         const result = await backend.deleteBackup(backupName);
@@ -289,7 +303,7 @@ app.delete('/api/backups/:backupName', async (req, res) => {
     }
 });
 
-app.get('/api/backups/:backupName/download', async (req, res) => {
+app.get('/api/backups/:backupName/download', validateBackupName, async (req, res) => {
     try {
         const { backupName } = req.params;
         const result = await backend.exportBackup(backupName);
@@ -312,7 +326,7 @@ app.get('/api/backups/:backupName/download', async (req, res) => {
     }
 });
 
-app.post('/api/backups/:backupName/restore', async (req, res) => {
+app.post('/api/backups/:backupName/restore', validateBackupName, async (req, res) => {
     try {
         const { backupName } = req.params;
         const result = await backend.restoreBackup(backupName);
@@ -450,7 +464,7 @@ app.post('/api/backup-world', validateWorldName, async (req, res) => {
     }
 });
 
-app.get('/api/worlds/:worldName/export', async (req, res) => {
+app.get('/api/worlds/:worldName/export', validateWorldName, async (req, res) => {
     try {
         const { worldName } = req.params;
         const result = await backend.exportWorld(worldName);
@@ -755,7 +769,7 @@ app.get('/', async (req, res) => {
 });
 
 // --- Pack Management API ---
-app.get('/api/worlds/:worldName/packs', async (req, res) => {
+app.get('/api/worlds/:worldName/packs', validateWorldName, async (req, res) => {
     try {
         const { worldName } = req.params;
         const result = await backend.listPacks(worldName);
