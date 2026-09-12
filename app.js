@@ -564,6 +564,10 @@ app.post('/api/config', async (req, res) => {
     try {
         const newSettings = req.body;
 
+        if (typeof newSettings !== 'object' || newSettings === null || Array.isArray(newSettings)) {
+            return res.status(400).json({ success: false, message: 'Invalid settings format. Expected an object.' });
+        }
+
         // Basic validation for all settings
         for (const key in newSettings) {
             if (typeof newSettings[key] === 'string' && /[\x00-\x1F\x7F]/.test(newSettings[key])) {

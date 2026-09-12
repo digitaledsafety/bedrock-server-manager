@@ -381,6 +381,10 @@ export async function changeOwnership(dirPath, user, group) {
  * @returns {Promise<{total: number, available: number}>}
  */
 export async function getDiskUsage(dirPath) {
+    if (!dirPath || !fs.existsSync(dirPath)) {
+        log('DEBUG', `Directory path for disk usage does not exist or is undefined: ${dirPath}`);
+        return { total: 0, available: 0 };
+    }
     try {
         const stats = await fs.promises.statfs(dirPath);
         return {
@@ -388,7 +392,7 @@ export async function getDiskUsage(dirPath) {
             available: stats.bsize * stats.bavail
         };
     } catch (error) {
-        log('ERROR', `Error getting disk usage for ${dirPath}: ${error.message}`);
+        log('DEBUG', `Error getting disk usage for ${dirPath}: ${error.message}`);
         return { total: 0, available: 0 };
     }
 }
@@ -1963,7 +1967,11 @@ export async function listPacks(worldName) {
         if (fs.existsSync(filePath)) {
             try {
                 const content = await fs.promises.readFile(filePath, 'utf8');
-                return JSON.parse(content);
+                const parsed = JSON.parse(content);
+                if (Array.isArray(parsed)) {
+                    return parsed;
+                }
+                log('WARNING', `Invalid format in ${filePath}. Expected array.`);
             } catch (e) {
                 log('ERROR', `Error reading ${fileName}: ${e.message}`);
             }
