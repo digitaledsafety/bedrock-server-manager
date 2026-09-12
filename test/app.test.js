@@ -77,6 +77,24 @@ describe('API Endpoints', () => {
     });
   });
 
+  describe('POST /api/config validation', () => {
+    it('should return 400 Bad Request when req.body is null or non-object', async () => {
+      const resNull = await request(app)
+        .post('/api/config')
+        .send(null);
+
+      expect(resNull.statusCode).toEqual(400);
+      expect(resNull.body).toEqual({ success: false, message: 'Invalid settings format. Expected an object.' });
+
+      const resArray = await request(app)
+        .post('/api/config')
+        .send(['invalid']);
+
+      expect(resArray.statusCode).toEqual(400);
+      expect(resArray.body).toEqual({ success: false, message: 'Invalid settings format. Expected an object.' });
+    });
+  });
+
   describe('POST /api/start', () => {
     it('should call backend.startServer and return success', async () => {
         backend.startServer.mockResolvedValue(); // Mocks a successful start
