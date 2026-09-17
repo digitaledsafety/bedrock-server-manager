@@ -608,6 +608,21 @@ app.post('/api/config', async (req, res) => {
                 currentFullConfig.autoStart = !!newSettings.autoStart;
             }
         }
+        const portFields = [
+            { name: 'uiPort', label: 'UI Port' },
+            { name: 'serverPortIPv4', label: 'IPv4 Port' },
+            { name: 'serverPortIPv6', label: 'IPv6 Port' }
+        ];
+
+        for (const { name, label } of portFields) {
+            if (newSettings[name] !== undefined) {
+                const portNum = Number(newSettings[name]);
+                if (!Number.isInteger(portNum) || portNum < 1 || portNum > 65535) {
+                    return res.status(400).json({ success: false, message: `${label} must be a valid port number between 1 and 65535.` });
+                }
+                currentFullConfig[name] = portNum;
+            }
+        }
         await backend.writeGlobalConfig(currentFullConfig);
         backend.init(currentFullConfig);
         await backend.startAutoUpdateScheduler();
