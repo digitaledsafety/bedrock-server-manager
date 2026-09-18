@@ -102,6 +102,26 @@ export function isValidWorldName(worldName) {
 }
 
 /**
+ * Validates a backup name to prevent path traversal and control characters.
+ * @param {string} backupName - The name of the backup to validate.
+ * @returns {boolean} True if valid, false otherwise.
+ */
+export function isValidBackupName(backupName) {
+    if (!backupName || typeof backupName !== 'string') return false;
+    if (backupName.includes('..') || backupName.includes('/') || backupName.includes('\\') || /[\x00-\x1F\x7F]/.test(backupName)) {
+        return false;
+    }
+    if (BACKUP_DIRECTORY) {
+        const resolvedBackupDir = path.resolve(BACKUP_DIRECTORY);
+        const resolvedBackupPath = path.resolve(path.join(BACKUP_DIRECTORY, backupName));
+        if (!isPathInside(resolvedBackupDir, resolvedBackupPath)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
  * Returns the current configuration from memory.
  * @returns {object} The current configuration.
  */
@@ -557,18 +577,12 @@ export async function exportBackup(backupName) {
     if (!BACKUP_DIRECTORY) {
         return { success: false, message: 'Backup directory not configured.' };
     }
-    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+    if (!isValidBackupName(backupName)) {
         log('ERROR', `Invalid backup name for export: ${backupName}`);
         return { success: false, message: 'Invalid backup name.' };
     }
 
     const backupPath = path.join(BACKUP_DIRECTORY, backupName);
-    const resolvedBackupDir = path.resolve(BACKUP_DIRECTORY);
-    const resolvedBackupPath = path.resolve(backupPath);
-    if (!isPathInside(resolvedBackupDir, resolvedBackupPath)) {
-        log('ERROR', `Path traversal attempt detected for backup export: ${backupName}`);
-        return { success: false, message: 'Invalid backup name.' };
-    }
 
     if (!fs.existsSync(backupPath)) {
         log('WARNING', `Backup not found for export: ${backupPath}`);
@@ -599,19 +613,12 @@ export async function deleteBackup(backupName) {
     if (!BACKUP_DIRECTORY) {
         return { success: false, message: 'Backup directory not configured.' };
     }
-    // Validation: backupName should only contain safe characters and not be a path traversal
-    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+    if (!isValidBackupName(backupName)) {
         log('ERROR', `Invalid backup name for deletion: ${backupName}`);
         return { success: false, message: 'Invalid backup name.' };
     }
 
     const targetPath = path.join(BACKUP_DIRECTORY, backupName);
-    const resolvedBackupDir = path.resolve(BACKUP_DIRECTORY);
-    const resolvedTargetPath = path.resolve(targetPath);
-    if (!isPathInside(resolvedBackupDir, resolvedTargetPath)) {
-        log('ERROR', `Path traversal attempt detected for backup deletion: ${backupName}`);
-        return { success: false, message: 'Invalid backup name.' };
-    }
 
     if (!fs.existsSync(targetPath)) {
         log('WARNING', `Backup not found: ${targetPath}`);
@@ -637,19 +644,12 @@ export async function restoreBackup(backupName) {
     if (!BACKUP_DIRECTORY) {
         return { success: false, message: 'Backup directory not configured.' };
     }
-    // Validation: backupName should only contain safe characters and not be a path traversal
-    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+    if (!isValidBackupName(backupName)) {
         log('ERROR', `Invalid backup name for restoration: ${backupName}`);
         return { success: false, message: 'Invalid backup name.' };
     }
 
     const backupPath = path.join(BACKUP_DIRECTORY, backupName);
-    const resolvedBackupDir = path.resolve(BACKUP_DIRECTORY);
-    const resolvedBackupPath = path.resolve(backupPath);
-    if (!isPathInside(resolvedBackupDir, resolvedBackupPath)) {
-        log('ERROR', `Path traversal attempt detected for backup restoration: ${backupName}`);
-        return { success: false, message: 'Invalid backup name.' };
-    }
 
     if (!fs.existsSync(backupPath)) {
         log('WARNING', `Backup not found for restoration: ${backupPath}`);
@@ -1324,15 +1324,28 @@ export async function renameWorld(oldWorldName, newWorldName) {
     }
 
     try {
+        const properties = await readServerProperties();
+        const isActiveWorld = properties['level-name'] === oldWorldName;
+        const wasRunning = isActiveWorld && (await isProcessRunning());
+
+        if (wasRunning) {
+            log('INFO', `Active world '${oldWorldName}' is being renamed while server is running. Stopping server...`);
+            await stopServer();
+        }
+
         fs.renameSync(oldWorldPath, newWorldPath);
         log('INFO', `Renamed world directory from '${oldWorldName}' to '${newWorldName}'`);
 
         // Update server.properties if the active world was renamed
-        const properties = await readServerProperties();
-        if (properties['level-name'] === oldWorldName) {
+        if (isActiveWorld) {
             log('INFO', `Active world renamed. Updating level-name in server.properties.`);
             properties['level-name'] = newWorldName;
             await writeServerProperties(properties);
+        }
+
+        if (wasRunning) {
+            log('INFO', `Restarting server after renaming active world...`);
+            await startServer();
         }
 
         return { success: true, message: `World '${oldWorldName}' renamed to '${newWorldName}' successfully.` };
@@ -2024,12 +2037,18 @@ export async function listPacks(worldName) {
 export async function deletePack(worldName, packType, packId) {
     if (!SERVER_DIRECTORY) return { success: false, message: 'Server directory not configured.' };
     if (!isValidWorldName(worldName)) return { success: false, message: 'Invalid world name.' };
-    if (packType !== 'behavior' && packType !== 'resource') {
-        return { success: false, message: 'Invalid pack type. Must be behavior or resource.' };
+    const validPackTypes = ['behavior', 'resource', 'dev_behavior', 'dev_resource'];
+    if (!packType || !validPackTypes.includes(packType)) {
+        return { success: false, message: 'Invalid pack type. Must be behavior, resource, dev_behavior, or dev_resource.' };
+    }
+    if (!packId || typeof packId !== 'string' || packId.trim() === '') {
+        return { success: false, message: 'Invalid pack ID.' };
     }
 
     const worldPath = path.join(SERVER_DIRECTORY, 'worlds', worldName);
-    const fileName = packType === 'behavior' ? 'world_behavior_packs.json' : 'world_resource_packs.json';
+    const fileName = (packType === 'behavior' || packType === 'dev_behavior')
+        ? 'world_behavior_packs.json'
+        : 'world_resource_packs.json';
     const filePath = path.join(worldPath, fileName);
 
     if (!fs.existsSync(filePath)) return { success: false, message: 'Pack configuration file not found.' };
