@@ -24,6 +24,15 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   getStoredVersion: jest.fn(),
   log: jest.fn(),
   isValidWorldName: jest.fn().mockReturnValue(true),
+  isValidBackupName: jest.fn((name) => {
+    if (!name || typeof name !== 'string') return false;
+    if (name.includes('..') || name.includes('/') || name.includes('\\') || /[\x00-\x1F\x7F]/.test(name)) return false;
+    return true;
+  }),
+  getConfig: jest.fn().mockReturnValue({ serverDirectory: '/mock/server' }),
+  deleteBackup: jest.fn(),
+  exportBackup: jest.fn(),
+  restoreBackup: jest.fn(),
 }));
 
 const { default: app } = await import('../app.js');
@@ -52,6 +61,54 @@ describe('Security and Validation', () => {
 
             expect(res.statusCode).toBe(400);
             expect(res.body.error).toContain('Invalid character in server property key');
+        });
+
+        it('should reject prototype pollution keys like __proto__', async () => {
+            const res = await request(app)
+                .post('/api/properties')
+                .set('Content-Type', 'application/json')
+                .send('{"__proto__": {"polluted": "yes"}}');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toContain('Invalid property key');
+        });
+    });
+
+    describe('Backup name validation middleware', () => {
+        it('should reject path traversal in backup name for delete', async () => {
+            const res = await request(app)
+                .delete('/api/backups/..%2F..%2Fetc%2Fpasswd');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toBe('Invalid backup name.');
+            expect(backend.deleteBackup).not.toHaveBeenCalled();
+        });
+
+        it('should reject control characters in backup name for restore', async () => {
+            const res = await request(app)
+                .post('/api/backups/bad\x00backup/restore');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toBe('Invalid backup name.');
+            expect(backend.restoreBackup).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('GET /api/logs without serverDirectory', () => {
+        it('should handle unconfigured serverDirectory gracefully', async () => {
+            backend.getConfig.mockReturnValueOnce({});
+
+            const res = await request(app).get('/api/logs');
+            expect(res.statusCode).toBe(200);
+            expect(res.body.logs).toContain('Server directory not configured.');
+        });
+
+        it('should handle unconfigured serverDirectory gracefully for download', async () => {
+            backend.getConfig.mockReturnValueOnce({});
+
+            const res = await request(app).get('/api/logs/download');
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Server directory not configured.');
         });
     });
 
