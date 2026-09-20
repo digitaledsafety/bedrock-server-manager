@@ -381,6 +381,10 @@ export async function changeOwnership(dirPath, user, group) {
  * @returns {Promise<{total: number, available: number}>}
  */
 export async function getDiskUsage(dirPath) {
+    if (!dirPath) {
+        log('DEBUG', 'getDiskUsage called with undefined or empty dirPath');
+        return { total: 0, available: 0 };
+    }
     try {
         const stats = await fs.promises.statfs(dirPath);
         return {
@@ -388,7 +392,7 @@ export async function getDiskUsage(dirPath) {
             available: stats.bsize * stats.bavail
         };
     } catch (error) {
-        log('ERROR', `Error getting disk usage for ${dirPath}: ${error.message}`);
+        log('DEBUG', `Error getting disk usage for ${dirPath}: ${error.message}`);
         return { total: 0, available: 0 };
     }
 }
