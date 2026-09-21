@@ -230,7 +230,7 @@ app.post('/api/restart', async (req, res) => {
 
 app.post('/api/command', async (req, res) => {
     try {
-        const { command } = req.body;
+        const { command } = req.body || {};
         if (!command) {
             return res.status(400).json({ success: false, message: 'Command is required.' });
         }
@@ -563,6 +563,10 @@ app.get('/api/logs/download', async (req, res) => {
 app.post('/api/config', async (req, res) => {
     try {
         const newSettings = req.body;
+
+        if (typeof newSettings !== 'object' || newSettings === null) {
+            return res.status(400).json({ success: false, message: 'Invalid configuration payload.' });
+        }
 
         // Basic validation for all settings
         for (const key in newSettings) {

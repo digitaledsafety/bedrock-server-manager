@@ -77,6 +77,26 @@ describe('API Endpoints', () => {
     });
   });
 
+  describe('POST /api/config', () => {
+    it('should return 400 for invalid autoUpdateIntervalMinutes', async () => {
+      const res = await request(app)
+        .post('/api/config')
+        .send({ autoUpdateIntervalMinutes: -5 });
+
+      expect(res.statusCode).toEqual(400);
+      expect(res.body).toEqual({ success: false, message: 'Update interval must be a positive integer.' });
+    });
+
+    it('should return 400 for invalid logLevel type', async () => {
+      const res = await request(app)
+        .post('/api/config')
+        .send({ logLevel: 123 });
+
+      expect(res.statusCode).toEqual(400);
+      expect(res.body).toEqual({ success: false, message: 'Log level must be a string.' });
+    });
+  });
+
   describe('POST /api/start', () => {
     it('should call backend.startServer and return success', async () => {
         backend.startServer.mockResolvedValue(); // Mocks a successful start

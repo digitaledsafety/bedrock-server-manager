@@ -1250,6 +1250,10 @@ export async function writeServerProperties(propertiesToWrite) {
         log('ERROR', 'SERVER_DIRECTORY not set. Cannot write server.properties.');
         throw new Error('Server directory not configured.');
     }
+    if (!propertiesToWrite || typeof propertiesToWrite !== 'object') {
+        log('ERROR', 'Invalid propertiesToWrite argument provided to writeServerProperties.');
+        throw new Error('Invalid server properties provided.');
+    }
     const configPath = path.join(SERVER_DIRECTORY, 'server.properties');
     let originalLines = [];
     let lineEnding = '\n';
@@ -2100,7 +2104,15 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
             for (const manifestEntry of manifestEntries) {
                 let packRootInZip = path.dirname(manifestEntry.entryName);
                 if (packRootInZip === '.') packRootInZip = '';
-                const manifestData = JSON.parse(zip.readAsText(manifestEntry));
+                let manifestData;
+                try {
+                    manifestData = JSON.parse(zip.readAsText(manifestEntry));
+                } catch (e) {
+                    log('WARNING', `Skipping pack in .mcaddon/multi-pack due to invalid manifest JSON: ${manifestEntry.entryName} - ${e.message}`);
+                    messages.push(`Skipped pack from ${manifestEntry.entryName} (invalid manifest JSON).`);
+                    overallSuccess = false;
+                    continue;
+                }
 
                 if (!manifestData.header || !manifestData.header.uuid || !manifestData.header.version || !manifestData.header.name) {
                     log('WARNING', `Skipping pack in .mcaddon due to invalid manifest (missing header/uuid/version/name): ${manifestEntry.entryName}`);
