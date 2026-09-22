@@ -98,4 +98,29 @@ describe('API Endpoints', () => {
     });
   });
 
+  describe('POST /api/config', () => {
+    it('should return 400 when body is null or not an object', async () => {
+      const res = await request(app)
+        .post('/api/config')
+        .set('Content-Type', 'application/json')
+        .send('null');
+
+      expect(res.statusCode).toEqual(400);
+      expect(res.body).toEqual({ success: false, message: 'Invalid configuration payload.' });
+    });
+
+    it('should update config and return success when body is valid object', async () => {
+      backend.readGlobalConfig.mockResolvedValue({});
+      backend.writeGlobalConfig.mockResolvedValue();
+      backend.startAutoUpdateScheduler.mockResolvedValue();
+
+      const res = await request(app)
+        .post('/api/config')
+        .send({ serverName: 'Test Server' });
+
+      expect(res.statusCode).toEqual(200);
+      expect(res.body).toEqual({ success: true, message: 'Global config settings updated successfully.' });
+    });
+  });
+
 });
