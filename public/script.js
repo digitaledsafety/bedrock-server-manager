@@ -1208,7 +1208,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initial load
     fetchServerStatus(); // This will now also set initial button states
     loadServerProperties();
-    //loadWorlds();
+    loadWorlds();
     loadBackups();
     loadAutoUpdateConfig(); // New: Load auto-update config on page load
     loadActivePacks();

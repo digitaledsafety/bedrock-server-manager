@@ -51,7 +51,7 @@ const worldUpload = createMulterUpload(['.mcworld']);
 
 
 // Middleware
-app.use(express.json());
+app.use(express.json({ strict: false }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirnameESM, 'public')));
 
@@ -563,6 +563,10 @@ app.get('/api/logs/download', async (req, res) => {
 app.post('/api/config', async (req, res) => {
     try {
         const newSettings = req.body;
+
+        if (typeof newSettings !== 'object' || newSettings === null) {
+            return res.status(400).json({ success: false, message: 'Invalid configuration payload.' });
+        }
 
         // Basic validation for all settings
         for (const key in newSettings) {
