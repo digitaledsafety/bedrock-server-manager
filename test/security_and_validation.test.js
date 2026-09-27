@@ -24,6 +24,11 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   getStoredVersion: jest.fn(),
   log: jest.fn(),
   isValidWorldName: jest.fn().mockReturnValue(true),
+  isValidBackupName: jest.fn().mockImplementation(name => {
+    if (!name || typeof name !== 'string') return false;
+    if (name.includes('..') || name.includes('/') || name.includes('\\') || /[\x00-\x1F\x7F]/.test(name)) return false;
+    return true;
+  }),
 }));
 
 const { default: app } = await import('../app.js');
@@ -53,6 +58,15 @@ describe('Security and Validation', () => {
             expect(res.statusCode).toBe(400);
             expect(res.body.error).toContain('Invalid character in server property key');
         });
+
+        it('should reject prototype pollution keys like __proto__', async () => {
+            const res = await request(app)
+                .post('/api/properties')
+                .send(JSON.parse('{"__proto__": {"admin": true}}'));
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toContain('Invalid or forbidden server property key');
+        });
     });
 
     describe('POST /api/config validation', () => {
@@ -72,6 +86,32 @@ describe('Security and Validation', () => {
 
             expect(res.statusCode).toBe(400);
             expect(res.body.message).toContain('Update interval must be a positive integer');
+        });
+    });
+
+    describe('Backup route validation', () => {
+        it('should reject invalid backup names with path traversal on delete', async () => {
+            const res = await request(app)
+                .delete('/api/backups/..%2F..%2Fetc%2Fpasswd');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toContain('Invalid backupName format');
+        });
+
+        it('should reject invalid backup names on download', async () => {
+            const res = await request(app)
+                .get('/api/backups/invalid%00backup/download');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toContain('Invalid backupName format');
+        });
+
+        it('should reject invalid backup names on restore', async () => {
+            const res = await request(app)
+                .post('/api/backups/..%2Fmalicious/restore');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toContain('Invalid backupName format');
         });
     });
 

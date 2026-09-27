@@ -38,6 +38,16 @@ describe('Configuration Caching and World Backup Tests', () => {
         expect(config.serverDirectory).toBe(serverDir);
     });
 
+    test('isValidBackupName should return true for valid names and false for invalid ones', () => {
+        expect(backend.isValidBackupName('world_test_2026-01-01')).toBe(true);
+        expect(backend.isValidBackupName('backup-123.45')).toBe(true);
+        expect(backend.isValidBackupName('../etc/passwd')).toBe(false);
+        expect(backend.isValidBackupName('backup/path')).toBe(false);
+        expect(backend.isValidBackupName('backup\0null')).toBe(false);
+        expect(backend.isValidBackupName('backup\nnewline')).toBe(false);
+        expect(backend.isValidBackupName(null)).toBe(false);
+    });
+
     test('backupWorld should create a backup of a specific world', async () => {
         const resultDir = await backend.backupWorld('test_world');
         expect(resultDir).toBeDefined();
