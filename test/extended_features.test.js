@@ -20,6 +20,7 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   getStoredVersion: jest.fn(),
   log: jest.fn(),
   listBackups: jest.fn(),
+  isValidBackupName: jest.fn((name) => typeof name === 'string' && !/[/\\]/.test(name) && !name.includes('..')),
   deleteBackup: jest.fn(),
   getPlayers: jest.fn(),
   isValidWorldName: jest.fn((name) => !/[./\\]/.test(name)),
