@@ -77,5 +77,29 @@ describe('Pack Management API', () => {
 
             expect(res.statusCode).toBe(400);
         });
+
+        it('should return 400 if deletePack returns failure for empty or invalid packId', async () => {
+            backend.deletePack.mockResolvedValue({ success: false, message: 'Invalid pack ID.' });
+
+            const res = await request(app)
+                .post('/api/delete-pack')
+                .send({ worldName: 'test_world', packType: 'behavior', packId: '   ' });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.success).toBe(false);
+            expect(res.body.message).toBe('Invalid pack ID.');
+        });
+
+        it('should return 400 if deletePack returns failure for invalid packType', async () => {
+            backend.deletePack.mockResolvedValue({ success: false, message: 'Invalid pack type. Must be behavior or resource.' });
+
+            const res = await request(app)
+                .post('/api/delete-pack')
+                .send({ worldName: 'test_world', packType: 'invalid_type', packId: 'bp1' });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.success).toBe(false);
+            expect(res.body.message).toBe('Invalid pack type. Must be behavior or resource.');
+        });
     });
 });

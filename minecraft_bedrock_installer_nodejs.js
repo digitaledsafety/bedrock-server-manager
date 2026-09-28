@@ -1965,6 +1965,7 @@ export async function listPacks(worldName) {
                 const content = await fs.promises.readFile(filePath, 'utf8');
                 return JSON.parse(content);
             } catch (e) {
+                log('WARNING', `Error reading or parsing pack JSON file ${fileName} for world ${worldName}: ${e.message}`);
                 log('ERROR', `Error reading ${fileName}: ${e.message}`);
             }
         }
@@ -2026,6 +2027,10 @@ export async function deletePack(worldName, packType, packId) {
     if (!isValidWorldName(worldName)) return { success: false, message: 'Invalid world name.' };
     if (packType !== 'behavior' && packType !== 'resource') {
         return { success: false, message: 'Invalid pack type. Must be behavior or resource.' };
+    }
+    if (typeof packId !== 'string' || !packId.trim()) {
+        log('ERROR', `Invalid pack ID provided for deletion in world '${worldName}': ${packId}`);
+        return { success: false, message: 'Invalid pack ID.' };
     }
 
     const worldPath = path.join(SERVER_DIRECTORY, 'worlds', worldName);
