@@ -112,6 +112,28 @@ describe('uploadPack Edge Cases', () => {
         expect(result.message).toContain("World 'non_existent_world' not found");
     });
 
+    it('should skip malformed JSON in a multi-pack archive and process remaining valid packs', async () => {
+        const zip = new AdmZip();
+        const validManifest = {
+            format_version: 2,
+            header: {
+                name: 'Valid BP',
+                uuid: 'valid-bp-uuid-1',
+                version: [1, 0, 0]
+            },
+            modules: [{ type: 'data', uuid: 'm1', version: [1, 0, 0] }]
+        };
+        zip.addFile('valid_bp/manifest.json', Buffer.from(JSON.stringify(validManifest)));
+        zip.addFile('invalid_rp/manifest.json', Buffer.from('{ malformed json '));
+        zip.writeZip(tempUploadPath);
+
+        const result = await backend.uploadPack(tempUploadPath, 'mixed_packs.zip', undefined, 'test_world');
+        expect(result.success).toBe(false); // overallSuccess is false because one pack skipped
+        expect(result.message).toContain('Multi-pack processing complete');
+        expect(result.message).toContain('1 pack(s) processed');
+        expect(fs.existsSync(path.join(serverDir, 'behavior_packs', 'Valid_BP', 'manifest.json'))).toBe(true);
+    });
+
     it('should successfully upload and process a multi-pack .zip archive', async () => {
         const zip = new AdmZip();
         const bpManifest = {
