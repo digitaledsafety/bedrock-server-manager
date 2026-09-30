@@ -109,6 +109,24 @@ describe('API Endpoints', () => {
       expect(res.body).toEqual({ success: false, message: 'Invalid configuration payload.' });
     });
 
+    it('should return 400 when body is an array', async () => {
+      const res = await request(app)
+        .post('/api/config')
+        .send([{ serverName: 'Test' }]);
+
+      expect(res.statusCode).toEqual(400);
+      expect(res.body).toEqual({ success: false, message: 'Invalid configuration payload.' });
+    });
+
+    it('should return 400 when serverPortIPv4 or serverPortIPv6 is out of range', async () => {
+      const res = await request(app)
+        .post('/api/config')
+        .send({ serverPortIPv4: 99999 });
+
+      expect(res.statusCode).toEqual(400);
+      expect(res.body).toEqual({ success: false, message: 'IPv4 port must be an integer between 1 and 65535.' });
+    });
+
     it('should update config and return success when body is valid object', async () => {
       backend.readGlobalConfig.mockResolvedValue({});
       backend.writeGlobalConfig.mockResolvedValue();

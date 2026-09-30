@@ -381,6 +381,10 @@ export async function changeOwnership(dirPath, user, group) {
  * @returns {Promise<{total: number, available: number}>}
  */
 export async function getDiskUsage(dirPath) {
+    if (!dirPath) {
+        log('DEBUG', 'getDiskUsage called with empty or undefined dirPath.');
+        return { total: 0, available: 0 };
+    }
     try {
         const stats = await fs.promises.statfs(dirPath);
         return {
@@ -388,7 +392,11 @@ export async function getDiskUsage(dirPath) {
             available: stats.bsize * stats.bavail
         };
     } catch (error) {
-        log('ERROR', `Error getting disk usage for ${dirPath}: ${error.message}`);
+        if (error.code === 'ENOENT') {
+            log('DEBUG', `Directory path does not exist for disk usage check: ${dirPath}`);
+        } else {
+            log('ERROR', `Error getting disk usage for ${dirPath}: ${error.message}`);
+        }
         return { total: 0, available: 0 };
     }
 }
@@ -1423,7 +1431,8 @@ export async function listWorlds() {
     const entries = await fs.promises.readdir(worldsPath, { withFileTypes: true });
     const worldNames = entries
         .filter(entry => entry.isDirectory())
-        .map(entry => entry.name);
+        .map(entry => entry.name)
+        .sort((a, b) => a.localeCompare(b));
     log('INFO', `Listed worlds: ${worldNames.join(', ')}`);
     return worldNames;
 }
@@ -1514,6 +1523,7 @@ export async function getPlayers() {
     // We don't want to spam 'list' command
     const now = Date.now();
     if (now - lastPlayerInfo.lastUpdated > 10000) { // Update every 10 seconds at most
+        lastPlayerInfo.lastUpdated = now;
         sendServerCommand('list');
     }
 
@@ -2011,6 +2021,9 @@ export async function listPacks(worldName) {
         }
     });
 
+    behaviorPacks.sort((a, b) => (a.name || a.pack_id || '').localeCompare(b.name || b.pack_id || ''));
+    resourcePacks.sort((a, b) => (a.name || a.pack_id || '').localeCompare(b.name || b.pack_id || ''));
+
     return { success: true, behaviorPacks, resourcePacks };
 }
 
@@ -2100,7 +2113,15 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
             for (const manifestEntry of manifestEntries) {
                 let packRootInZip = path.dirname(manifestEntry.entryName);
                 if (packRootInZip === '.') packRootInZip = '';
-                const manifestData = JSON.parse(zip.readAsText(manifestEntry));
+                let manifestData;
+                try {
+                    manifestData = JSON.parse(zip.readAsText(manifestEntry));
+                } catch (jsonErr) {
+                    log('WARNING', `Skipping pack in multi-pack archive due to JSON parse error in ${manifestEntry.entryName}: ${jsonErr.message}`);
+                    messages.push(`Skipped pack from ${manifestEntry.entryName} (malformed JSON).`);
+                    overallSuccess = false;
+                    continue;
+                }
 
                 if (!manifestData.header || !manifestData.header.uuid || !manifestData.header.version || !manifestData.header.name) {
                     log('WARNING', `Skipping pack in .mcaddon due to invalid manifest (missing header/uuid/version/name): ${manifestEntry.entryName}`);

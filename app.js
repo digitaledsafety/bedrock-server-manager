@@ -564,7 +564,7 @@ app.post('/api/config', async (req, res) => {
     try {
         const newSettings = req.body;
 
-        if (typeof newSettings !== 'object' || newSettings === null) {
+        if (typeof newSettings !== 'object' || newSettings === null || Array.isArray(newSettings)) {
             return res.status(400).json({ success: false, message: 'Invalid configuration payload.' });
         }
 
@@ -586,6 +586,20 @@ app.post('/api/config', async (req, res) => {
                 return res.status(400).json({ success: false, message: 'Update interval must be a positive integer.' });
             }
             currentFullConfig.autoUpdateIntervalMinutes = interval;
+        }
+        if (newSettings.serverPortIPv4 !== undefined) {
+            const port = parseInt(newSettings.serverPortIPv4, 10);
+            if (isNaN(port) || port < 1 || port > 65535) {
+                return res.status(400).json({ success: false, message: 'IPv4 port must be an integer between 1 and 65535.' });
+            }
+            currentFullConfig.serverPortIPv4 = port;
+        }
+        if (newSettings.serverPortIPv6 !== undefined) {
+            const port = parseInt(newSettings.serverPortIPv6, 10);
+            if (isNaN(port) || port < 1 || port > 65535) {
+                return res.status(400).json({ success: false, message: 'IPv6 port must be an integer between 1 and 65535.' });
+            }
+            currentFullConfig.serverPortIPv6 = port;
         }
         if (newSettings.logLevel !== undefined) {
             if (typeof newSettings.logLevel !== 'string') {
