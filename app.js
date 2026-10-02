@@ -81,6 +81,16 @@ const validateWorldName = (req, res, next) => {
     next();
 };
 
+const validateBackupName = (req, res, next) => {
+    const backupName = req.params.backupName;
+    if (!backupName || (backend.isValidBackupName && !backend.isValidBackupName(backupName))) {
+        backend.log('ERROR', `Invalid backupName format or characters: ${backupName}`);
+        const errorMsg = 'Invalid backupName format. Avoid path traversal and special characters.';
+        return res.status(400).json({ success: false, message: errorMsg, error: errorMsg });
+    }
+    next();
+};
+
 const sanitizeServerProperties = (req, res, next) => {
     const properties = req.body;
     if (typeof properties !== 'object' || properties === null) {
@@ -274,7 +284,7 @@ app.get('/api/backups', async (req, res) => {
     }
 });
 
-app.delete('/api/backups/:backupName', async (req, res) => {
+app.delete('/api/backups/:backupName', validateBackupName, async (req, res) => {
     try {
         const { backupName } = req.params;
         const result = await backend.deleteBackup(backupName);
@@ -289,7 +299,7 @@ app.delete('/api/backups/:backupName', async (req, res) => {
     }
 });
 
-app.get('/api/backups/:backupName/download', async (req, res) => {
+app.get('/api/backups/:backupName/download', validateBackupName, async (req, res) => {
     try {
         const { backupName } = req.params;
         const result = await backend.exportBackup(backupName);
@@ -312,7 +322,7 @@ app.get('/api/backups/:backupName/download', async (req, res) => {
     }
 });
 
-app.post('/api/backups/:backupName/restore', async (req, res) => {
+app.post('/api/backups/:backupName/restore', validateBackupName, async (req, res) => {
     try {
         const { backupName } = req.params;
         const result = await backend.restoreBackup(backupName);
@@ -500,6 +510,9 @@ app.post('/api/logs/clear', async (req, res) => {
 app.get('/api/logs', async (req, res) => {
     try {
         const config = backend.getConfig();
+        if (!config.serverDirectory) {
+            return res.json({ success: true, logs: 'Server directory not configured.' });
+        }
         const serverLogPath = path.join(config.serverDirectory, 'server.log');
 
         if (!fs.existsSync(serverLogPath)) {
@@ -540,6 +553,9 @@ app.get('/api/logs', async (req, res) => {
 app.get('/api/logs/download', async (req, res) => {
     try {
         const config = backend.getConfig();
+        if (!config.serverDirectory) {
+            return res.status(400).json({ success: false, message: 'Server directory not configured.' });
+        }
         const serverLogPath = path.join(config.serverDirectory, 'server.log');
 
         if (!fs.existsSync(serverLogPath)) {
