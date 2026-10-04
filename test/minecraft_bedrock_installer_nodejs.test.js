@@ -137,4 +137,20 @@ level-name=World=1
         process.argv = [];
     });
   });
+
+  describe('isValidBackupName', () => {
+    it('should return true for valid backup names', () => {
+      expect(backend.isValidBackupName('backup_2026-10-04_12-00-00')).toBe(true);
+      expect(backend.isValidBackupName('world_default_12345')).toBe(true);
+    });
+
+    it('should return false for invalid backup names with path traversal or control characters', () => {
+      expect(backend.isValidBackupName('../etc/passwd')).toBe(false);
+      expect(backend.isValidBackupName('folder/file')).toBe(false);
+      expect(backend.isValidBackupName('folder\\file')).toBe(false);
+      expect(backend.isValidBackupName('backup\x00null')).toBe(false);
+      expect(backend.isValidBackupName('')).toBe(false);
+      expect(backend.isValidBackupName(null)).toBe(false);
+    });
+  });
 });

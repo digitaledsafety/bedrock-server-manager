@@ -61,11 +61,12 @@ app.set('views', path.join(__dirnameESM, 'views'));
 
 // --- Input Validation Middleware ---
 const validateWorldName = (req, res, next) => {
-    // Check for worldName, or oldWorldName and newWorldName
+    // Check for worldName, or oldWorldName and newWorldName in body or params
     const namesToValidate = [];
-    if (req.body.worldName) namesToValidate.push({ name: 'worldName', value: req.body.worldName });
-    if (req.body.oldWorldName) namesToValidate.push({ name: 'oldWorldName', value: req.body.oldWorldName });
-    if (req.body.newWorldName) namesToValidate.push({ name: 'newWorldName', value: req.body.newWorldName });
+    if (req.params.worldName) namesToValidate.push({ name: 'worldName', value: req.params.worldName });
+    if (req.body && req.body.worldName) namesToValidate.push({ name: 'worldName', value: req.body.worldName });
+    if (req.body && req.body.oldWorldName) namesToValidate.push({ name: 'oldWorldName', value: req.body.oldWorldName });
+    if (req.body && req.body.newWorldName) namesToValidate.push({ name: 'newWorldName', value: req.body.newWorldName });
 
     if (namesToValidate.length === 0) {
         return res.status(400).json({ success: false, message: 'World name is required.', error: 'World name is required.' });
@@ -81,15 +82,36 @@ const validateWorldName = (req, res, next) => {
     next();
 };
 
+const validateBackupName = (req, res, next) => {
+    const backupName = req.params.backupName || req.body.backupName;
+    if (!backend.isValidBackupName(backupName)) {
+        backend.log('ERROR', `Invalid backupName format or characters: ${backupName}`);
+        const errorMsg = 'Invalid backup name format. Avoid path traversal and control characters.';
+        return res.status(400).json({ success: false, message: errorMsg, error: errorMsg });
+    }
+    next();
+};
+
 const sanitizeServerProperties = (req, res, next) => {
     const properties = req.body;
     if (typeof properties !== 'object' || properties === null) {
         return res.status(400).json({ error: 'Invalid server properties format. Expected an object.' });
     }
 
-    const errors = [];
+    if (Object.getPrototypeOf(properties) !== Object.prototype && Object.getPrototypeOf(properties) !== null) {
+        backend.log('ERROR', 'Prototype pollution detected in server properties payload.');
+        return res.status(400).json({ error: 'Invalid server property key: __proto__' });
+    }
 
-    for (const key in properties) {
+    const errors = [];
+    const forbiddenKeys = ['__proto__', 'constructor', 'prototype'];
+
+    for (const key of Object.getOwnPropertyNames(properties)) {
+        if (forbiddenKeys.includes(key)) {
+            backend.log('ERROR', `Prototype pollution key detected in server properties: ${key}`);
+            return res.status(400).json({ error: `Invalid server property key: ${key}` });
+        }
+
         if (typeof key !== 'string' || key.match(/[\n\r]/)) {
             backend.log('ERROR', `Invalid character in server property key: ${key}`);
             return res.status(400).json({ error: `Invalid character in server property key: ${key}` });
@@ -274,7 +296,7 @@ app.get('/api/backups', async (req, res) => {
     }
 });
 
-app.delete('/api/backups/:backupName', async (req, res) => {
+app.delete('/api/backups/:backupName', validateBackupName, async (req, res) => {
     try {
         const { backupName } = req.params;
         const result = await backend.deleteBackup(backupName);
@@ -289,7 +311,7 @@ app.delete('/api/backups/:backupName', async (req, res) => {
     }
 });
 
-app.get('/api/backups/:backupName/download', async (req, res) => {
+app.get('/api/backups/:backupName/download', validateBackupName, async (req, res) => {
     try {
         const { backupName } = req.params;
         const result = await backend.exportBackup(backupName);
@@ -312,7 +334,7 @@ app.get('/api/backups/:backupName/download', async (req, res) => {
     }
 });
 
-app.post('/api/backups/:backupName/restore', async (req, res) => {
+app.post('/api/backups/:backupName/restore', validateBackupName, async (req, res) => {
     try {
         const { backupName } = req.params;
         const result = await backend.restoreBackup(backupName);
@@ -450,7 +472,7 @@ app.post('/api/backup-world', validateWorldName, async (req, res) => {
     }
 });
 
-app.get('/api/worlds/:worldName/export', async (req, res) => {
+app.get('/api/worlds/:worldName/export', validateWorldName, async (req, res) => {
     try {
         const { worldName } = req.params;
         const result = await backend.exportWorld(worldName);
@@ -759,7 +781,7 @@ app.get('/', async (req, res) => {
 });
 
 // --- Pack Management API ---
-app.get('/api/worlds/:worldName/packs', async (req, res) => {
+app.get('/api/worlds/:worldName/packs', validateWorldName, async (req, res) => {
     try {
         const { worldName } = req.params;
         const result = await backend.listPacks(worldName);
