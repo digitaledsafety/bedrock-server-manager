@@ -31,6 +31,7 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
       }
       return true;
   }),
+  isValidBackupName: jest.fn().mockReturnValue(true),
 }));
 
 // Mock the fs module for app.js initialization

@@ -24,6 +24,11 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   getStoredVersion: jest.fn(),
   log: jest.fn(),
   isValidWorldName: jest.fn().mockReturnValue(true),
+  isValidBackupName: jest.fn((name) => {
+    if (!name || typeof name !== 'string') return false;
+    if (name.includes('..') || name.includes('/') || name.includes('\\') || /[\x00-\x1F\x7F]/.test(name)) return false;
+    return true;
+  }),
 }));
 
 const { default: app } = await import('../app.js');
@@ -96,6 +101,35 @@ describe('Security and Validation', () => {
             expect(res.body.success).toBe(false);
             expect(res.body.message).toContain('Invalid command. Newlines and control characters are not allowed.');
             expect(backend.sendServerCommand).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('Backup name validation middleware', () => {
+        it('should reject DELETE /api/backups/:backupName with path traversal', async () => {
+            const res = await request(app)
+                .delete('/api/backups/..%2F..%2Fetc%2Fpasswd');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.success).toBe(false);
+            expect(res.body.message).toContain('Invalid backup name format');
+        });
+
+        it('should reject GET /api/backups/:backupName/download with control characters', async () => {
+            const res = await request(app)
+                .get('/api/backups/backup\x00test/download');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.success).toBe(false);
+            expect(res.body.message).toContain('Invalid backup name format');
+        });
+
+        it('should reject POST /api/backups/:backupName/restore with invalid path', async () => {
+            const res = await request(app)
+                .post('/api/backups/backup%2E%2Etest/restore');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.success).toBe(false);
+            expect(res.body.message).toContain('Invalid backup name format');
         });
     });
 });

@@ -25,6 +25,7 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
     createWorld: jest.fn(),
     log: jest.fn(),
     isValidWorldName: jest.fn((name) => !/[./\\]/.test(name)),
+    isValidBackupName: jest.fn((name) => !/[./\\]/.test(name)),
 }));
 
 // Dynamically import the app after mocks are defined
