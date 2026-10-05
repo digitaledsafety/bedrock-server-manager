@@ -21,6 +21,7 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   readServerProperties: jest.fn().mockResolvedValue({}),
   listWorlds: jest.fn().mockResolvedValue(['test_world']),
   startAutoUpdateScheduler: jest.fn(),
+  isValidBackupName: jest.fn().mockReturnValue(true),
 }));
 
 const { default: app } = await import('../app.js');
@@ -76,6 +77,18 @@ describe('Pack Management API', () => {
                 .send({ worldName: 'test_world' }); // missing packType and packId
 
             expect(res.statusCode).toBe(400);
+        });
+
+        it('should return 400 if packId contains control characters or is invalid', async () => {
+            backend.deletePack.mockResolvedValue({ success: false, message: 'Invalid pack ID.' });
+
+            const res = await request(app)
+                .post('/api/delete-pack')
+                .send({ worldName: 'test_world', packType: 'behavior', packId: 'bp1\x00invalid' });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.success).toBe(false);
+            expect(res.body.message).toBe('Invalid pack ID.');
         });
     });
 });

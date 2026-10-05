@@ -102,6 +102,19 @@ export function isValidWorldName(worldName) {
 }
 
 /**
+ * Validates a backup name to prevent path traversal and ensure safe characters.
+ * @param {string} backupName - The name of the backup to validate.
+ * @returns {boolean} True if the backup name is valid, false otherwise.
+ */
+export function isValidBackupName(backupName) {
+    if (!backupName || typeof backupName !== 'string') return false;
+    if (backupName.includes('..') || backupName.includes('/') || backupName.includes('\\') || /[\x00-\x1F\x7F]/.test(backupName)) {
+        return false;
+    }
+    return true;
+}
+
+/**
  * Returns the current configuration from memory.
  * @returns {object} The current configuration.
  */
@@ -557,7 +570,7 @@ export async function exportBackup(backupName) {
     if (!BACKUP_DIRECTORY) {
         return { success: false, message: 'Backup directory not configured.' };
     }
-    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+    if (!isValidBackupName(backupName)) {
         log('ERROR', `Invalid backup name for export: ${backupName}`);
         return { success: false, message: 'Invalid backup name.' };
     }
@@ -599,8 +612,7 @@ export async function deleteBackup(backupName) {
     if (!BACKUP_DIRECTORY) {
         return { success: false, message: 'Backup directory not configured.' };
     }
-    // Validation: backupName should only contain safe characters and not be a path traversal
-    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+    if (!isValidBackupName(backupName)) {
         log('ERROR', `Invalid backup name for deletion: ${backupName}`);
         return { success: false, message: 'Invalid backup name.' };
     }
@@ -637,8 +649,7 @@ export async function restoreBackup(backupName) {
     if (!BACKUP_DIRECTORY) {
         return { success: false, message: 'Backup directory not configured.' };
     }
-    // Validation: backupName should only contain safe characters and not be a path traversal
-    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+    if (!isValidBackupName(backupName)) {
         log('ERROR', `Invalid backup name for restoration: ${backupName}`);
         return { success: false, message: 'Invalid backup name.' };
     }
@@ -2027,6 +2038,9 @@ export async function deletePack(worldName, packType, packId) {
     if (packType !== 'behavior' && packType !== 'resource') {
         return { success: false, message: 'Invalid pack type. Must be behavior or resource.' };
     }
+    if (!packId || typeof packId !== 'string' || packId.trim() === '' || /[\x00-\x1F\x7F]/.test(packId)) {
+        return { success: false, message: 'Invalid pack ID.' };
+    }
 
     const worldPath = path.join(SERVER_DIRECTORY, 'worlds', worldName);
     const fileName = packType === 'behavior' ? 'world_behavior_packs.json' : 'world_resource_packs.json';
@@ -2100,7 +2114,15 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
             for (const manifestEntry of manifestEntries) {
                 let packRootInZip = path.dirname(manifestEntry.entryName);
                 if (packRootInZip === '.') packRootInZip = '';
-                const manifestData = JSON.parse(zip.readAsText(manifestEntry));
+                let manifestData;
+                try {
+                    manifestData = JSON.parse(zip.readAsText(manifestEntry));
+                } catch (e) {
+                    log('WARNING', `Skipping pack in .mcaddon due to malformed manifest JSON: ${manifestEntry.entryName} (${e.message})`);
+                    messages.push(`Skipped pack from ${manifestEntry.entryName} (malformed manifest JSON).`);
+                    overallSuccess = false;
+                    continue;
+                }
 
                 if (!manifestData.header || !manifestData.header.uuid || !manifestData.header.version || !manifestData.header.name) {
                     log('WARNING', `Skipping pack in .mcaddon due to invalid manifest (missing header/uuid/version/name): ${manifestEntry.entryName}`);
