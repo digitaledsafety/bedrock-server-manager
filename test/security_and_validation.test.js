@@ -24,6 +24,14 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   getStoredVersion: jest.fn(),
   log: jest.fn(),
   isValidWorldName: jest.fn().mockReturnValue(true),
+  isValidBackupName: jest.fn().mockImplementation(name => {
+    if (!name || typeof name !== 'string') return false;
+    if (name.includes('.') || name.includes('/') || name.includes('\\')) return false;
+    return /^[a-zA-Z0-9_ -]+$/.test(name);
+  }),
+  deleteBackup: jest.fn(),
+  exportBackup: jest.fn(),
+  restoreBackup: jest.fn(),
 }));
 
 const { default: app } = await import('../app.js');
@@ -96,6 +104,29 @@ describe('Security and Validation', () => {
             expect(res.body.success).toBe(false);
             expect(res.body.message).toContain('Invalid command. Newlines and control characters are not allowed.');
             expect(backend.sendServerCommand).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('Backup endpoints validation', () => {
+        it('should reject path traversal in DELETE /api/backups/:backupName', async () => {
+            const res = await request(app).delete('/api/backups/..%2F..%2Fetc%2Fpasswd');
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toContain('Invalid backupName format');
+            expect(backend.deleteBackup).not.toHaveBeenCalled();
+        });
+
+        it('should reject path traversal in GET /api/backups/:backupName/download', async () => {
+            const res = await request(app).get('/api/backups/..%2F..%2Fetc%2Fpasswd/download');
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toContain('Invalid backupName format');
+            expect(backend.exportBackup).not.toHaveBeenCalled();
+        });
+
+        it('should reject path traversal in POST /api/backups/:backupName/restore', async () => {
+            const res = await request(app).post('/api/backups/..%2F..%2Fetc%2Fpasswd/restore');
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toContain('Invalid backupName format');
+            expect(backend.restoreBackup).not.toHaveBeenCalled();
         });
     });
 });
