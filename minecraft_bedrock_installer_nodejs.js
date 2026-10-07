@@ -381,6 +381,10 @@ export async function changeOwnership(dirPath, user, group) {
  * @returns {Promise<{total: number, available: number}>}
  */
 export async function getDiskUsage(dirPath) {
+    if (!dirPath || !fs.existsSync(dirPath)) {
+        log('DEBUG', `Directory for disk usage check does not exist or is undefined: ${dirPath}`);
+        return { total: 0, available: 0 };
+    }
     try {
         const stats = await fs.promises.statfs(dirPath);
         return {
@@ -388,7 +392,7 @@ export async function getDiskUsage(dirPath) {
             available: stats.bsize * stats.bavail
         };
     } catch (error) {
-        log('ERROR', `Error getting disk usage for ${dirPath}: ${error.message}`);
+        log('DEBUG', `Error getting disk usage for ${dirPath}: ${error.message}`);
         return { total: 0, available: 0 };
     }
 }
@@ -1246,6 +1250,10 @@ export async function readServerProperties() {
 }
 
 export async function writeServerProperties(propertiesToWrite) {
+    if (!propertiesToWrite || typeof propertiesToWrite !== 'object') {
+        log('ERROR', 'Invalid propertiesToWrite object provided.');
+        throw new Error('Invalid propertiesToWrite object provided.');
+    }
     if (!SERVER_DIRECTORY) {
         log('ERROR', 'SERVER_DIRECTORY not set. Cannot write server.properties.');
         throw new Error('Server directory not configured.');
@@ -1531,6 +1539,10 @@ export async function getPlayers() {
  * @returns {Promise<{success: boolean, message: string}>}
  */
 export async function sendServerCommand(command) {
+    if (typeof command !== 'string' || !command || command.match(/[\n\r]/) || /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(command)) {
+        log('WARNING', `Invalid command payload provided: ${command}`);
+        return { success: false, message: 'Invalid command.' };
+    }
     if (!activeServerProcess || !activeServerProcess.stdin || activeServerProcess.stdin.writable === false) {
         log('WARNING', `Cannot send command: Server process not available or stdin not writable. Command: ${command}`);
         return { success: false, message: 'Server console not available.' };
@@ -2100,9 +2112,17 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
             for (const manifestEntry of manifestEntries) {
                 let packRootInZip = path.dirname(manifestEntry.entryName);
                 if (packRootInZip === '.') packRootInZip = '';
-                const manifestData = JSON.parse(zip.readAsText(manifestEntry));
+                let manifestData;
+                try {
+                    manifestData = JSON.parse(zip.readAsText(manifestEntry));
+                } catch (parseError) {
+                    log('WARNING', `Skipping pack in multi-pack due to JSON parse error in manifest (${manifestEntry.entryName}): ${parseError.message}`);
+                    messages.push(`Skipped pack from ${manifestEntry.entryName} (malformed JSON manifest).`);
+                    overallSuccess = false;
+                    continue;
+                }
 
-                if (!manifestData.header || !manifestData.header.uuid || !manifestData.header.version || !manifestData.header.name) {
+                if (!manifestData || !manifestData.header || !manifestData.header.uuid || !manifestData.header.version || !manifestData.header.name) {
                     log('WARNING', `Skipping pack in .mcaddon due to invalid manifest (missing header/uuid/version/name): ${manifestEntry.entryName}`);
                     messages.push(`Skipped pack from ${manifestEntry.entryName} (invalid manifest).`);
                     overallSuccess = false;
