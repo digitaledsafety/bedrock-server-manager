@@ -61,6 +61,9 @@ app.set('views', path.join(__dirnameESM, 'views'));
 
 // --- Input Validation Middleware ---
 const validateWorldName = (req, res, next) => {
+    if (!req.body || typeof req.body !== 'object') {
+        return res.status(400).json({ success: false, message: 'World name is required.', error: 'World name is required.' });
+    }
     // Check for worldName, or oldWorldName and newWorldName
     const namesToValidate = [];
     if (req.body.worldName) namesToValidate.push({ name: 'worldName', value: req.body.worldName });
