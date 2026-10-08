@@ -137,4 +137,28 @@ level-name=World=1
         process.argv = [];
     });
   });
+
+  describe('isValidBackupName', () => {
+    it('should validate valid backup names', () => {
+      expect(backend.isValidBackupName('backup_2026-10-08')).toBe(true);
+      expect(backend.isValidBackupName('world_test_1234')).toBe(true);
+    });
+
+    it('should reject invalid or malicious backup names', () => {
+      expect(backend.isValidBackupName('')).toBe(false);
+      expect(backend.isValidBackupName(null)).toBe(false);
+      expect(backend.isValidBackupName('../backup')).toBe(false);
+      expect(backend.isValidBackupName('backup/path')).toBe(false);
+      expect(backend.isValidBackupName('backup\\path')).toBe(false);
+      expect(backend.isValidBackupName('backup\x00null')).toBe(false);
+    });
+  });
+
+  describe('deletePack validation', () => {
+    it('should reject empty or whitespace packId', async () => {
+      const res = await backend.deletePack('test_world', 'behavior', '  ');
+      expect(res.success).toBe(false);
+      expect(res.message).toBe('Invalid pack ID.');
+    });
+  });
 });
