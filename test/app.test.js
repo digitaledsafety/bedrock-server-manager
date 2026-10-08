@@ -20,6 +20,8 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   startAutoUpdateScheduler: jest.fn(),
   getStoredVersion: jest.fn(),
   log: jest.fn(), // Mock the log function as well
+  isValidWorldName: jest.fn((name) => !!name && typeof name === 'string' && !/[./\\]/.test(name)),
+  isValidBackupName: jest.fn((name) => !!name && typeof name === 'string' && !name.includes('..') && !name.includes('/') && !name.includes('\\') && !/[\x00-\x1F\x7F]/.test(name)),
 }));
 
 // Mock the fs module for app.js initialization

@@ -24,6 +24,7 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   getStoredVersion: jest.fn(),
   log: jest.fn(),
   isValidWorldName: jest.fn().mockReturnValue(true),
+  isValidBackupName: jest.fn((name) => !!name && typeof name === 'string' && !name.includes('..') && !name.includes('/') && !name.includes('\\') && !/[\x00-\x1F\x7F]/.test(name)),
 }));
 
 const { default: app } = await import('../app.js');
@@ -96,6 +97,62 @@ describe('Security and Validation', () => {
             expect(res.body.success).toBe(false);
             expect(res.body.message).toContain('Invalid command. Newlines and control characters are not allowed.');
             expect(backend.sendServerCommand).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('Backup endpoints validation', () => {
+        it('should reject path traversal in DELETE /api/backups/:backupName', async () => {
+            const res = await request(app)
+                .delete('/api/backups/..%2F..%2Fetc%2Fpasswd');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Invalid backupName format');
+        });
+
+        it('should reject path traversal in GET /api/backups/:backupName/download', async () => {
+            const res = await request(app)
+                .get('/api/backups/..%2Fsecret/download');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Invalid backupName format');
+        });
+
+        it('should reject control characters in POST /api/backups/:backupName/restore', async () => {
+            const res = await request(app)
+                .post('/api/backups/backup%00null/restore');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Invalid backupName format');
+        });
+    });
+
+    describe('World parameter endpoints validation', () => {
+        it('should reject invalid worldName in GET /api/worlds/:worldName/export', async () => {
+            backend.isValidWorldName.mockReturnValueOnce(false);
+            const res = await request(app)
+                .get('/api/worlds/..%2Fworld/export');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Invalid worldName format');
+        });
+
+        it('should reject invalid worldName in GET /api/worlds/:worldName/packs', async () => {
+            backend.isValidWorldName.mockReturnValueOnce(false);
+            const res = await request(app)
+                .get('/api/worlds/..%2Fworld/packs');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Invalid worldName format');
+        });
+
+        it('should reject invalid worldName in POST /api/delete-pack', async () => {
+            backend.isValidWorldName.mockReturnValueOnce(false);
+            const res = await request(app)
+                .post('/api/delete-pack')
+                .send({ worldName: '../invalid', packType: 'behavior', packId: 'some-uuid' });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Invalid worldName format');
         });
     });
 });
