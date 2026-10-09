@@ -1108,6 +1108,9 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 // If query is cleared, restore tab view
                 propertiesTabs.style.display = 'flex';
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.style.display = '';
+                });
                 const activeTabButton = propertiesTabs.querySelector('.tab-button.active');
                 if (activeTabButton) {
                     const categoryLabel = activeTabButton.textContent;

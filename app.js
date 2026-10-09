@@ -612,6 +612,26 @@ app.post('/api/config', async (req, res) => {
                 currentFullConfig.autoStart = !!newSettings.autoStart;
             }
         }
+        const validatePortField = (fieldName, val) => {
+            if (val !== undefined) {
+                const portNum = parseInt(val, 10);
+                if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
+                    return `${fieldName} must be a valid port number between 1 and 65535.`;
+                }
+                currentFullConfig[fieldName] = portNum;
+            }
+            return null;
+        };
+
+        const uiPortErr = validatePortField('uiPort', newSettings.uiPort);
+        if (uiPortErr) return res.status(400).json({ success: false, message: uiPortErr });
+
+        const ipv4PortErr = validatePortField('serverPortIPv4', newSettings.serverPortIPv4);
+        if (ipv4PortErr) return res.status(400).json({ success: false, message: ipv4PortErr });
+
+        const ipv6PortErr = validatePortField('serverPortIPv6', newSettings.serverPortIPv6);
+        if (ipv6PortErr) return res.status(400).json({ success: false, message: ipv6PortErr });
+
         await backend.writeGlobalConfig(currentFullConfig);
         backend.init(currentFullConfig);
         await backend.startAutoUpdateScheduler();
