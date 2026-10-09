@@ -289,7 +289,9 @@ export function extractFiles(zipPath, extractPath) {
 
             for (const entry of zipEntries) {
                 if (entry.isDirectory) continue;
-                const targetPath = path.join(extractPath, entry.entryName);
+                // Normalize entry path backslashes to forward slashes for Windows-created ZIP archives
+                const normalizedEntryName = entry.entryName.replace(/\\/g, '/');
+                const targetPath = path.join(extractPath, normalizedEntryName);
                 const resolvedTargetPath = path.resolve(targetPath);
 
                 if (!resolvedTargetPath.startsWith(resolvedExtractPath)) {
@@ -557,7 +559,7 @@ export async function exportBackup(backupName) {
     if (!BACKUP_DIRECTORY) {
         return { success: false, message: 'Backup directory not configured.' };
     }
-    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\') || /[\x00-\x1F\x7F]/.test(backupName)) {
         log('ERROR', `Invalid backup name for export: ${backupName}`);
         return { success: false, message: 'Invalid backup name.' };
     }
@@ -600,7 +602,7 @@ export async function deleteBackup(backupName) {
         return { success: false, message: 'Backup directory not configured.' };
     }
     // Validation: backupName should only contain safe characters and not be a path traversal
-    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\') || /[\x00-\x1F\x7F]/.test(backupName)) {
         log('ERROR', `Invalid backup name for deletion: ${backupName}`);
         return { success: false, message: 'Invalid backup name.' };
     }
@@ -638,7 +640,7 @@ export async function restoreBackup(backupName) {
         return { success: false, message: 'Backup directory not configured.' };
     }
     // Validation: backupName should only contain safe characters and not be a path traversal
-    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\') || /[\x00-\x1F\x7F]/.test(backupName)) {
         log('ERROR', `Invalid backup name for restoration: ${backupName}`);
         return { success: false, message: 'Invalid backup name.' };
     }
@@ -1536,6 +1538,11 @@ export async function sendServerCommand(command) {
         return { success: false, message: 'Server console not available.' };
     }
 
+    if (typeof command !== 'string' || /[\r\n\x00-\x1F\x7F]/.test(command)) {
+        log('ERROR', `Control characters or newlines detected in server command: ${command}`);
+        return { success: false, message: 'Invalid command. Control characters and newlines are not allowed.' };
+    }
+
     try {
         log('INFO', `Sending console command: ${command}`);
         activeServerProcess.stdin.write(command + '\n');
@@ -1693,7 +1700,7 @@ export async function readGlobalConfig() {
         } else if (arg === '--no-autoUpdateEnabled') { effectiveConfig.autoUpdateEnabled = false; log('DEBUG', `CLI Override (boolean flag): ${arg} = false`); }
     }
     setLogLevel(effectiveConfig.logLevel || "INFO");
-    const resolvePath = (p) => path.isAbsolute(p) ? p : path.resolve(__dirnameESM, p);
+    const resolvePath = (p) => (typeof p === 'string' && p.length > 0) ? (path.isAbsolute(p) ? p : path.resolve(__dirnameESM, p)) : p;
     effectiveConfig.serverDirectory = resolvePath(effectiveConfig.serverDirectory);
     effectiveConfig.tempDirectory = resolvePath(effectiveConfig.tempDirectory);
     effectiveConfig.backupDirectory = resolvePath(effectiveConfig.backupDirectory);
@@ -1713,6 +1720,7 @@ export async function writeGlobalConfig(configToWrite) {
     try {
         const storeConfig = JSON.parse(JSON.stringify(configToWrite));
         const makeRelativeIfNeeded = (absPath) => {
+            if (typeof absPath !== 'string') return absPath;
             if (absPath.startsWith(__dirnameESM) && absPath !== __dirnameESM) {
                 let relPath = path.relative(__dirnameESM, absPath);
                 if (!relPath.startsWith('..') && !path.isAbsolute(relPath)) {
@@ -1722,9 +1730,9 @@ export async function writeGlobalConfig(configToWrite) {
             }
             return absPath;
         };
-        storeConfig.serverDirectory = makeRelativeIfNeeded(storeConfig.serverDirectory);
-        storeConfig.tempDirectory = makeRelativeIfNeeded(storeConfig.tempDirectory);
-        storeConfig.backupDirectory = makeRelativeIfNeeded(storeConfig.backupDirectory);
+        if (storeConfig.serverDirectory) storeConfig.serverDirectory = makeRelativeIfNeeded(storeConfig.serverDirectory);
+        if (storeConfig.tempDirectory) storeConfig.tempDirectory = makeRelativeIfNeeded(storeConfig.tempDirectory);
+        if (storeConfig.backupDirectory) storeConfig.backupDirectory = makeRelativeIfNeeded(storeConfig.backupDirectory);
         await fs.promises.writeFile(configPath, JSON.stringify(storeConfig, null, 2), 'utf8');
         log('INFO', `Wrote configuration to ${configPath}`);
     } catch (error) {
@@ -1743,33 +1751,34 @@ export async function writeGlobalConfig(configToWrite) {
  * @param {Array} [excludeRoots=[]] - (Optional) Other roots to exclude if rootInZip is empty.
  */
 function extractZipSubdir(zipEntries, rootInZip, targetPath, excludeRoots = []) {
-    const normalizedRoot = rootInZip === '.' ? '' : rootInZip;
+    const normalizedRoot = rootInZip === '.' ? '' : rootInZip.replace(/\\/g, '/');
     const resolvedTargetPath = path.resolve(targetPath) + path.sep;
 
     zipEntries.forEach(zipEntry => {
         if (zipEntry.isDirectory) return;
 
+        const entryNameNormalized = zipEntry.entryName.replace(/\\/g, '/');
         let shouldExtract = false;
         let relativePath = '';
 
         if (normalizedRoot === '') {
             // If we're at the root, we own all files EXCEPT those that belong to excluded subdirectories
-            const entryName = zipEntry.entryName;
             const isExcluded = excludeRoots.some(otherRoot => {
                 if (otherRoot === '') return false;
-                return entryName.startsWith(otherRoot + '/');
+                const normOther = otherRoot.replace(/\\/g, '/');
+                return entryNameNormalized.startsWith(normOther + '/');
             });
 
             if (!isExcluded) {
                 shouldExtract = true;
-                relativePath = entryName;
+                relativePath = entryNameNormalized;
             }
         } else {
             // If we're in a subdirectory, we own everything under that prefix
             const prefix = normalizedRoot + '/';
-            if (zipEntry.entryName.startsWith(prefix)) {
+            if (entryNameNormalized.startsWith(prefix)) {
                 shouldExtract = true;
-                relativePath = path.relative(normalizedRoot, zipEntry.entryName);
+                relativePath = path.posix.relative(normalizedRoot, entryNameNormalized);
             }
         }
 
@@ -1879,20 +1888,25 @@ export async function uploadWorld(tempFilePath, originalFilename) {
         const zipEntries = zip.getEntries();
 
         // 1. Find the world root by looking for level.dat
-        const levelDatEntry = zipEntries.find(entry => entry.entryName.endsWith('level.dat') && !entry.isDirectory);
+        const levelDatEntry = zipEntries.find(entry => {
+            const nameNorm = entry.entryName.replace(/\\/g, '/');
+            return nameNorm.endsWith('level.dat') && !entry.isDirectory;
+        });
         if (!levelDatEntry) {
             return { success: false, message: 'Invalid world file: level.dat not found.' };
         }
 
-        const worldRootInZip = path.dirname(levelDatEntry.entryName);
+        const normLevelDatName = levelDatEntry.entryName.replace(/\\/g, '/');
+        const worldRootInZip = path.posix.dirname(normLevelDatName);
         const normalizedWorldRoot = worldRootInZip === '.' ? '' : worldRootInZip;
 
         // 2. Determine world name
         let worldName = '';
         const levelnameEntry = zipEntries.find(entry => {
-            const entryDir = path.dirname(entry.entryName);
+            const nameNorm = entry.entryName.replace(/\\/g, '/');
+            const entryDir = path.posix.dirname(nameNorm);
             const normalizedEntryDir = entryDir === '.' ? '' : entryDir;
-            return normalizedEntryDir === normalizedWorldRoot && entry.entryName.endsWith('levelname.txt');
+            return normalizedEntryDir === normalizedWorldRoot && nameNorm.endsWith('levelname.txt');
         });
 
         if (levelnameEntry) {
@@ -2027,6 +2041,9 @@ export async function deletePack(worldName, packType, packId) {
     if (packType !== 'behavior' && packType !== 'resource') {
         return { success: false, message: 'Invalid pack type. Must be behavior or resource.' };
     }
+    if (!packId || typeof packId !== 'string' || /[\x00-\x1F\x7F]/.test(packId)) {
+        return { success: false, message: 'Invalid pack ID.' };
+    }
 
     const worldPath = path.join(SERVER_DIRECTORY, 'worlds', worldName);
     const fileName = packType === 'behavior' ? 'world_behavior_packs.json' : 'world_resource_packs.json';
@@ -2081,7 +2098,10 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
             return { success: false, message: 'Uploaded file is empty or invalid.' };
         }
 
-            const manifestEntries = zipEntries.filter(entry => entry.entryName.endsWith('manifest.json') && !entry.isDirectory);
+            const manifestEntries = zipEntries.filter(entry => {
+                const nameNorm = entry.entryName.replace(/\\/g, '/');
+                return nameNorm.endsWith('manifest.json') && !entry.isDirectory;
+            });
             const isMultiPack = isMcAddon || manifestEntries.length > 1;
 
             if (isMultiPack) {
@@ -2093,12 +2113,14 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
 
             // Pre-calculate all pack roots in this .mcaddon
             const allPackRoots = manifestEntries.map(entry => {
-                let root = path.dirname(entry.entryName);
+                const nameNorm = entry.entryName.replace(/\\/g, '/');
+                let root = path.posix.dirname(nameNorm);
                 return root === '.' ? '' : root;
             });
 
             for (const manifestEntry of manifestEntries) {
-                let packRootInZip = path.dirname(manifestEntry.entryName);
+                const normManifestName = manifestEntry.entryName.replace(/\\/g, '/');
+                let packRootInZip = path.posix.dirname(normManifestName);
                 if (packRootInZip === '.') packRootInZip = '';
                 const manifestData = JSON.parse(zip.readAsText(manifestEntry));
 
@@ -2165,11 +2187,15 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
         } else { // Handle as .mcpack
             log('INFO', `Processing .mcpack file: ${originalFilename} with requested type: ${requestedPackType || 'Auto-detect'}`);
 
-            const manifestEntry = zipEntries.find(entry => entry.entryName.endsWith('manifest.json') && !entry.isDirectory);
+            const manifestEntry = zipEntries.find(entry => {
+                const nameNorm = entry.entryName.replace(/\\/g, '/');
+                return nameNorm.endsWith('manifest.json') && !entry.isDirectory;
+            });
             if (!manifestEntry) {
                 return { success: false, message: 'manifest.json not found in the uploaded .mcpack.' };
             }
-            let packRootInZip = path.dirname(manifestEntry.entryName);
+            const normManifestName = manifestEntry.entryName.replace(/\\/g, '/');
+            let packRootInZip = path.posix.dirname(normManifestName);
             if (packRootInZip === '.') packRootInZip = '';
             let manifestData;
             try {
