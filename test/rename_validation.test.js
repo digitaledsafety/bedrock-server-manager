@@ -23,6 +23,7 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   deleteBackup: jest.fn(),
   getPlayers: jest.fn(),
   renameWorld: jest.fn(),
+  isValidBackupName: jest.fn().mockReturnValue(true),
   isValidWorldName: jest.fn((name) => {
       if (!name || typeof name !== 'string') return false;
       const worldNameRegex = /^[a-zA-Z0-9_ -]+$/;

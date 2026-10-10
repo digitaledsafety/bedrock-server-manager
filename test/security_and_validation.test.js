@@ -23,7 +23,8 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   startAutoUpdateScheduler: jest.fn(),
   getStoredVersion: jest.fn(),
   log: jest.fn(),
-  isValidWorldName: jest.fn().mockReturnValue(true),
+  isValidWorldName: jest.fn((name) => name && typeof name === 'string' && !/[./\\]/.test(name)),
+  isValidBackupName: jest.fn((name) => name && typeof name === 'string' && !/[./\\]/.test(name)),
 }));
 
 const { default: app } = await import('../app.js');
@@ -96,6 +97,48 @@ describe('Security and Validation', () => {
             expect(res.body.success).toBe(false);
             expect(res.body.message).toContain('Invalid command. Newlines and control characters are not allowed.');
             expect(backend.sendServerCommand).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('Parameter route validation for worldName and backupName', () => {
+        it('should reject invalid worldName in GET /api/worlds/:worldName/export', async () => {
+            const res = await request(app)
+                .get('/api/worlds/..%2Fmalicious/export');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Invalid worldName format');
+        });
+
+        it('should reject invalid worldName in GET /api/worlds/:worldName/packs', async () => {
+            const res = await request(app)
+                .get('/api/worlds/..%2Fmalicious/packs');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Invalid worldName format');
+        });
+
+        it('should reject invalid backupName in DELETE /api/backups/:backupName', async () => {
+            const res = await request(app)
+                .delete('/api/backups/..%2Fmalicious');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toBe('Invalid backup name.');
+        });
+
+        it('should reject invalid backupName in GET /api/backups/:backupName/download', async () => {
+            const res = await request(app)
+                .get('/api/backups/..%2Fmalicious/download');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toBe('Invalid backup name.');
+        });
+
+        it('should reject invalid backupName in POST /api/backups/:backupName/restore', async () => {
+            const res = await request(app)
+                .post('/api/backups/..%2Fmalicious/restore');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toBe('Invalid backup name.');
         });
     });
 });

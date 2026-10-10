@@ -26,6 +26,7 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   getStoredVersion: jest.fn(),
   log: jest.fn(),
   isValidWorldName: jest.fn().mockReturnValue(true),
+  isValidBackupName: jest.fn().mockReturnValue(true),
 }));
 
 // Dynamically import the app and the mocked backend after setup
