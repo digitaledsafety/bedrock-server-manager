@@ -15,6 +15,7 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   deletePack: jest.fn(),
   readGlobalConfig: jest.fn().mockResolvedValue({}),
   isValidWorldName: jest.fn().mockReturnValue(true),
+  isValidBackupName: jest.fn().mockReturnValue(true),
   log: jest.fn(),
   getStoredVersion: jest.fn(),
   getConfig: jest.fn().mockReturnValue({}),
