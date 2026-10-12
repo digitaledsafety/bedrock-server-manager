@@ -24,6 +24,7 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   getStoredVersion: jest.fn(),
   log: jest.fn(),
   isValidWorldName: jest.fn().mockReturnValue(true),
+  isValidBackupName: jest.fn().mockReturnValue(true),
 }));
 
 const { default: app } = await import('../app.js');
@@ -96,6 +97,32 @@ describe('Security and Validation', () => {
             expect(res.body.success).toBe(false);
             expect(res.body.message).toContain('Invalid command. Newlines and control characters are not allowed.');
             expect(backend.sendServerCommand).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('Backup Name Validation Middleware', () => {
+        it('should reject invalid backup names in DELETE /api/backups/:backupName', async () => {
+            backend.isValidBackupName.mockReturnValue(false);
+            const res = await request(app).delete('/api/backups/invalid_backup');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toBe('Invalid backup name format.');
+        });
+
+        it('should reject invalid backup names in GET /api/backups/:backupName/download', async () => {
+            backend.isValidBackupName.mockReturnValue(false);
+            const res = await request(app).get('/api/backups/invalid_backup/download');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toBe('Invalid backup name format.');
+        });
+
+        it('should reject invalid backup names in POST /api/backups/:backupName/restore', async () => {
+            backend.isValidBackupName.mockReturnValue(false);
+            const res = await request(app).post('/api/backups/invalid_backup/restore');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toBe('Invalid backup name format.');
         });
     });
 });
