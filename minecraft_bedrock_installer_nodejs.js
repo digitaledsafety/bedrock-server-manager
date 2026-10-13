@@ -102,6 +102,20 @@ export function isValidWorldName(worldName) {
 }
 
 /**
+ * Validates a backup name to prevent path traversal, control character injection, and unsafe path resolutions.
+ * @param {string} backupName - The name of the backup to validate.
+ * @returns {boolean} True if valid, false otherwise.
+ */
+export function isValidBackupName(backupName) {
+    if (!backupName || typeof backupName !== 'string') return false;
+    if (/[\x00-\x1F\x7F\r\n\\\/]/.test(backupName) || backupName.includes('..')) {
+        return false;
+    }
+    const safeBackupNameRegex = /^[a-zA-Z0-9_ .:-]+$/;
+    return safeBackupNameRegex.test(backupName);
+}
+
+/**
  * Returns the current configuration from memory.
  * @returns {object} The current configuration.
  */
@@ -557,7 +571,7 @@ export async function exportBackup(backupName) {
     if (!BACKUP_DIRECTORY) {
         return { success: false, message: 'Backup directory not configured.' };
     }
-    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+    if (!isValidBackupName(backupName)) {
         log('ERROR', `Invalid backup name for export: ${backupName}`);
         return { success: false, message: 'Invalid backup name.' };
     }
@@ -599,8 +613,7 @@ export async function deleteBackup(backupName) {
     if (!BACKUP_DIRECTORY) {
         return { success: false, message: 'Backup directory not configured.' };
     }
-    // Validation: backupName should only contain safe characters and not be a path traversal
-    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+    if (!isValidBackupName(backupName)) {
         log('ERROR', `Invalid backup name for deletion: ${backupName}`);
         return { success: false, message: 'Invalid backup name.' };
     }
@@ -637,8 +650,7 @@ export async function restoreBackup(backupName) {
     if (!BACKUP_DIRECTORY) {
         return { success: false, message: 'Backup directory not configured.' };
     }
-    // Validation: backupName should only contain safe characters and not be a path traversal
-    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+    if (!isValidBackupName(backupName)) {
         log('ERROR', `Invalid backup name for restoration: ${backupName}`);
         return { success: false, message: 'Invalid backup name.' };
     }
@@ -1249,6 +1261,10 @@ export async function writeServerProperties(propertiesToWrite) {
     if (!SERVER_DIRECTORY) {
         log('ERROR', 'SERVER_DIRECTORY not set. Cannot write server.properties.');
         throw new Error('Server directory not configured.');
+    }
+    if (typeof propertiesToWrite !== 'object' || propertiesToWrite === null) {
+        log('ERROR', 'Invalid propertiesToWrite argument provided. Expected a non-null object.');
+        throw new Error('Invalid propertiesToWrite format.');
     }
     const configPath = path.join(SERVER_DIRECTORY, 'server.properties');
     let originalLines = [];
