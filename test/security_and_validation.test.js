@@ -24,6 +24,7 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   getStoredVersion: jest.fn(),
   log: jest.fn(),
   isValidWorldName: jest.fn().mockReturnValue(true),
+  isValidBackupName: jest.fn(name => name && typeof name === 'string' && !name.includes('.') && !name.includes('/') && !name.includes('\\') && /^[a-zA-Z0-9_ -]+$/.test(name)),
 }));
 
 const { default: app } = await import('../app.js');
@@ -72,6 +73,32 @@ describe('Security and Validation', () => {
 
             expect(res.statusCode).toBe(400);
             expect(res.body.message).toContain('Update interval must be a positive integer');
+        });
+    });
+
+    describe('Backup endpoints validation', () => {
+        it('should reject invalid backup names in DELETE /api/backups/:backupName', async () => {
+            const res = await request(app)
+                .delete('/api/backups/..%2f..%2fetc%2fpasswd');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Invalid backupName format');
+        });
+
+        it('should reject invalid backup names in GET /api/backups/:backupName/download', async () => {
+            const res = await request(app)
+                .get('/api/backups/invalid..backup/download');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Invalid backupName format');
+        });
+
+        it('should reject invalid backup names in POST /api/backups/:backupName/restore', async () => {
+            const res = await request(app)
+                .post('/api/backups/bad_backup;id/restore');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Invalid backupName format');
         });
     });
 
