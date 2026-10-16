@@ -98,4 +98,31 @@ describe('Security and Validation', () => {
             expect(backend.sendServerCommand).not.toHaveBeenCalled();
         });
     });
+
+    describe('validateWorldName middleware for parameter and body routes', () => {
+        beforeEach(() => {
+            backend.isValidWorldName.mockImplementation(name => !name.includes('..') && !name.includes('/') && !name.includes('\\'));
+        });
+
+        it('should reject invalid worldName in GET /api/worlds/:worldName/export', async () => {
+            const res = await request(app).get('/api/worlds/..%2Fmalicious/export');
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Invalid worldName format');
+        });
+
+        it('should reject invalid worldName in GET /api/worlds/:worldName/packs', async () => {
+            const res = await request(app).get('/api/worlds/..%2Fmalicious/packs');
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Invalid worldName format');
+        });
+
+        it('should reject invalid worldName in POST /api/delete-pack', async () => {
+            const res = await request(app)
+                .post('/api/delete-pack')
+                .send({ worldName: '../malicious', packType: 'behavior', packId: 'bp1' });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Invalid worldName format');
+        });
+    });
 });

@@ -2027,6 +2027,10 @@ export async function deletePack(worldName, packType, packId) {
     if (packType !== 'behavior' && packType !== 'resource') {
         return { success: false, message: 'Invalid pack type. Must be behavior or resource.' };
     }
+    if (!packId || typeof packId !== 'string' || !packId.trim() || /[\x00-\x1F\x7F]/.test(packId)) {
+        log('ERROR', `Invalid packId provided for deletion: ${packId}`);
+        return { success: false, message: 'Invalid pack ID.' };
+    }
 
     const worldPath = path.join(SERVER_DIRECTORY, 'worlds', worldName);
     const fileName = packType === 'behavior' ? 'world_behavior_packs.json' : 'world_resource_packs.json';

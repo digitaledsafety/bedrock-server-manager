@@ -137,4 +137,19 @@ level-name=World=1
         process.argv = [];
     });
   });
+
+  describe('deletePack', () => {
+    it('should reject invalid or control-character packId', async () => {
+      backend.init({ serverDirectory: '/test/server' });
+
+      const res1 = await backend.deletePack('test_world', 'behavior', '');
+      expect(res1).toEqual({ success: false, message: 'Invalid pack ID.' });
+
+      const res2 = await backend.deletePack('test_world', 'behavior', '   ');
+      expect(res2).toEqual({ success: false, message: 'Invalid pack ID.' });
+
+      const res3 = await backend.deletePack('test_world', 'behavior', 'uuid\x00bad');
+      expect(res3).toEqual({ success: false, message: 'Invalid pack ID.' });
+    });
+  });
 });
