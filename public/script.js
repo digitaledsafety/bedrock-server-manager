@@ -173,6 +173,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             if (data.success) {
                 showMessage(data.message, 'success');
+                if (restartNeededNote) restartNeededNote.style.display = 'block';
                 loadActivePacks();
             } else {
                 showMessage('Failed to remove pack: ' + data.message, 'error');
@@ -234,6 +235,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             if (response.ok && data.success) {
                 showMessage(data.message || 'Pack uploaded successfully!', 'success');
+                if (restartNeededNote) restartNeededNote.style.display = 'block';
                 uploadPackForm.reset(); // Reset form on success
             } else {
                 showMessage(data.message || 'Failed to upload pack.', 'error');
