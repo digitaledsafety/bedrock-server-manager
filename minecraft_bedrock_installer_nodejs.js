@@ -102,6 +102,19 @@ export function isValidWorldName(worldName) {
 }
 
 /**
+ * Validates a backup name to prevent path traversal and control characters.
+ * @param {string} backupName - The name of the backup to validate.
+ * @returns {boolean} True if the backup name is valid, false otherwise.
+ */
+export function isValidBackupName(backupName) {
+    if (!backupName || typeof backupName !== 'string') return false;
+    if (backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) return false;
+    if (/[\x00-\x1F\x7F]/.test(backupName)) return false;
+    const backupNameRegex = /^[a-zA-Z0-9_ .:-]+$/;
+    return backupNameRegex.test(backupName);
+}
+
+/**
  * Returns the current configuration from memory.
  * @returns {object} The current configuration.
  */
@@ -381,14 +394,22 @@ export async function changeOwnership(dirPath, user, group) {
  * @returns {Promise<{total: number, available: number}>}
  */
 export async function getDiskUsage(dirPath) {
+    if (!dirPath || typeof dirPath !== 'string') {
+        log('DEBUG', `Directory path for disk usage is undefined or invalid: ${dirPath}`);
+        return { total: 0, available: 0 };
+    }
     try {
+        if (!fs.existsSync(dirPath)) {
+            log('DEBUG', `Directory does not exist for disk usage check: ${dirPath}`);
+            return { total: 0, available: 0 };
+        }
         const stats = await fs.promises.statfs(dirPath);
         return {
             total: stats.bsize * stats.blocks,
             available: stats.bsize * stats.bavail
         };
     } catch (error) {
-        log('ERROR', `Error getting disk usage for ${dirPath}: ${error.message}`);
+        log('DEBUG', `Error getting disk usage for ${dirPath}: ${error.message}`);
         return { total: 0, available: 0 };
     }
 }
@@ -557,7 +578,7 @@ export async function exportBackup(backupName) {
     if (!BACKUP_DIRECTORY) {
         return { success: false, message: 'Backup directory not configured.' };
     }
-    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+    if (!isValidBackupName(backupName)) {
         log('ERROR', `Invalid backup name for export: ${backupName}`);
         return { success: false, message: 'Invalid backup name.' };
     }
@@ -599,8 +620,7 @@ export async function deleteBackup(backupName) {
     if (!BACKUP_DIRECTORY) {
         return { success: false, message: 'Backup directory not configured.' };
     }
-    // Validation: backupName should only contain safe characters and not be a path traversal
-    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+    if (!isValidBackupName(backupName)) {
         log('ERROR', `Invalid backup name for deletion: ${backupName}`);
         return { success: false, message: 'Invalid backup name.' };
     }
@@ -637,8 +657,7 @@ export async function restoreBackup(backupName) {
     if (!BACKUP_DIRECTORY) {
         return { success: false, message: 'Backup directory not configured.' };
     }
-    // Validation: backupName should only contain safe characters and not be a path traversal
-    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+    if (!isValidBackupName(backupName)) {
         log('ERROR', `Invalid backup name for restoration: ${backupName}`);
         return { success: false, message: 'Invalid backup name.' };
     }
@@ -1250,6 +1269,10 @@ export async function writeServerProperties(propertiesToWrite) {
         log('ERROR', 'SERVER_DIRECTORY not set. Cannot write server.properties.');
         throw new Error('Server directory not configured.');
     }
+    if (!propertiesToWrite || typeof propertiesToWrite !== 'object' || Array.isArray(propertiesToWrite)) {
+        log('ERROR', 'Invalid propertiesToWrite argument provided to writeServerProperties.');
+        throw new Error('Invalid server properties data provided.');
+    }
     const configPath = path.join(SERVER_DIRECTORY, 'server.properties');
     let originalLines = [];
     let lineEnding = '\n';
@@ -1531,6 +1554,10 @@ export async function getPlayers() {
  * @returns {Promise<{success: boolean, message: string}>}
  */
 export async function sendServerCommand(command) {
+    if (typeof command !== 'string' || !command || /[\r\n]/.test(command) || /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(command)) {
+        log('ERROR', `Invalid command payload provided: ${command}`);
+        return { success: false, message: 'Invalid command.' };
+    }
     if (!activeServerProcess || !activeServerProcess.stdin || activeServerProcess.stdin.writable === false) {
         log('WARNING', `Cannot send command: Server process not available or stdin not writable. Command: ${command}`);
         return { success: false, message: 'Server console not available.' };
@@ -2026,6 +2053,10 @@ export async function deletePack(worldName, packType, packId) {
     if (!isValidWorldName(worldName)) return { success: false, message: 'Invalid world name.' };
     if (packType !== 'behavior' && packType !== 'resource') {
         return { success: false, message: 'Invalid pack type. Must be behavior or resource.' };
+    }
+    if (!packId || typeof packId !== 'string' || /[\x00-\x1F\x7F]/.test(packId) || packId.includes('/') || packId.includes('\\')) {
+        log('ERROR', `Invalid packId provided for deletePack: ${packId}`);
+        return { success: false, message: 'Invalid pack ID.' };
     }
 
     const worldPath = path.join(SERVER_DIRECTORY, 'worlds', worldName);
