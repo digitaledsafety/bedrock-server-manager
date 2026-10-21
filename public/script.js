@@ -1088,25 +1088,30 @@ document.addEventListener('DOMContentLoaded', () => {
             const query = propertySearchInput.value.toLowerCase();
             const propertyGroups = propertiesContainer.querySelectorAll('.form-group');
 
-            propertyGroups.forEach(group => {
-                const labelEl = group.querySelector('label');
-                const label = labelEl ? labelEl.textContent.toLowerCase() : '';
-                if (label.includes(query)) {
-                    group.style.display = 'block';
-                } else {
-                    group.style.display = 'none';
-                }
-            });
-
-            // If searching, show all categories and hide tabs
             if (query) {
+                propertyGroups.forEach(group => {
+                    const labelEl = group.querySelector('label');
+                    const label = labelEl ? labelEl.textContent.toLowerCase() : '';
+                    if (label.includes(query)) {
+                        group.style.display = 'block';
+                    } else {
+                        group.style.display = 'none';
+                    }
+                });
+
                 document.querySelectorAll('.tab-content').forEach(content => {
                     content.style.display = 'block';
                     content.classList.add('active');
                 });
                 propertiesTabs.style.display = 'none';
             } else {
-                // If query is cleared, restore tab view
+                // If query is cleared, restore tab view and property group visibility
+                propertyGroups.forEach(group => {
+                    group.style.display = '';
+                });
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.style.display = '';
+                });
                 propertiesTabs.style.display = 'flex';
                 const activeTabButton = propertiesTabs.querySelector('.tab-button.active');
                 if (activeTabButton) {
