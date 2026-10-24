@@ -35,7 +35,7 @@ describe('Docker Integration Test', () => {
       console.warn(`Docker build failed: ${err.message}. Skipping Docker integration tests.`);
       dockerAvailable = false;
     }
-  }, 60000); // Allow up to 60 seconds to build the image
+  }, 120000); // Allow up to 120 seconds to build the image
 
   afterAll(async () => {
     if (!dockerAvailable) return;
