@@ -23,7 +23,26 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   startAutoUpdateScheduler: jest.fn(),
   getStoredVersion: jest.fn(),
   log: jest.fn(),
-  isValidWorldName: jest.fn().mockReturnValue(true),
+  isValidWorldName: jest.fn((name) => {
+    if (!name || typeof name !== 'string') return false;
+    const worldNameRegex = /^[a-zA-Z0-9_ -]+$/;
+    if (name.includes('.') || name.includes('/') || name.includes('\\') || !worldNameRegex.test(name)) {
+        return false;
+    }
+    return true;
+  }),
+  isValidBackupName: jest.fn((name) => {
+    if (!name || typeof name !== 'string') return false;
+    if (name.includes('..') || name.includes('/') || name.includes('\\') || /[\x00-\x1F\x7F]/.test(name)) {
+        return false;
+    }
+    return true;
+  }),
+  deleteBackup: jest.fn(),
+  exportBackup: jest.fn(),
+  restoreBackup: jest.fn(),
+  exportWorld: jest.fn(),
+  listPacks: jest.fn(),
 }));
 
 const { default: app } = await import('../app.js');
@@ -96,6 +115,38 @@ describe('Security and Validation', () => {
             expect(res.body.success).toBe(false);
             expect(res.body.message).toContain('Invalid command. Newlines and control characters are not allowed.');
             expect(backend.sendServerCommand).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('Backup Name Validation', () => {
+        it('should reject backup operations with path traversal in backupName parameter', async () => {
+            const res = await request(app).delete('/api/backups/..%2F..%2Fetc%2Fpasswd');
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Invalid backupName format');
+            expect(backend.deleteBackup).not.toHaveBeenCalled();
+        });
+
+        it('should reject backup operations with control characters in backupName parameter', async () => {
+            const res = await request(app).post('/api/backups/bad%00backup/restore');
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Invalid backupName format');
+            expect(backend.restoreBackup).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('World Parameter Route Validation', () => {
+        it('should reject export world with invalid worldName parameter', async () => {
+            const res = await request(app).get('/api/worlds/invalid%2Fworld/export');
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Invalid worldName format');
+            expect(backend.exportWorld).not.toHaveBeenCalled();
+        });
+
+        it('should reject list packs with invalid worldName parameter', async () => {
+            const res = await request(app).get('/api/worlds/invalid%5Cworld/packs');
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Invalid worldName format');
+            expect(backend.listPacks).not.toHaveBeenCalled();
         });
     });
 });
