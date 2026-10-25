@@ -77,5 +77,17 @@ describe('Pack Management API', () => {
 
             expect(res.statusCode).toBe(400);
         });
+
+        it('should return 400 if packId contains control characters', async () => {
+            backend.deletePack.mockResolvedValue({ success: false, message: 'Invalid pack ID.' });
+
+            const res = await request(app)
+                .post('/api/delete-pack')
+                .send({ worldName: 'test_world', packType: 'behavior', packId: 'pack\x00id' });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.success).toBe(false);
+            expect(res.body.message).toBe('Invalid pack ID.');
+        });
     });
 });

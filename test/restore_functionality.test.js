@@ -129,4 +129,19 @@ describe('Backup Restoration Functionality Tests', () => {
         expect(response.body.success).toBe(false);
         expect(response.body.message).toContain('Invalid world name inside backup');
     });
+
+    test('should rename active world and update level-name in server.properties', async () => {
+        // Setup active world
+        fs.writeFileSync(path.join(serverDir, 'server.properties'), 'level-name=world1', 'utf8');
+        fs.mkdirSync(path.join(serverDir, 'worlds', 'world1'), { recursive: true });
+
+        const result = await backend.renameWorld('world1', 'world2');
+
+        expect(result.success).toBe(true);
+
+        const properties = fs.readFileSync(path.join(serverDir, 'server.properties'), 'utf8');
+        expect(properties).toContain('level-name=world2');
+        expect(fs.existsSync(path.join(serverDir, 'worlds', 'world2'))).toBe(true);
+        expect(fs.existsSync(path.join(serverDir, 'worlds', 'world1'))).toBe(false);
+    });
 });
