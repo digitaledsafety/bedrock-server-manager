@@ -87,4 +87,27 @@ describe('Configuration Caching and World Backup Tests', () => {
         expect(properties['server-port']).toBe('19133');
         expect(properties['gamemode']).toBe('creative');
     });
+
+    test('isValidBackupName should correctly validate backup names', () => {
+        expect(backend.isValidBackupName('backup_2026-10-27T00-00-00')).toBe(true);
+        expect(backend.isValidBackupName('world_test_2026')).toBe(true);
+        expect(backend.isValidBackupName('valid-backup.123')).toBe(true);
+
+        expect(backend.isValidBackupName(null)).toBe(false);
+        expect(backend.isValidBackupName(undefined)).toBe(false);
+        expect(backend.isValidBackupName('')).toBe(false);
+        expect(backend.isValidBackupName(123)).toBe(false);
+        expect(backend.isValidBackupName('../etc/passwd')).toBe(false);
+        expect(backend.isValidBackupName('backup/file')).toBe(false);
+        expect(backend.isValidBackupName('backup\\file')).toBe(false);
+        expect(backend.isValidBackupName('backup*file')).toBe(false);
+    });
+
+    test('getDiskUsage should handle null or undefined paths gracefully', async () => {
+        const usageNull = await backend.getDiskUsage(null);
+        expect(usageNull).toEqual({ total: 0, available: 0 });
+
+        const usageUndefined = await backend.getDiskUsage(undefined);
+        expect(usageUndefined).toEqual({ total: 0, available: 0 });
+    });
 });
