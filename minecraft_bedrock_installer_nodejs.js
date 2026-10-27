@@ -102,6 +102,20 @@ export function isValidWorldName(worldName) {
 }
 
 /**
+ * Validates a backup name to prevent path traversal and ensure allowed characters.
+ * @param {string} backupName - The name of the backup to validate.
+ * @returns {boolean} True if the backup name is valid, false otherwise.
+ */
+export function isValidBackupName(backupName) {
+    if (!backupName || typeof backupName !== 'string') return false;
+    const backupNameRegex = /^[a-zA-Z0-9_ .:-]+$/;
+    if (backupName.includes('..') || backupName.includes('/') || backupName.includes('\\') || !backupNameRegex.test(backupName)) {
+        return false;
+    }
+    return true;
+}
+
+/**
  * Returns the current configuration from memory.
  * @returns {object} The current configuration.
  */
@@ -381,6 +395,10 @@ export async function changeOwnership(dirPath, user, group) {
  * @returns {Promise<{total: number, available: number}>}
  */
 export async function getDiskUsage(dirPath) {
+    if (!dirPath || !fs.existsSync(dirPath)) {
+        log('DEBUG', `Directory path for disk usage check is invalid or does not exist: ${dirPath}`);
+        return { total: 0, available: 0 };
+    }
     try {
         const stats = await fs.promises.statfs(dirPath);
         return {
@@ -388,7 +406,7 @@ export async function getDiskUsage(dirPath) {
             available: stats.bsize * stats.bavail
         };
     } catch (error) {
-        log('ERROR', `Error getting disk usage for ${dirPath}: ${error.message}`);
+        log('DEBUG', `Error getting disk usage for ${dirPath}: ${error.message}`);
         return { total: 0, available: 0 };
     }
 }
@@ -557,7 +575,7 @@ export async function exportBackup(backupName) {
     if (!BACKUP_DIRECTORY) {
         return { success: false, message: 'Backup directory not configured.' };
     }
-    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+    if (!isValidBackupName(backupName)) {
         log('ERROR', `Invalid backup name for export: ${backupName}`);
         return { success: false, message: 'Invalid backup name.' };
     }
@@ -599,8 +617,7 @@ export async function deleteBackup(backupName) {
     if (!BACKUP_DIRECTORY) {
         return { success: false, message: 'Backup directory not configured.' };
     }
-    // Validation: backupName should only contain safe characters and not be a path traversal
-    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+    if (!isValidBackupName(backupName)) {
         log('ERROR', `Invalid backup name for deletion: ${backupName}`);
         return { success: false, message: 'Invalid backup name.' };
     }
@@ -637,8 +654,7 @@ export async function restoreBackup(backupName) {
     if (!BACKUP_DIRECTORY) {
         return { success: false, message: 'Backup directory not configured.' };
     }
-    // Validation: backupName should only contain safe characters and not be a path traversal
-    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+    if (!isValidBackupName(backupName)) {
         log('ERROR', `Invalid backup name for restoration: ${backupName}`);
         return { success: false, message: 'Invalid backup name.' };
     }
