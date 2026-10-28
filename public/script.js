@@ -1106,7 +1106,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 propertiesTabs.style.display = 'none';
             } else {
-                // If query is cleared, restore tab view
+                // If query is cleared, restore tab view and reset inline group/content display styles
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.style.display = '';
+                });
+                propertyGroups.forEach(group => {
+                    group.style.display = '';
+                });
                 propertiesTabs.style.display = 'flex';
                 const activeTabButton = propertiesTabs.querySelector('.tab-button.active');
                 if (activeTabButton) {
