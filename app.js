@@ -60,6 +60,15 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirnameESM, 'views'));
 
 // --- Input Validation Middleware ---
+const validateBackupName = (req, res, next) => {
+    const { backupName } = req.params;
+    if (!backupName || !backend.isValidBackupName(backupName)) {
+        backend.log('ERROR', `Invalid backupName parameter: ${backupName}`);
+        return res.status(400).json({ success: false, message: 'Invalid backup name.' });
+    }
+    next();
+};
+
 const validateWorldName = (req, res, next) => {
     // Check for worldName, or oldWorldName and newWorldName
     const namesToValidate = [];
@@ -85,6 +94,15 @@ const sanitizeServerProperties = (req, res, next) => {
     const properties = req.body;
     if (typeof properties !== 'object' || properties === null) {
         return res.status(400).json({ error: 'Invalid server properties format. Expected an object.' });
+    }
+
+    const forbiddenKeys = ['__proto__', 'constructor', 'prototype'];
+    const propertyKeys = Object.getOwnPropertyNames(properties);
+    for (const key of propertyKeys) {
+        if (forbiddenKeys.includes(key)) {
+            backend.log('ERROR', `Attempted prototype pollution key rejected: ${key}`);
+            return res.status(400).json({ error: `Forbidden property key: ${key}` });
+        }
     }
 
     const errors = [];
@@ -274,7 +292,7 @@ app.get('/api/backups', async (req, res) => {
     }
 });
 
-app.delete('/api/backups/:backupName', async (req, res) => {
+app.delete('/api/backups/:backupName', validateBackupName, async (req, res) => {
     try {
         const { backupName } = req.params;
         const result = await backend.deleteBackup(backupName);
@@ -289,7 +307,7 @@ app.delete('/api/backups/:backupName', async (req, res) => {
     }
 });
 
-app.get('/api/backups/:backupName/download', async (req, res) => {
+app.get('/api/backups/:backupName/download', validateBackupName, async (req, res) => {
     try {
         const { backupName } = req.params;
         const result = await backend.exportBackup(backupName);
@@ -312,7 +330,7 @@ app.get('/api/backups/:backupName/download', async (req, res) => {
     }
 });
 
-app.post('/api/backups/:backupName/restore', async (req, res) => {
+app.post('/api/backups/:backupName/restore', validateBackupName, async (req, res) => {
     try {
         const { backupName } = req.params;
         const result = await backend.restoreBackup(backupName);
