@@ -24,6 +24,7 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   getStoredVersion: jest.fn(),
   log: jest.fn(),
   isValidWorldName: jest.fn().mockReturnValue(true),
+  isValidBackupName: jest.fn().mockReturnValue(true),
 }));
 
 const { default: app } = await import('../app.js');
@@ -52,6 +53,33 @@ describe('Security and Validation', () => {
 
             expect(res.statusCode).toBe(400);
             expect(res.body.error).toContain('Invalid character in server property key');
+        });
+
+        it('should reject prototype pollution keys like __proto__', async () => {
+            const res = await request(app)
+                .post('/api/properties')
+                .send(JSON.parse('{"__proto__": {"polluted": true}}'));
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toContain('Forbidden property key');
+        });
+    });
+
+    describe('Backup Name Validation Middleware', () => {
+        it('should reject backup operations with invalid backup names', async () => {
+            backend.isValidBackupName.mockReturnValue(false);
+
+            const resDel = await request(app).delete('/api/backups/..%2Fmalicious');
+            expect(resDel.statusCode).toBe(400);
+            expect(resDel.body.message).toBe('Invalid backup name.');
+
+            const resDL = await request(app).get('/api/backups/..%2Fmalicious/download');
+            expect(resDL.statusCode).toBe(400);
+            expect(resDL.body.message).toBe('Invalid backup name.');
+
+            const resRestore = await request(app).post('/api/backups/..%2Fmalicious/restore');
+            expect(resRestore.statusCode).toBe(400);
+            expect(resRestore.body.message).toBe('Invalid backup name.');
         });
     });
 
