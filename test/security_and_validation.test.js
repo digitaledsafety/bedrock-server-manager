@@ -73,6 +73,15 @@ describe('Security and Validation', () => {
             expect(res.statusCode).toBe(400);
             expect(res.body.message).toContain('Update interval must be a positive integer');
         });
+
+        it('should reject non-object config payloads', async () => {
+            const res = await request(app)
+                .post('/api/config')
+                .send('invalid_string_payload')
+                .set('Content-Type', 'application/json');
+
+            expect(res.statusCode).toBe(400);
+        });
     });
 
     describe('POST /api/command validation', () => {

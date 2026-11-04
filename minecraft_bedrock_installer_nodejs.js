@@ -381,6 +381,10 @@ export async function changeOwnership(dirPath, user, group) {
  * @returns {Promise<{total: number, available: number}>}
  */
 export async function getDiskUsage(dirPath) {
+    if (!dirPath) {
+        log('DEBUG', 'dirPath is undefined or falsy in getDiskUsage. Returning 0 stats.');
+        return { total: 0, available: 0 };
+    }
     try {
         const stats = await fs.promises.statfs(dirPath);
         return {
@@ -388,7 +392,7 @@ export async function getDiskUsage(dirPath) {
             available: stats.bsize * stats.bavail
         };
     } catch (error) {
-        log('ERROR', `Error getting disk usage for ${dirPath}: ${error.message}`);
+        log('DEBUG', `Error getting disk usage for ${dirPath}: ${error.message}`);
         return { total: 0, available: 0 };
     }
 }
@@ -1531,6 +1535,11 @@ export async function getPlayers() {
  * @returns {Promise<{success: boolean, message: string}>}
  */
 export async function sendServerCommand(command) {
+    if (!command || typeof command !== 'string' || command.match(/[\n\r]/) || /[\x00-\x1F\x7F]/.test(command)) {
+        log('ERROR', `Invalid command format or control characters/newlines detected in sendServerCommand: ${command}`);
+        return { success: false, message: 'Invalid command. Newlines and control characters are not allowed.' };
+    }
+
     if (!activeServerProcess || !activeServerProcess.stdin || activeServerProcess.stdin.writable === false) {
         log('WARNING', `Cannot send command: Server process not available or stdin not writable. Command: ${command}`);
         return { success: false, message: 'Server console not available.' };
