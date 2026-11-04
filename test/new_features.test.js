@@ -139,4 +139,19 @@ describe('New Features API', () => {
             expect(response.body.message).toContain('Server name must be a non-empty string');
         });
     });
+
+    describe('UI World Search Elements', () => {
+        it('should render world search input field in index view template', () => {
+            const indexEjs = fs.readFileSync(path.join(process.cwd(), 'views/index.ejs'), 'utf8');
+            expect(indexEjs).toContain('id="worldSearch"');
+            expect(indexEjs).toContain('placeholder="Search worlds..."');
+        });
+
+        it('should contain filterWorlds functionality in script.js', () => {
+            const scriptJs = fs.readFileSync(path.join(process.cwd(), 'public/script.js'), 'utf8');
+            expect(scriptJs).toContain('const worldSearchInput = document.getElementById(\'worldSearch\');');
+            expect(scriptJs).toContain('function filterWorlds()');
+            expect(scriptJs).toContain('worldSearchInput.addEventListener(\'input\', filterWorlds);');
+        });
+    });
 });
