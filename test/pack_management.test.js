@@ -77,5 +77,23 @@ describe('Pack Management API', () => {
 
             expect(res.statusCode).toBe(400);
         });
+
+        it('should return 400 for invalid packType', async () => {
+            const res = await request(app)
+                .post('/api/delete-pack')
+                .send({ worldName: 'test_world', packType: 'invalid_type', packId: 'bp1' });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toBe('Invalid pack type specified.');
+        });
+
+        it('should return 400 for empty packId', async () => {
+            const res = await request(app)
+                .post('/api/delete-pack')
+                .send({ worldName: 'test_world', packType: 'behavior', packId: '   ' });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toBe('Invalid pack ID specified.');
+        });
     });
 });
