@@ -73,6 +73,37 @@ describe('Security and Validation', () => {
             expect(res.statusCode).toBe(400);
             expect(res.body.message).toContain('Update interval must be a positive integer');
         });
+
+        it('should reject invalid port numbers in POST /api/config', async () => {
+            const invalidPorts = [0, 65536, -1, 'invalid', 3000.5];
+            for (const port of invalidPorts) {
+                const res = await request(app)
+                    .post('/api/config')
+                    .send({ uiPort: port });
+
+                expect(res.statusCode).toBe(400);
+                expect(res.body.message).toContain('must be a valid port number between 1 and 65535');
+            }
+        });
+
+        it('should accept valid port numbers in POST /api/config', async () => {
+            backend.readGlobalConfig.mockResolvedValue({});
+            backend.writeGlobalConfig.mockResolvedValue();
+
+            const res = await request(app)
+                .post('/api/config')
+                .send({ uiPort: 8080, serverPortIPv4: 19132, serverPortIPv6: 19133 });
+
+            expect(res.statusCode).toBe(200);
+            expect(res.body.success).toBe(true);
+            expect(backend.writeGlobalConfig).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    uiPort: 8080,
+                    serverPortIPv4: 19132,
+                    serverPortIPv6: 19133
+                })
+            );
+        });
     });
 
     describe('POST /api/command validation', () => {
