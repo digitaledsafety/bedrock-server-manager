@@ -95,6 +95,39 @@ level-name=World=1
     });
   });
 
+  describe('isValidBackupName', () => {
+    it('should return true for valid backup names', () => {
+      expect(backend.isValidBackupName('backup_2026-09-11_12-00-00')).toBe(true);
+      expect(backend.isValidBackupName('world_default_2026-09-11')).toBe(true);
+      expect(backend.isValidBackupName('my-backup.123')).toBe(true);
+    });
+
+    it('should return false for invalid backup names', () => {
+      expect(backend.isValidBackupName('../traversal')).toBe(false);
+      expect(backend.isValidBackupName('backup/path')).toBe(false);
+      expect(backend.isValidBackupName('backup\\path')).toBe(false);
+      expect(backend.isValidBackupName('backup\x00null')).toBe(false);
+      expect(backend.isValidBackupName('')).toBe(false);
+      expect(backend.isValidBackupName(null)).toBe(false);
+      expect(backend.isValidBackupName(12345)).toBe(false);
+    });
+  });
+
+  describe('deletePack validation', () => {
+    it('should reject invalid packId', async () => {
+      backend.init({ serverDirectory: '/test/server' });
+      fs.existsSync.mockReturnValue(true);
+
+      const resInvalidPath = await backend.deletePack('test_world', 'behavior', '../invalid_id');
+      expect(resInvalidPath.success).toBe(false);
+      expect(resInvalidPath.message).toBe('Invalid pack ID.');
+
+      const resNullByte = await backend.deletePack('test_world', 'behavior', 'pack\x00id');
+      expect(resNullByte.success).toBe(false);
+      expect(resNullByte.message).toBe('Invalid pack ID.');
+    });
+  });
+
   describe('readGlobalConfig', () => {
     it('should read and parse config.json correctly', async () => {
       const mockConfig = {
