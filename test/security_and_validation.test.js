@@ -24,6 +24,13 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   getStoredVersion: jest.fn(),
   log: jest.fn(),
   isValidWorldName: jest.fn().mockReturnValue(true),
+  isValidBackupName: jest.fn().mockReturnValue(true),
+  exportWorld: jest.fn(),
+  listPacks: jest.fn(),
+  deletePack: jest.fn(),
+  deleteBackup: jest.fn(),
+  exportBackup: jest.fn(),
+  restoreBackup: jest.fn(),
 }));
 
 const { default: app } = await import('../app.js');
@@ -96,6 +103,77 @@ describe('Security and Validation', () => {
             expect(res.body.success).toBe(false);
             expect(res.body.message).toContain('Invalid command. Newlines and control characters are not allowed.');
             expect(backend.sendServerCommand).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('validateBackupName middleware', () => {
+        it('should reject invalid backup name in DELETE /api/backups/:backupName', async () => {
+            backend.isValidBackupName.mockReturnValue(false);
+
+            const res = await request(app)
+                .delete('/api/backups/..%2finvalid');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Invalid backup name format');
+            expect(backend.deleteBackup).not.toHaveBeenCalled();
+        });
+
+        it('should reject invalid backup name in GET /api/backups/:backupName/download', async () => {
+            backend.isValidBackupName.mockReturnValue(false);
+
+            const res = await request(app)
+                .get('/api/backups/..%2ftraversal/download');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Invalid backup name format');
+            expect(backend.exportBackup).not.toHaveBeenCalled();
+        });
+
+        it('should reject invalid backup name in POST /api/backups/:backupName/restore', async () => {
+            backend.isValidBackupName.mockReturnValue(false);
+
+            const res = await request(app)
+                .post('/api/backups/..%2ftraversal/restore');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Invalid backup name format');
+            expect(backend.restoreBackup).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('validateWorldName middleware on param and pack routes', () => {
+        it('should reject invalid world name on GET /api/worlds/:worldName/export', async () => {
+            backend.isValidWorldName.mockReturnValue(false);
+
+            const res = await request(app)
+                .get('/api/worlds/bad..world/export');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Invalid worldName format');
+            expect(backend.exportWorld).not.toHaveBeenCalled();
+        });
+
+        it('should reject invalid world name on GET /api/worlds/:worldName/packs', async () => {
+            backend.isValidWorldName.mockReturnValue(false);
+
+            const res = await request(app)
+                .get('/api/worlds/bad..world/packs');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Invalid worldName format');
+            expect(backend.listPacks).not.toHaveBeenCalled();
+        });
+
+        it('should reject invalid world name on POST /api/delete-pack', async () => {
+            backend.isValidWorldName.mockReturnValue(false);
+
+            const res = await request(app)
+                .post('/api/delete-pack')
+                .send({ worldName: 'invalid..world', packType: 'behavior', packId: 'bp-id' });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.message).toContain('Invalid worldName format');
+            expect(backend.deletePack).not.toHaveBeenCalled();
         });
     });
 });
