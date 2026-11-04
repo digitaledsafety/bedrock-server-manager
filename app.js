@@ -230,7 +230,7 @@ app.post('/api/restart', async (req, res) => {
 
 app.post('/api/command', async (req, res) => {
     try {
-        const { command } = req.body;
+        const { command } = req.body || {};
         if (!command) {
             return res.status(400).json({ success: false, message: 'Command is required.' });
         }

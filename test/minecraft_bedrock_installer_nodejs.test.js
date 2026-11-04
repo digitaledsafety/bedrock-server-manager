@@ -95,6 +95,14 @@ level-name=World=1
     });
   });
 
+  describe('writeServerProperties', () => {
+    it('should throw an error if propertiesToWrite is null or non-object', async () => {
+      backend.init({ serverDirectory: '/test/server' });
+      await expect(backend.writeServerProperties(null)).rejects.toThrow('Invalid server properties provided.');
+      await expect(backend.writeServerProperties('not-an-object')).rejects.toThrow('Invalid server properties provided.');
+    });
+  });
+
   describe('readGlobalConfig', () => {
     it('should read and parse config.json correctly', async () => {
       const mockConfig = {
