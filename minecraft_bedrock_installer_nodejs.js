@@ -381,6 +381,9 @@ export async function changeOwnership(dirPath, user, group) {
  * @returns {Promise<{total: number, available: number}>}
  */
 export async function getDiskUsage(dirPath) {
+    if (!dirPath || typeof dirPath !== 'string') {
+        return { total: 0, available: 0 };
+    }
     try {
         const stats = await fs.promises.statfs(dirPath);
         return {
@@ -557,7 +560,7 @@ export async function exportBackup(backupName) {
     if (!BACKUP_DIRECTORY) {
         return { success: false, message: 'Backup directory not configured.' };
     }
-    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+    if (!backupName || typeof backupName !== 'string' || /[\x00-\x1F\x7F]/.test(backupName) || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
         log('ERROR', `Invalid backup name for export: ${backupName}`);
         return { success: false, message: 'Invalid backup name.' };
     }
@@ -600,7 +603,7 @@ export async function deleteBackup(backupName) {
         return { success: false, message: 'Backup directory not configured.' };
     }
     // Validation: backupName should only contain safe characters and not be a path traversal
-    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+    if (!backupName || typeof backupName !== 'string' || /[\x00-\x1F\x7F]/.test(backupName) || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
         log('ERROR', `Invalid backup name for deletion: ${backupName}`);
         return { success: false, message: 'Invalid backup name.' };
     }
@@ -638,7 +641,7 @@ export async function restoreBackup(backupName) {
         return { success: false, message: 'Backup directory not configured.' };
     }
     // Validation: backupName should only contain safe characters and not be a path traversal
-    if (!backupName || typeof backupName !== 'string' || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
+    if (!backupName || typeof backupName !== 'string' || /[\x00-\x1F\x7F]/.test(backupName) || backupName.includes('..') || backupName.includes('/') || backupName.includes('\\')) {
         log('ERROR', `Invalid backup name for restoration: ${backupName}`);
         return { success: false, message: 'Invalid backup name.' };
     }
@@ -884,10 +887,16 @@ function isUDPPortAvailable(port, host) {
                 log('DEBUG', `UDP port check error for ${host}:${port}: ${err.message}`);
                 resolve({ available: false, error: err.message });
             }
-            socket.close();
+            try {
+                socket.close();
+            } catch (_) {}
         });
         socket.once('listening', () => {
-            socket.close(() => resolve({ available: true }));
+            try {
+                socket.close(() => resolve({ available: true }));
+            } catch (_) {
+                resolve({ available: true });
+            }
         });
         try {
             socket.bind(port, host);
@@ -960,6 +969,9 @@ export async function startServer() {
 
             const serverLogPath = path.join(SERVER_DIRECTORY, 'server.log');
             const serverLogStream = fs.createWriteStream(serverLogPath, { flags: 'a' });
+            serverLogStream.on('error', (err) => {
+                log('ERROR', `Server log stream error: ${err.message}`);
+            });
 
             serverProcess.stdout.on('data', (data) => {
                 const output = data.toString();
@@ -1323,21 +1335,37 @@ export async function renameWorld(oldWorldName, newWorldName) {
         return { success: false, message: 'Target world name already exists.' };
     }
 
+    const properties = await readServerProperties();
+    const isActiveWorld = properties['level-name'] === oldWorldName;
+    const isRunning = await isProcessRunning();
+
+    if (isActiveWorld && isRunning) {
+        log('INFO', `Active world '${oldWorldName}' is being renamed. Stopping server first.`);
+        await stopServer();
+    }
+
     try {
         fs.renameSync(oldWorldPath, newWorldPath);
         log('INFO', `Renamed world directory from '${oldWorldName}' to '${newWorldName}'`);
 
         // Update server.properties if the active world was renamed
-        const properties = await readServerProperties();
-        if (properties['level-name'] === oldWorldName) {
+        if (isActiveWorld) {
             log('INFO', `Active world renamed. Updating level-name in server.properties.`);
             properties['level-name'] = newWorldName;
             await writeServerProperties(properties);
         }
 
+        if (isActiveWorld && isRunning) {
+            log('INFO', `Restarting server after renaming active world.`);
+            await startServer();
+        }
+
         return { success: true, message: `World '${oldWorldName}' renamed to '${newWorldName}' successfully.` };
     } catch (error) {
         log('ERROR', `Failed to rename world '${oldWorldName}' to '${newWorldName}': ${error.message}`);
+        if (isActiveWorld && isRunning && !(await isProcessRunning())) {
+            try { await startServer(); } catch (e) { log('ERROR', `Failed to restart server after failed rename: ${e.message}`); }
+        }
         return { success: false, message: `Failed to rename world: ${error.message}` };
     }
 }
@@ -1514,6 +1542,7 @@ export async function getPlayers() {
     // We don't want to spam 'list' command
     const now = Date.now();
     if (now - lastPlayerInfo.lastUpdated > 10000) { // Update every 10 seconds at most
+        lastPlayerInfo.lastUpdated = now;
         sendServerCommand('list');
     }
 
@@ -1531,6 +1560,11 @@ export async function getPlayers() {
  * @returns {Promise<{success: boolean, message: string}>}
  */
 export async function sendServerCommand(command) {
+    if (!command || typeof command !== 'string' || /[\r\n\x00-\x1F\x7F]/.test(command)) {
+        log('ERROR', `Invalid command or control characters detected: ${command}`);
+        return { success: false, message: 'Invalid command. Newlines and control characters are not allowed.' };
+    }
+
     if (!activeServerProcess || !activeServerProcess.stdin || activeServerProcess.stdin.writable === false) {
         log('WARNING', `Cannot send command: Server process not available or stdin not writable. Command: ${command}`);
         return { success: false, message: 'Server console not available.' };
@@ -1693,7 +1727,7 @@ export async function readGlobalConfig() {
         } else if (arg === '--no-autoUpdateEnabled') { effectiveConfig.autoUpdateEnabled = false; log('DEBUG', `CLI Override (boolean flag): ${arg} = false`); }
     }
     setLogLevel(effectiveConfig.logLevel || "INFO");
-    const resolvePath = (p) => path.isAbsolute(p) ? p : path.resolve(__dirnameESM, p);
+    const resolvePath = (p) => (typeof p === 'string' ? (path.isAbsolute(p) ? p : path.resolve(__dirnameESM, p)) : p);
     effectiveConfig.serverDirectory = resolvePath(effectiveConfig.serverDirectory);
     effectiveConfig.tempDirectory = resolvePath(effectiveConfig.tempDirectory);
     effectiveConfig.backupDirectory = resolvePath(effectiveConfig.backupDirectory);
