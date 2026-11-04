@@ -116,6 +116,9 @@
                 <h2>World Management</h2>
                 <button id="refreshWorldsButton" class="bg-blue-500 hover:bg-blue-700 text-white text-sm py-1 px-3 rounded transition duration-300">Refresh</button>
             </div>
+            <div class="form-group" style="margin-bottom: 15px;">
+                <input type="text" id="worldSearch" placeholder="Search worlds..." style="width: 100%;">
+            </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
                 <form id="createWorldForm">
                     <div class="form-group">
@@ -126,8 +129,8 @@
                 </form>
                 <form id="uploadWorldForm">
                     <div class="form-group">
-                        <label for="worldFile">Upload World (.mcworld):</label>
-                        <input type="file" id="worldFile" name="worldFile" accept=".mcworld" required>
+                        <label for="worldFile">Upload World (.mcworld or .zip):</label>
+                        <input type="file" id="worldFile" name="worldFile" accept=".mcworld,.zip" required>
                     </div>
                     <button type="submit" id="uploadWorldButton">Upload World</button>
                 </form>
