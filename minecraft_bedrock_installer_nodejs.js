@@ -2100,7 +2100,15 @@ export async function uploadPack(tempFilePath, originalFilename, requestedPackTy
             for (const manifestEntry of manifestEntries) {
                 let packRootInZip = path.dirname(manifestEntry.entryName);
                 if (packRootInZip === '.') packRootInZip = '';
-                const manifestData = JSON.parse(zip.readAsText(manifestEntry));
+                let manifestData;
+                try {
+                    manifestData = JSON.parse(zip.readAsText(manifestEntry));
+                } catch (parseError) {
+                    log('WARNING', `Skipping pack in .mcaddon due to malformed manifest JSON in ${manifestEntry.entryName}: ${parseError.message}`);
+                    messages.push(`Skipped pack from ${manifestEntry.entryName} (malformed manifest JSON).`);
+                    overallSuccess = false;
+                    continue;
+                }
 
                 if (!manifestData.header || !manifestData.header.uuid || !manifestData.header.version || !manifestData.header.name) {
                     log('WARNING', `Skipping pack in .mcaddon due to invalid manifest (missing header/uuid/version/name): ${manifestEntry.entryName}`);

@@ -146,6 +146,26 @@ describe('uploadPack Edge Cases', () => {
         expect(fs.existsSync(path.join(serverDir, 'resource_packs', 'Multi_RP', 'manifest.json'))).toBe(true);
     });
 
+    it('should skip malformed manifest in multi-pack upload and process valid packs', async () => {
+        const zip = new AdmZip();
+        const bpManifest = {
+            format_version: 2,
+            header: {
+                name: 'Valid BP',
+                uuid: 'bp-uuid-valid',
+                version: [1, 0, 0]
+            },
+            modules: [{ type: 'data', uuid: 'm1', version: [1, 0, 0] }]
+        };
+        zip.addFile('bad_pack/manifest.json', Buffer.from('{ malformed json '));
+        zip.addFile('valid_bp/manifest.json', Buffer.from(JSON.stringify(bpManifest)));
+        zip.writeZip(tempUploadPath);
+
+        const result = await backend.uploadPack(tempUploadPath, 'addon_packs.mcaddon', undefined, 'test_world');
+        expect(result.message).toContain('Skipped pack');
+        expect(fs.existsSync(path.join(serverDir, 'behavior_packs', 'Valid_BP', 'manifest.json'))).toBe(true);
+    });
+
     describe('deletePack validation', () => {
         it('should return error when deletePack is called with invalid packType', async () => {
             const result = await backend.deletePack('test_world', 'invalid_type', 'bp1');
