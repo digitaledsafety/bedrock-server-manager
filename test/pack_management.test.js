@@ -70,6 +70,18 @@ describe('Pack Management API', () => {
             expect(backend.deletePack).toHaveBeenCalledWith('test_world', 'behavior', 'bp1');
         });
 
+        it('should support deleting dev_behavior and dev_resource pack types', async () => {
+            backend.deletePack.mockResolvedValue({ success: true, message: 'Pack removed' });
+
+            const resDev = await request(app)
+                .post('/api/delete-pack')
+                .send({ worldName: 'test_world', packType: 'dev_behavior', packId: 'dev_bp1' });
+
+            expect(resDev.statusCode).toBe(200);
+            expect(resDev.body.success).toBe(true);
+            expect(backend.deletePack).toHaveBeenCalledWith('test_world', 'dev_behavior', 'dev_bp1');
+        });
+
         it('should return 400 if validation fails', async () => {
             const res = await request(app)
                 .post('/api/delete-pack')

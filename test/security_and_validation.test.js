@@ -24,6 +24,16 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   getStoredVersion: jest.fn(),
   log: jest.fn(),
   isValidWorldName: jest.fn().mockReturnValue(true),
+  isValidBackupName: jest.fn((name) => {
+    if (!name || typeof name !== 'string') return false;
+    if (name.includes('..') || name.includes('/') || name.includes('\\') || /[\x00-\x1F\x7F]/.test(name)) {
+      return false;
+    }
+    return true;
+  }),
+  deleteBackup: jest.fn(),
+  exportBackup: jest.fn(),
+  restoreBackup: jest.fn(),
 }));
 
 const { default: app } = await import('../app.js');
@@ -96,6 +106,28 @@ describe('Security and Validation', () => {
             expect(res.body.success).toBe(false);
             expect(res.body.message).toContain('Invalid command. Newlines and control characters are not allowed.');
             expect(backend.sendServerCommand).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('Backup Name Validation middleware', () => {
+        it('should reject path traversal in DELETE /api/backups/:backupName', async () => {
+            const res = await request(app)
+                .delete('/api/backups/..%2F..%2Fetc%2Fpasswd');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toContain('Invalid backup name');
+            expect(backend.deleteBackup).not.toHaveBeenCalled();
+        });
+
+        it('should accept valid backup name in DELETE /api/backups/:backupName', async () => {
+            backend.deleteBackup.mockResolvedValue({ success: true, message: 'Deleted' });
+
+            const res = await request(app)
+                .delete('/api/backups/world_backup_2026');
+
+            expect(res.statusCode).toBe(200);
+            expect(res.body.success).toBe(true);
+            expect(backend.deleteBackup).toHaveBeenCalledWith('world_backup_2026');
         });
     });
 });
