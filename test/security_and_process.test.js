@@ -128,6 +128,25 @@ describe('Security and Process Management', () => {
             expect(result.success).toBe(false);
             expect(result.message).toContain('Invalid backup name');
         });
+
+        it('should validate backup names properly via isValidBackupName', () => {
+            expect(backend.isValidBackupName('')).toBe(false);
+            expect(backend.isValidBackupName('   ')).toBe(false);
+            expect(backend.isValidBackupName(null)).toBe(false);
+            expect(backend.isValidBackupName(undefined)).toBe(false);
+            expect(backend.isValidBackupName(12345)).toBe(false);
+            expect(backend.isValidBackupName('.')).toBe(false);
+            expect(backend.isValidBackupName('..')).toBe(false);
+            expect(backend.isValidBackupName('../backup')).toBe(false);
+            expect(backend.isValidBackupName('backup/subdir')).toBe(false);
+            expect(backend.isValidBackupName('backup\\subdir')).toBe(false);
+            expect(backend.isValidBackupName('backup\x00evil')).toBe(false);
+            expect(backend.isValidBackupName('backup\nevil')).toBe(false);
+
+            expect(backend.isValidBackupName('backup_2026-11-04T00-13-12_366Z')).toBe(true);
+            expect(backend.isValidBackupName('world_test_world_2026-11-04')).toBe(true);
+            expect(backend.isValidBackupName('my-backup-1')).toBe(true);
+        });
     });
 
     describe('isUDPPortAvailable socket bind synchronous error leak prevention', () => {
