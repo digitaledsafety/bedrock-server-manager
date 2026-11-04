@@ -22,4 +22,12 @@ describe('Disk Usage', () => {
         const usage = await backend.getDiskUsage('./non_existent_path_12345');
         expect(usage).toEqual({ total: 0, available: 0 });
     });
+
+    test('getDiskUsage should return 0 for undefined or empty path', async () => {
+        const usageUndefined = await backend.getDiskUsage(undefined);
+        expect(usageUndefined).toEqual({ total: 0, available: 0 });
+
+        const usageEmpty = await backend.getDiskUsage('');
+        expect(usageEmpty).toEqual({ total: 0, available: 0 });
+    });
 });
