@@ -137,4 +137,34 @@ level-name=World=1
         process.argv = [];
     });
   });
+
+  describe('isValidBackupName', () => {
+    it('should return true for valid backup names', () => {
+      expect(backend.isValidBackupName('backup_2026-08-24')).toBe(true);
+      expect(backend.isValidBackupName('world_test_2026-08-24T00-00-00')).toBe(true);
+      expect(backend.isValidBackupName('my-backup-123')).toBe(true);
+    });
+
+    it('should return false for empty or non-string inputs', () => {
+      expect(backend.isValidBackupName('')).toBe(false);
+      expect(backend.isValidBackupName(null)).toBe(false);
+      expect(backend.isValidBackupName(undefined)).toBe(false);
+      expect(backend.isValidBackupName(12345)).toBe(false);
+      expect(backend.isValidBackupName({})).toBe(false);
+    });
+
+    it('should return false for path traversal inputs', () => {
+      expect(backend.isValidBackupName('..')).toBe(false);
+      expect(backend.isValidBackupName('../backup')).toBe(false);
+      expect(backend.isValidBackupName('backup/dir')).toBe(false);
+      expect(backend.isValidBackupName('backup\\dir')).toBe(false);
+    });
+
+    it('should return false for control characters and null bytes', () => {
+      expect(backend.isValidBackupName('backup\x00name')).toBe(false);
+      expect(backend.isValidBackupName('backup\rname')).toBe(false);
+      expect(backend.isValidBackupName('backup\nname')).toBe(false);
+      expect(backend.isValidBackupName('backup\x1Fname')).toBe(false);
+    });
+  });
 });
