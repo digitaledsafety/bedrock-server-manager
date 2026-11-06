@@ -137,4 +137,30 @@ level-name=World=1
         process.argv = [];
     });
   });
+
+  describe('isValidBackupName', () => {
+    it('should return true for valid backup names', () => {
+      expect(backend.isValidBackupName('backup_2026-10-24')).toBe(true);
+      expect(backend.isValidBackupName('world_test_123')).toBe(true);
+    });
+
+    it('should return false for path traversal, control characters or null bytes', () => {
+      expect(backend.isValidBackupName('../etc/passwd')).toBe(false);
+      expect(backend.isValidBackupName('backup\0null')).toBe(false);
+      expect(backend.isValidBackupName('backup\nname')).toBe(false);
+      expect(backend.isValidBackupName(null)).toBe(false);
+      expect(backend.isValidBackupName(123)).toBe(false);
+    });
+  });
+
+  describe('deletePack', () => {
+    it('should reject invalid packId format', async () => {
+      backend.init({ serverDirectory: '/test/server' });
+      const result1 = await backend.deletePack('test_world', 'behavior', '');
+      expect(result1).toEqual({ success: false, message: 'Invalid pack ID format.' });
+
+      const result2 = await backend.deletePack('test_world', 'behavior', 'pack\nId');
+      expect(result2).toEqual({ success: false, message: 'Invalid pack ID format.' });
+    });
+  });
 });

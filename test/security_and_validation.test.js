@@ -24,6 +24,18 @@ jest.unstable_mockModule('../minecraft_bedrock_installer_nodejs.js', () => ({
   getStoredVersion: jest.fn(),
   log: jest.fn(),
   isValidWorldName: jest.fn().mockReturnValue(true),
+  isValidBackupName: jest.fn((name) => {
+    if (!name || typeof name !== 'string') return false;
+    if (name.includes('\0') || /[\x00-\x1F\x7F]/.test(name)) return false;
+    if (name.includes('..') || name.includes('/') || name.includes('\\')) return false;
+    return true;
+  }),
+  deleteBackup: jest.fn().mockResolvedValue({ success: true }),
+  exportBackup: jest.fn().mockResolvedValue({ success: true, zipPath: '/tmp/test.zip' }),
+  restoreBackup: jest.fn().mockResolvedValue({ success: true }),
+  exportWorld: jest.fn().mockResolvedValue({ success: true, zipPath: '/tmp/test.mcworld' }),
+  listPacks: jest.fn().mockResolvedValue({ success: true, behaviorPacks: [], resourcePacks: [] }),
+  deletePack: jest.fn().mockResolvedValue({ success: true }),
 }));
 
 const { default: app } = await import('../app.js');
@@ -52,6 +64,68 @@ describe('Security and Validation', () => {
 
             expect(res.statusCode).toBe(400);
             expect(res.body.error).toContain('Invalid character in server property key');
+        });
+
+        it('should reject prototype pollution keys like __proto__', async () => {
+            const res = await request(app)
+                .post('/api/properties')
+                .send(JSON.parse('{"__proto__": {"admin": true}}'));
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toContain('Forbidden key in server properties');
+        });
+
+        it('should reject constructor key in server properties', async () => {
+            const res = await request(app)
+                .post('/api/properties')
+                .send({ constructor: 'malicious' });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toContain('Forbidden key in server properties');
+        });
+    });
+
+    describe('Backup name validation in middleware', () => {
+        it('should reject backup operations with path traversal in params', async () => {
+            const res = await request(app)
+                .delete('/api/backups/..%2F..%2Fetc%2Fpasswd');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toContain('Invalid backupName format.');
+            expect(backend.deleteBackup).not.toHaveBeenCalled();
+        });
+
+        it('should reject backup operations with control characters', async () => {
+            const res = await request(app)
+                .delete('/api/backups/backup%00null');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toContain('Invalid backupName format.');
+            expect(backend.deleteBackup).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('req.params.worldName validation in middleware', () => {
+        it('should reject world export when params.worldName is invalid', async () => {
+            backend.isValidWorldName.mockReturnValueOnce(false);
+
+            const res = await request(app)
+                .get('/api/worlds/..%2Finvalid/export');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toContain('Invalid worldName format');
+            expect(backend.exportWorld).not.toHaveBeenCalled();
+        });
+
+        it('should reject pack listing when params.worldName is invalid', async () => {
+            backend.isValidWorldName.mockReturnValueOnce(false);
+
+            const res = await request(app)
+                .get('/api/worlds/..%2Finvalid/packs');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toContain('Invalid worldName format');
+            expect(backend.listPacks).not.toHaveBeenCalled();
         });
     });
 
