@@ -1,3 +1,5 @@
+> **No longer maintained.** This repository is no longer maintained. The live site is at https://bedrock-server-manager.digitaleducationsafety.org. Active development now happens in the [foundation monorepo on GitLab](https://gitlab.com/desf-group/foundation).
+
 # Bedrock Server Manager
 
 [![CI](https://github.com/digitaledsafety/bedrock-server-manager/actions/workflows/main.yml/badge.svg)](https://github.com/digitaledsafety/bedrock-server-manager/actions/workflows/main.yml)
